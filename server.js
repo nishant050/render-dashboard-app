@@ -271,9 +271,73 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
+// --- Groq News Agent Dependencies ---
+const Groq = require('groq-sdk');
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// --- API Routes (YouTube Downloader - REWRITTEN with play-dl) ---
+// --- API Routes (News Agent) ---
 
+// 12. SUMMARIZE NEWS using Groq Agentic Tooling
+app.get('/api/summarize-news', async (req, res) => {
+    const { topic, sites } = req.query;
+
+    if (!topic || !sites) {
+        return res.status(400).send('Topic and sites are required.');
+    }
+
+    const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
+    if (siteList.length === 0) {
+        return res.status(400).send('At least one valid site is required.');
+    }
+
+    // Set up headers for Server-Sent Events (SSE)
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendEvent = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        sendEvent({ type: 'status', message: `🔍 Initializing news agent for topic: "${topic}"...` });
+
+        const userPrompt = `
+            Please act as an expert news analyst. Your task is to provide a concise, well-structured summary of the latest news regarding the topic: "${topic}".
+            You MUST restrict your search to the following websites: ${siteList.join(', ')}.
+            First, perform a web search across these sites to gather all relevant articles and information.
+            After gathering the information, synthesize it into a single, cohesive news article.
+            The article should have a clear headline, a brief introductory paragraph, and several key bullet points summarizing the main findings.
+            Conclude with a short sentence on the overall sentiment or outlook.
+            Do not mention your process; only output the final news article.
+        `;
+
+        sendEvent({ type: 'status', message: `Searching across ${siteList.length} specified site(s)...` });
+
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: 'user', content: userPrompt }],
+            model: "compound-beta", // Use the powerful agentic model
+            search_settings: {
+                include_domains: siteList // Restrict search to these domains
+            }
+        });
+        
+        const summary = completion.choices[0].message.content;
+        const executedTools = completion.choices[0].message.executed_tools;
+
+        sendEvent({ type: 'status', message: '✅ Search complete. Generating summary...' });
+        sendEvent({ type: 'tools', data: executedTools });
+        sendEvent({ type: 'summary', data: summary });
+        sendEvent({ type: 'done' });
+
+    } catch (error) {
+        console.error('Groq API Error:', error);
+        sendEvent({ type: 'error', message: 'Failed to get summary from Groq API.' });
+    } finally {
+        res.end();
+    }
+});
 
 // --- Server Start ---
 app.listen(PORT, () => {

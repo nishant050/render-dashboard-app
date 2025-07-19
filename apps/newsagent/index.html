@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News Agent</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <a href="../../index.html">&larr; Back to Dashboard</a>
+    </nav>
+    <main class="container">
+        <h1>🤖 AI News Agent</h1>
+        <p class="subtitle">Get AI-powered news summaries from the sources you trust.</p>
+
+        <div class="form-container">
+            <div class="input-group">
+                <label for="topic-input">News Topic</label>
+                <input type="text" id="topic-input" placeholder="e.g., Latest AI advancements, market trends...">
+            </div>
+            <div class="input-group">
+                <label for="sites-input">Websites (comma-separated)</label>
+                <input type="text" id="sites-input" placeholder="e.g., techcrunch.com, theverge.com, *.gov">
+            </div>
+            <button id="summarize-btn">Summarize News</button>
+        </div>
+
+        <div id="results-container" style="display: none;">
+            <div class="progress-box">
+                <h3>Live Log</h3>
+                <pre id="progress-log"></pre>
+            </div>
+            <div class="summary-box">
+                <h3>Your News Summary</h3>
+                <div id="summary-output"></div>
+            </div>
+        </div>
+    </main>
+    <script src="client.js"></script>
+</body>
+</html>

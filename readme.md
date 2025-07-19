@@ -1,62 +1,45 @@
-Project Documentation: Multi-App Dashboard
+Project Documentation: Multi-Service Dashboard & Toolkit
 Last Updated: July 20, 2025
 
-1. Project Purpose & Core Concept
-The primary goal of this project is to create a single, centralized web dashboard that serves as a launchpad for multiple, independent web applications. This modular architecture allows for easy development and addition of new projects over time without altering the core structure.
+1. Project Overview & Core Concept
+This project is a modular, multi-application toolkit hosted on a central web dashboard. The architecture is designed around a "microservice" concept, where different functionalities are handled by separate, independent applications. This allows for robust, scalable, and maintainable development.
 
-The entire system is designed to be hosted on Render's free tier, making it a cost-effective platform for personal projects and prototypes.
+The project consists of two primary, independently deployable services:
 
-Currently, the dashboard hosts two main applications:
+The Node.js Dashboard: The main user-facing application. It serves as a launchpad for various tools and includes its own native applications like a File Explorer and an e-Paper scraper.
 
-File Explorer: A feature-rich file management system that mimics a desktop file explorer, complete with folder navigation, drag-and-drop actions, and file previews.
+The Python YouTube Downloader: A powerful, standalone Python application that provides both a user-friendly web interface (built with Streamlit) and a robust backend API (built with FastAPI) for downloading and merging high-quality YouTube videos.
 
-e-Paper Digest: A dynamic web scraper that fetches and displays the latest daily newspapers from various online sources.
+The Node.js dashboard seamlessly integrates the Python application using an <iframe>, providing a unified user experience.
 
-2. Application Architecture
-The project is architecturally divided into three main parts: the Dashboard, the File Explorer, and the e-Paper Digest.
+2. High-Level Architecture
+The two services operate independently and are linked at the front-end level.
 
-2.1. The Dashboard (Static Front-End)
-Role: Acts as the main entry point and navigation hub.
+[ User's Browser ]
+       |
+       |--> Accesses [ Node.js Dashboard Service (on Render) ]
+       |                 |
+       |                 |--> Serves Dashboard UI
+       |                 |--> Serves File Explorer App (uses its own Node.js API)
+       |                 |--> Serves e-Paper App (uses its own Node.js API)
+       |                 |--> Serves YT Downloader Page containing an <iframe>
+       |
+       |--> The <iframe> points to [ Python YT Downloader Service (on Render) ]
+                                     |
+                                     |--> Serves Streamlit UI
+                                     |--> Provides a public API for video processing
 
-Technology: A simple, static website built with HTML and CSS. It contains "cards" that link to the various applications.
+3. Application 1: The Node.js Dashboard
+This is the central hub of the project.
 
-2.2. The "File Explorer" Application (Full-Stack)
-Role: A self-contained, full-featured file explorer application.
+3.1. Features
+Main Dashboard: A homepage with cards linking to all integrated applications.
 
-Front-End (apps/filehub/): Built with HTML, CSS, and vanilla JavaScript. It provides a modern user interface with:
+File Explorer: A full-featured file management system with folder creation, drag-and-drop move/upload, file previews, context menus, and direct link sharing.
 
-Folder and file rendering with thumbnails for images/videos.
+e-Paper Digest: A web scraper that fetches and displays the latest daily newspapers, featuring a robust caching system to improve performance.
 
-Drag-and-drop support for both uploading new files and moving existing items into folders or parent directories (via breadcrumbs).
-
-Breadcrumb navigation for easy traversal of the directory structure.
-
-Modals for creating new folders, new text files, and renaming items.
-
-A context menu (right-click) for actions like Rename, Delete, and Copying a direct link.
-
-A built-in previewer for images, videos, and text-based files.
-
-A "Clear All" function to wipe the storage.
-
-Back-End (server.js): The Node.js server handles all file system logic using the fs module and manages uploads with multer.
-
-2.3. The "e-Paper Digest" Application (Dynamic)
-Role: A dynamic application that scrapes and displays newspaper links.
-
-Front-End (apps/epaper/): A clean interface that displays a loading spinner, fetches data from the back-end, and renders a grid of newspaper cards with their logos and links.
-
-Back-End (server.js):
-
-Scraping: Uses axios to fetch HTML from newspaper websites and cheerio to parse the HTML and find the correct download links.
-
-Caching: Implements a 4-hour cache to prevent re-scraping on every request, significantly improving performance and reducing load on the source websites.
-
-Asset Management: Automatically serves local icons from the /assets directory based on the newspaper's name.
-
-3. File Structure & Key Files
-Here is the complete file structure of the project.
-
+3.2. File Structure
 render-dashboard/
 ├── .gitignore
 ├── package.json
@@ -68,149 +51,195 @@ render-dashboard/
 │   └── (newspaper-logos.png)
 ├── apps/
 │   ├── filehub/
-│   │   ├── index.html
-│   │   ├── style.css
-│   │   └── client.js
+│   │   ├── index.html, style.css, client.js
 │   └── epaper/
-│       ├── index.html
-│       ├── style.css
-│       └── client.js
+│       ├── index.html, style.css, client.js
+│   └── ytdownloader/
+│       ├── index.html, style.css
 ├── node_modules/
 └── uploads/
 
-Key File Descriptions
+3.3. Key File Descriptions
 File Path
 
 Description
 
 server.js
 
-The heart of the back-end. This Node.js/Express file starts the web server, serves all static files (/, /apps, /assets, /uploads), and defines all API endpoints for both the File Explorer and the e-Paper scraper.
+The core back-end. This Node.js/Express file runs the web server, serves all static files, and defines all API endpoints for the File Explorer and the e-Paper scraper.
 
 package.json
 
-Node.js project manifest. It lists project metadata and dependencies (express, multer, axios, cheerio). Render uses this file to know what to install with npm install.
+Node.js project manifest. Lists dependencies (express, multer, axios, cheerio).
 
-assets/ (directory)
+index.html (root)
 
-Contains local static assets, such as the newspaper logos, for reliable and fast loading.
+The main dashboard homepage.
+
+assets/
+
+Contains static assets like newspaper logos.
 
 apps/filehub/client.js
 
-Front-end logic for the File Explorer. This extensive file manages the application's state, handles all user interactions (drag-drop, clicks, context menus), makes API calls, and dynamically renders the UI.
+Front-end logic for the File Explorer. Manages state, handles all user interactions (drag-drop, clicks), makes API calls, and renders the UI.
 
 apps/epaper/client.js
 
-Front-end logic for the e-Paper app. This file fetches data from the /api/newspapers endpoint and renders the results into the grid.
+Front-end logic for the e-Paper app. Fetches data from the /api/newspapers endpoint.
 
-uploads/ (directory)
+apps/ytdownloader/index.html
 
-File storage location. The server saves all uploaded files and created folders here. This directory is intentionally not tracked by Git.
+A simple page that embeds the Python Streamlit application via an <iframe>.
 
-4. API Endpoints
-The server.js exposes the following API endpoints, all prefixed with /api.
+uploads/
 
+Temporary file storage for the File Explorer. Subject to Render's ephemeral filesystem.
+
+3.4. API Endpoints (Node.js Service)
 Method
 
 Endpoint
-
-Body / Query
 
 Description
 
 GET
 
-/files
+/api/files
 
-?path=<folder>
-
-File Explorer: Lists all files and folders within the specified path.
+File Explorer: Lists contents of a directory.
 
 POST
 
-/upload
+/api/upload
 
-FormData
-
-File Explorer: Uploads a single file to the specified path.
+File Explorer: Uploads a file.
 
 POST
 
-/folders
-
-{name, path}
+/api/folders
 
 File Explorer: Creates a new folder.
 
 POST
 
-/text-file
-
-{filename, content, path}
+/api/text-file
 
 File Explorer: Creates a new .txt file.
 
 PUT
 
-/rename
-
-{oldName, newName, path}
+/api/rename
 
 File Explorer: Renames a file or folder.
 
 PUT
 
-/move
-
-{sourcePath, targetPath}
+/api/move
 
 File Explorer: Moves a file or folder.
 
 DELETE
 
-/delete
+/api/delete
 
-{name, path}
-
-File Explorer: Deletes a specific file or folder.
+File Explorer: Deletes a specific item.
 
 DELETE
 
-/clear-all
+/api/clear-all
 
-(none)
-
-File Explorer: Deletes all contents of the root uploads directory.
+File Explorer: Deletes all contents.
 
 GET
 
-/newspapers
+/api/newspapers
 
-(none)
+e-Paper: Scrapes or retrieves newspaper links from cache.
 
-e-Paper: Scrapes or retrieves from cache the list of newspapers and their links.
+3.5. Deployment (Render)
+Type: Web Service
 
-5. Deployment on Render
-The project is deployed as a single Web Service on Render.
-
-Repository: Render is connected directly to the project's GitHub repository.
+Runtime: Node
 
 Build Command: npm install
 
 Start Command: node server.js
 
-Important Consideration: Ephemeral Filesystem
-Render's free tier uses an ephemeral filesystem. This means that any files written to the disk (like those in the /uploads folder) are temporary. They will be permanently deleted whenever the service restarts or spins down due to inactivity (15 minutes). This makes the current File Explorer app suitable for temporary file sharing and testing but not for permanent storage.
+4. Application 2: The Python YouTube Downloader
+A standalone, powerful service for processing YouTube videos.
 
-6. Future Development
-To add a new application (e.g., "ToDo List"):
+4.1. Features
+Streamlit UI: A user-friendly, interactive web interface for pasting a URL, selecting qualities, and downloading the final video. Includes a live terminal log.
 
-Create a new folder inside /apps (e.g., /apps/todolist/).
+FastAPI Backend: A robust API that handles fetching video info and processing downloads.
 
-Build the new app's front-end (HTML, CSS, JS) inside its new folder.
+High-Quality Downloads: Merges separate video and audio streams using FFmpeg to provide the highest possible quality.
 
-Add new API endpoints to the main server.js file to handle the back-end logic for the new app.
+4.2. File Structure
+youtube_downloader/
+├── main.py
+├── requirements.txt
+├── packages.txt
+└── temp_downloads/
 
-Add a new "app card" to the main index.html dashboard, linking to the new app's HTML file.
+4.3. Key File Descriptions
+File Path
 
-For any app requiring persistent data (like a ToDo list), a database (e.g., Render's free Postgres) will need to be added.
+Description
+
+main.py
+
+The entire application. This single file contains both the FastAPI application (for the API) and the Streamlit application (for the UI). It uses advanced techniques to serve both from the same process.
+
+requirements.txt
+
+Python dependencies. Lists all required Python libraries (streamlit, fastapi, pytubefix, etc.) for pip.
+
+packages.txt
+
+System dependencies. Tells Render's environment to install ffmpeg using the system package manager.
+
+temp_downloads/
+
+Temporary file storage for downloaded and merged videos. Subject to Render's ephemeral filesystem.
+
+4.4. API Endpoints (Python Service)
+Method
+
+Endpoint
+
+Description
+
+GET
+
+/api/info
+
+Fetches video metadata, thumbnail, and available video/audio streams with their itags.
+
+GET
+
+/api/download
+
+Takes a URL, video itag, and audio itag. Downloads both, merges them, and returns the final video file.
+
+4.5. Deployment (Render)
+Type: Web Service
+
+Runtime: Python 3
+
+Build Command: pip install -r requirements.txt
+
+Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+5. Future Development
+To Add a New App to the Node.js Dashboard:
+Create a new folder inside /apps (e.g., /apps/todo-list/).
+
+Build the app's front-end (HTML, CSS, JS) inside its new folder.
+
+If it requires a backend, add new API endpoints to the main server.js file.
+
+Add a new "app card" to the root index.html dashboard, linking to the new app.
+
+For any app requiring persistent data, a database (e.g., Render's free Postgres) will need to be added to the Node.js service.
