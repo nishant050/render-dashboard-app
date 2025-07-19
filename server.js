@@ -273,111 +273,127 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
-// --- API Routes (News Agent - NEW & IMPROVED) ---
+// --- API Routes (News Agent - MULTI-SECTION) ---
 const settingsFilePath = path.join(__dirname, 'news_settings.json');
 
-// 12. GET NEWS SETTINGS
-app.get('/api/news-settings', async (req, res) => {
+// Helper to read/write settings
+const readSettings = async () => JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf-8'));
+const writeSettings = async (data) => await fsPromises.writeFile(settingsFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+// 12. GET ALL NEWS SECTIONS
+app.get('/api/news-sections', async (req, res) => {
     try {
-        const settings = await fsPromises.readFile(settingsFilePath, 'utf-8');
-        res.json(JSON.parse(settings));
-    } catch (error) {
-        console.error("Error reading settings:", error);
-        res.status(500).send("Could not load settings.");
-    }
+        const sections = await readSettings();
+        res.json(sections);
+    } catch (error) { res.status(500).send("Could not load sections."); }
 });
 
-// 13. SAVE NEWS SETTINGS
-app.post('/api/news-settings', async (req, res) => {
+// 13. ADD A NEWS SECTION
+app.post('/api/news-sections', async (req, res) => {
     try {
-        const { topic, sites, model } = req.body;
-        if (!topic || !sites || !model) {
-            return res.status(400).send("All settings fields are required.");
-        }
-        const newSettings = JSON.stringify({ topic, sites, model }, null, 2);
-        await fsPromises.writeFile(settingsFilePath, newSettings, 'utf-8');
-        res.json({ message: "Settings saved successfully." });
-    } catch (error) {
-        console.error("Error saving settings:", error);
-        res.status(500).send("Could not save settings.");
-    }
+        const { title, topic, sites, model } = req.body;
+        if (!title || !topic || !sites || !model) return res.status(400).send("All fields are required.");
+        
+        const sections = await readSettings();
+        const newSection = { id: Date.now().toString(), title, topic, sites, model };
+        sections.push(newSection);
+        await writeSettings(sections);
+        res.status(201).json(newSection);
+    } catch (error) { res.status(500).send("Could not save new section."); }
 });
 
+// 14. UPDATE A NEWS SECTION
+app.put('/api/news-sections/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, topic, sites, model } = req.body;
+        let sections = await readSettings();
+        const index = sections.findIndex(s => s.id === id);
+        if (index === -1) return res.status(404).send("Section not found.");
 
-// 14. SUMMARIZE NEWS (UPGRADED)
-app.get('/api/summarize-news', async (req, res) => {
+        sections[index] = { id, title, topic, sites, model };
+        await writeSettings(sections);
+        res.json(sections[index]);
+    } catch (error) { res.status(500).send("Could not update section."); }
+});
+
+// 15. DELETE A NEWS SECTION
+app.delete('/api/news-sections/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        let sections = await readSettings();
+        const filteredSections = sections.filter(s => s.id !== id);
+        if (sections.length === filteredSections.length) return res.status(404).send("Section not found.");
+
+        await writeSettings(filteredSections);
+        res.status(204).send();
+    } catch (error) { res.status(500).send("Could not delete section."); }
+});
+
+// 16. SUMMARIZE ALL SECTIONS (PARALLEL)
+app.get('/api/summarize-all', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const sendEvent = (data) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+    const processSection = async (section) => {
+        try {
+            const { id, title, topic, sites, model } = section;
+            sendEvent({ type: 'status', sectionId: id, message: `🔍 Initializing "${title}"...` });
+            const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
+            if (siteList.length === 0) throw new Error("No valid sites in settings.");
+
+            const userPrompt = `
+                Please act as an expert news analyst. Your task is to provide a comprehensive, well-structured summary of the latest news regarding the topic: "${topic}".
+                You MUST restrict your search to the following websites: ${siteList.join(', ')}.
+                Your process is as follows:
+                1. Perform web searches across these sites to gather all relevant articles and information.
+                2. From the gathered articles, identify and extract the URLs of 1 to 3 of the most relevant and high-quality images that visually represent the news.
+                3. Synthesize all the gathered text information into a single, cohesive news article written in Markdown format.
+                The final output must be a single JSON object containing two keys: "summary" and "images".
+                - The "summary" key must contain the news article in Markdown. The article should have a clear headline (e.g., "# Headline"), an introductory paragraph, and several key bullet points (e.g., "* Point 1").
+                - The "images" key must contain a JSON array of the image URLs you extracted.
+                Do not output anything other than the final JSON object.
+            `;
+
+            sendEvent({ type: 'status', sectionId: id, message: `Searching across ${siteList.length} sites...` });
+            const completion = await groq.chat.completions.create({
+                messages: [{ role: 'user', content: userPrompt }], model, search_settings: { include_domains: siteList }
+            });
+            
+            const responseContent = completion.choices[0].message.content;
+            sendEvent({ type: 'status', sectionId: id, message: `✅ Search complete. Parsing summary...` });
+
+            let parsedResponse;
+            try {
+                const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error("No valid JSON object found in the model's response.");
+                parsedResponse = JSON.parse(jsonMatch[0]);
+            } catch (parseError) {
+                parsedResponse = { summary: "The model returned a response that could not be automatically parsed.", images: [] };
+            }
+            
+            sendEvent({ type: 'result', sectionId: id, data: parsedResponse });
+
+        } catch (error) {
+            console.error(`Error processing section ${section.id}:`, error);
+            sendEvent({ type: 'error', sectionId: section.id, message: error.message });
+        }
     };
 
     try {
-        const settingsData = await fsPromises.readFile(settingsFilePath, 'utf-8');
-        const settings = JSON.parse(settingsData);
-        const { topic, sites, model } = settings;
-
-        const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
-        if (siteList.length === 0) throw new Error("No valid sites in settings.");
-
-        sendEvent({ type: 'status', message: `🔍 Initializing news agent for topic: "${topic}"...` });
-        sendEvent({ type: 'status', message: `Using model: ${model}` });
-
-        const userPrompt = `
-            Please act as an expert news analyst. Your task is to provide a comprehensive, well-structured summary of the latest news regarding the topic: "${topic}".
-            You MUST restrict your search to the following websites: ${siteList.join(', ')}.
-            
-            Your process is as follows:
-            1. Perform web searches across these sites to gather all relevant articles and information.
-            2. From the gathered articles, identify and extract the URLs of 1 to 3 of the most relevant and high-quality images that visually represent the news.
-            3. Synthesize all the gathered text information into a single, cohesive news article written in Markdown format.
-            
-            The final output must be a single JSON object containing two keys: "summary" and "images".
-            - The "summary" key must contain the news article in Markdown. The article should have a clear headline (e.g., "# Headline"), an introductory paragraph, and several key bullet points (e.g., "* Point 1").
-            - The "images" key must contain a JSON array of the image URLs you extracted.
-            
-            Do not output anything other than the final JSON object.
-        `;
-
-        sendEvent({ type: 'status', message: `Searching across ${siteList.length} specified site(s)...` });
-
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: 'user', content: userPrompt }],
-            model: model,
-            search_settings: { include_domains: siteList }
-        });
-        
-        const responseContent = completion.choices[0].message.content;
-        sendEvent({ type: 'status', message: '✅ Search complete. Parsing summary...' });
-
-        // Clean and parse the JSON response from Groq
-        let parsedResponse;
-        try {
-            // Find the JSON part of the response, even if there's extra text
-            const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error("No valid JSON object found in the model's response.");
-            parsedResponse = JSON.parse(jsonMatch[0]);
-        } catch (parseError) {
-            console.error("Failed to parse Groq response:", parseError);
-            // If parsing fails, send the raw text as a fallback
-            parsedResponse = { summary: "The model returned a response that could not be automatically parsed.", images: [] };
-        }
-
-        sendEvent({ type: 'images', data: parsedResponse.images || [] });
-        sendEvent({ type: 'summary', data: parsedResponse.summary || "No summary was generated." });
-        sendEvent({ type: 'done' });
-
-    } catch (error) {
-        console.error('Groq API Error:', error);
-        sendEvent({ type: 'error', message: error.message || 'Failed to get summary from Groq API.' });
+        const sections = await readSettings();
+        await Promise.all(sections.map(section => processSection(section)));
+    } catch (e) {
+        sendEvent({ type: 'error', sectionId: 'global', message: "Failed to read settings file." });
     } finally {
+        sendEvent({ type: 'done' });
         res.end();
     }
 });
-
 
 // --- Server Start ---
 app.listen(PORT, () => {

@@ -3,62 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI News Agent</title>
+    <title>AI News Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <nav>
         <a href="../../index.html">&larr; Back to Dashboard</a>
         <div class="nav-actions">
-            <button id="refresh-btn">🔄 Refresh</button>
-            <button id="settings-btn">⚙️ Settings</button>
+            <button id="settings-btn">⚙️ Manage Sections</button>
         </div>
     </nav>
 
-    <main class="container">
-        <!-- Main Article View -->
-        <div id="article-view" class="view">
-            <div class="article-column">
-                <div id="image-gallery"></div>
-                <div id="summary-output">
-                    <div class="placeholder">
-                        <h2>Your News Summary</h2>
-                        <p>Loading news based on your settings...</p>
-                    </div>
-                </div>
-            </div>
-            <div class="log-column">
-                <div class="progress-box">
-                    <h3>Live Log</h3>
-                    <pre id="progress-log"></pre>
-                </div>
-            </div>
-        </div>
+    <main id="main-container" class="container">
+        <!-- News sections will be dynamically inserted here -->
+    </main>
 
-        <!-- Settings View -->
-        <div id="settings-view" class="view" style="display: none;">
-            <div class="settings-form">
-                <h2>News Agent Settings</h2>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-container" style="display: none;">
+        <div class="modal-content">
+            <span class="close-btn" id="close-modal-btn">&times;</span>
+            <h2>Manage News Sections</h2>
+            <div id="sections-list"></div>
+            <hr>
+            <h3>Add or Edit Section</h3>
+            <form id="section-form">
+                <input type="hidden" id="section-id">
                 <div class="input-group">
-                    <label for="topic-input">News Topic</label>
-                    <input type="text" id="topic-input" placeholder="e.g., Latest AI advancements">
+                    <label for="section-title">Section Title</label>
+                    <input type="text" id="section-title" placeholder="e.g., AI & Tech News" required>
                 </div>
                 <div class="input-group">
-                    <label for="sites-input">Websites (comma-separated)</label>
-                    <input type="text" id="sites-input" placeholder="e.g., techcrunch.com, *.gov">
+                    <label for="section-topic">Topic / Prompt</label>
+                    <textarea id="section-topic" rows="4" placeholder="e.g., Latest breakthroughs in AI..." required></textarea>
                 </div>
                 <div class="input-group">
-                    <label for="model-select">AI Model</label>
-                    <select id="model-select">
+                    <label for="section-sites">Websites (comma-separated)</label>
+                    <input type="text" id="section-sites" placeholder="e.g., techcrunch.com, theverge.com" required>
+                </div>
+                <div class="input-group">
+                    <label for="section-model">AI Model</label>
+                    <select id="section-model">
                         <option value="compound-beta">Compound Beta (Powerful)</option>
                         <option value="compound-beta-mini">Compound Beta Mini (Fast)</option>
                         <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
                     </select>
                 </div>
-                <button id="save-settings-btn">Save and Generate News</button>
-            </div>
+                <div class="form-actions">
+                    <button type="submit" id="save-section-btn">Save Section</button>
+                    <button type="button" id="clear-form-btn">New Section</button>
+                </div>
+            </form>
         </div>
-    </main>
+    </div>
+    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="client.js"></script>
 </body>

@@ -1,5 +1,16 @@
-{
-  "topic": "Latest advancements in AI",
-  "sites": "techcrunch.com, theverge.com, arxiv.org",
-  "model": "compound-beta"
-}
+[
+  {
+    "id": "1721424600001",
+    "title": "AI & Open Source News",
+    "topic": "Latest breakthroughs and powerful free-tier releases in generative AI, focusing on open-source models and major platforms like OpenAI (GPT), Google (Gemini), Anthropic (Claude), and Groq. Specifically search for advancements in free-to-use image and video generation tools.",
+    "sites": "techcrunch.com, theverge.com, arxiv.org, huggingface.co/blog, venturebeat.com",
+    "model": "compound-beta"
+  },
+  {
+    "id": "1721424600002",
+    "title": "Haryana News",
+    "topic": "Summarize the most important local news from Haryana, focusing on developments in Hisar, infrastructure projects, and local government announcements.",
+    "sites": "tribuneindia.com, timesofindia.indiatimes.com/city/gurgaon, hindustantimes.com/cities/chandigarh-news",
+    "model": "compound-beta-mini"
+  }
+]
