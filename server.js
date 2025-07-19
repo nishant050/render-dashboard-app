@@ -5,9 +5,11 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const axios = require('axios');
 const cheerio = require('cheerio');
+const Groq = require('groq-sdk');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -271,26 +273,39 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
-// --- Groq News Agent Dependencies ---
-const Groq = require('groq-sdk');
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// --- API Routes (News Agent - NEW & IMPROVED) ---
+const settingsFilePath = path.join(__dirname, 'news_settings.json');
 
-// --- API Routes (News Agent) ---
+// 12. GET NEWS SETTINGS
+app.get('/api/news-settings', async (req, res) => {
+    try {
+        const settings = await fsPromises.readFile(settingsFilePath, 'utf-8');
+        res.json(JSON.parse(settings));
+    } catch (error) {
+        console.error("Error reading settings:", error);
+        res.status(500).send("Could not load settings.");
+    }
+});
 
-// 12. SUMMARIZE NEWS using Groq Agentic Tooling
+// 13. SAVE NEWS SETTINGS
+app.post('/api/news-settings', async (req, res) => {
+    try {
+        const { topic, sites, model } = req.body;
+        if (!topic || !sites || !model) {
+            return res.status(400).send("All settings fields are required.");
+        }
+        const newSettings = JSON.stringify({ topic, sites, model }, null, 2);
+        await fsPromises.writeFile(settingsFilePath, newSettings, 'utf-8');
+        res.json({ message: "Settings saved successfully." });
+    } catch (error) {
+        console.error("Error saving settings:", error);
+        res.status(500).send("Could not save settings.");
+    }
+});
+
+
+// 14. SUMMARIZE NEWS (UPGRADED)
 app.get('/api/summarize-news', async (req, res) => {
-    const { topic, sites } = req.query;
-
-    if (!topic || !sites) {
-        return res.status(400).send('Topic and sites are required.');
-    }
-
-    const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
-    if (siteList.length === 0) {
-        return res.status(400).send('At least one valid site is required.');
-    }
-
-    // Set up headers for Server-Sent Events (SSE)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -301,43 +316,68 @@ app.get('/api/summarize-news', async (req, res) => {
     };
 
     try {
+        const settingsData = await fsPromises.readFile(settingsFilePath, 'utf-8');
+        const settings = JSON.parse(settingsData);
+        const { topic, sites, model } = settings;
+
+        const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
+        if (siteList.length === 0) throw new Error("No valid sites in settings.");
+
         sendEvent({ type: 'status', message: `🔍 Initializing news agent for topic: "${topic}"...` });
+        sendEvent({ type: 'status', message: `Using model: ${model}` });
 
         const userPrompt = `
-            Please act as an expert news analyst. Your task is to provide a concise, well-structured summary of the latest news regarding the topic: "${topic}".
+            Please act as an expert news analyst. Your task is to provide a comprehensive, well-structured summary of the latest news regarding the topic: "${topic}".
             You MUST restrict your search to the following websites: ${siteList.join(', ')}.
-            First, perform a web search across these sites to gather all relevant articles and information.
-            After gathering the information, synthesize it into a single, cohesive news article.
-            The article should have a clear headline, a brief introductory paragraph, and several key bullet points summarizing the main findings.
-            Conclude with a short sentence on the overall sentiment or outlook.
-            Do not mention your process; only output the final news article.
+            
+            Your process is as follows:
+            1. Perform web searches across these sites to gather all relevant articles and information.
+            2. From the gathered articles, identify and extract the URLs of 1 to 3 of the most relevant and high-quality images that visually represent the news.
+            3. Synthesize all the gathered text information into a single, cohesive news article written in Markdown format.
+            
+            The final output must be a single JSON object containing two keys: "summary" and "images".
+            - The "summary" key must contain the news article in Markdown. The article should have a clear headline (e.g., "# Headline"), an introductory paragraph, and several key bullet points (e.g., "* Point 1").
+            - The "images" key must contain a JSON array of the image URLs you extracted.
+            
+            Do not output anything other than the final JSON object.
         `;
 
         sendEvent({ type: 'status', message: `Searching across ${siteList.length} specified site(s)...` });
 
         const completion = await groq.chat.completions.create({
             messages: [{ role: 'user', content: userPrompt }],
-            model: "compound-beta", // Use the powerful agentic model
-            search_settings: {
-                include_domains: siteList // Restrict search to these domains
-            }
+            model: model,
+            search_settings: { include_domains: siteList }
         });
         
-        const summary = completion.choices[0].message.content;
-        const executedTools = completion.choices[0].message.executed_tools;
+        const responseContent = completion.choices[0].message.content;
+        sendEvent({ type: 'status', message: '✅ Search complete. Parsing summary...' });
 
-        sendEvent({ type: 'status', message: '✅ Search complete. Generating summary...' });
-        sendEvent({ type: 'tools', data: executedTools });
-        sendEvent({ type: 'summary', data: summary });
+        // Clean and parse the JSON response from Groq
+        let parsedResponse;
+        try {
+            // Find the JSON part of the response, even if there's extra text
+            const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) throw new Error("No valid JSON object found in the model's response.");
+            parsedResponse = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+            console.error("Failed to parse Groq response:", parseError);
+            // If parsing fails, send the raw text as a fallback
+            parsedResponse = { summary: "The model returned a response that could not be automatically parsed.", images: [] };
+        }
+
+        sendEvent({ type: 'images', data: parsedResponse.images || [] });
+        sendEvent({ type: 'summary', data: parsedResponse.summary || "No summary was generated." });
         sendEvent({ type: 'done' });
 
     } catch (error) {
         console.error('Groq API Error:', error);
-        sendEvent({ type: 'error', message: 'Failed to get summary from Groq API.' });
+        sendEvent({ type: 'error', message: error.message || 'Failed to get summary from Groq API.' });
     } finally {
         res.end();
     }
 });
+
 
 // --- Server Start ---
 app.listen(PORT, () => {

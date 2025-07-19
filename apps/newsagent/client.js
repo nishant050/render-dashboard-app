@@ -1,71 +1,130 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM Elements ---
+    const articleView = document.getElementById('article-view');
+    const settingsView = document.getElementById('settings-view');
+    const settingsBtn = document.getElementById('settings-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
     const topicInput = document.getElementById('topic-input');
     const sitesInput = document.getElementById('sites-input');
-    const summarizeBtn = document.getElementById('summarize-btn');
-    const resultsContainer = document.getElementById('results-container');
+    const modelSelect = document.getElementById('model-select');
     const progressLog = document.getElementById('progress-log');
     const summaryOutput = document.getElementById('summary-output');
+    const imageGallery = document.getElementById('image-gallery');
 
     let eventSource;
 
-    summarizeBtn.addEventListener('click', () => {
-        const topic = topicInput.value.trim();
-        const sites = sitesInput.value.trim();
-
-        if (!topic || !sites) {
-            alert('Please provide both a topic and at least one website.');
-            return;
-        }
-
-        // Reset UI
-        resultsContainer.style.display = 'block';
+    // --- Core Functions ---
+    const generateNews = () => {
+        // Reset UI for new generation
         progressLog.textContent = '';
-        summaryOutput.innerHTML = 'Thinking...';
-        summarizeBtn.disabled = true;
-        summarizeBtn.textContent = 'Processing...';
+        summaryOutput.innerHTML = '<div class="placeholder"><h2>Generating News...</h2><p>The AI agent is reading the latest articles for you.</p></div>';
+        imageGallery.innerHTML = '';
+        
+        if (eventSource) eventSource.close();
 
-        // Close any existing connection
-        if (eventSource) {
-            eventSource.close();
-        }
-
-        // Start new SSE connection
-        const url = `/api/summarize-news?topic=${encodeURIComponent(topic)}&sites=${encodeURIComponent(sites)}`;
-        eventSource = new EventSource(url);
+        eventSource = new EventSource('/api/summarize-news');
 
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
             if (data.type === 'status') {
                 progressLog.textContent += data.message + '\n';
-            } else if (data.type === 'tools') {
-                progressLog.textContent += `\nTools Used:\n${JSON.stringify(data.data, null, 2)}\n\n`;
+            } else if (data.type === 'images') {
+                imageGallery.innerHTML = ''; // Clear before adding new images
+                data.data.forEach(src => {
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.onerror = () => img.style.display = 'none'; // Hide broken images
+                    imageGallery.appendChild(img);
+                });
             } else if (data.type === 'summary') {
-                // A simple markdown-to-html converter
-                let html = data.data
-                    .replace(/^# (.*$)/g, '<h4>$1</h4>') // H1 -> H4
-                    .replace(/^\* (.*$)/g, '<ul><li>$1</li></ul>') // Bullets
-                    .replace(/<\/ul>\s?<ul>/g, ''); // Merge consecutive lists
-                summaryOutput.innerHTML = html;
+                summaryOutput.innerHTML = marked.parse(data.data); // Use Marked.js to parse markdown
             } else if (data.type === 'done') {
-                progressLog.textContent += '✅ Process complete.';
+                progressLog.textContent += '\n✅ Process complete.';
                 eventSource.close();
-                summarizeBtn.disabled = false;
-                summarizeBtn.textContent = 'Summarize News';
             } else if (data.type === 'error') {
-                 progressLog.textContent += `\n❌ Error: ${data.message}`;
-                 summaryOutput.innerHTML = `<p style="color: red;">${data.message}</p>`;
-                 eventSource.close();
-                 summarizeBtn.disabled = false;
-                 summarizeBtn.textContent = 'Summarize News';
+                progressLog.textContent += `\n❌ Error: ${data.message}`;
+                summaryOutput.innerHTML = `<p style="color: red;">An error occurred: ${data.message}</p>`;
+                eventSource.close();
             }
         };
 
         eventSource.onerror = () => {
             progressLog.textContent += '\n❌ Connection to server lost.';
             eventSource.close();
-            summarizeBtn.disabled = false;
-            summarizeBtn.textContent = 'Summarize News';
         };
+    };
+
+    const loadSettings = async () => {
+        try {
+            const response = await fetch('/api/news-settings');
+            const settings = await response.json();
+            topicInput.value = settings.topic;
+            sitesInput.value = settings.sites;
+            modelSelect.value = settings.model;
+            return true;
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+            // If settings fail to load, show the settings page by default
+            showSettingsView();
+            return false;
+        }
+    };
+
+    const saveSettings = async () => {
+        const settings = {
+            topic: topicInput.value.trim(),
+            sites: sitesInput.value.trim(),
+            model: modelSelect.value,
+        };
+        try {
+            await fetch('/api/news-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            return true;
+        } catch (error) {
+            console.error('Failed to save settings:', error);
+            alert('Error: Could not save settings.');
+            return false;
+        }
+    };
+
+    // --- View Management ---
+    const showArticleView = () => {
+        articleView.style.display = 'flex';
+        settingsView.style.display = 'none';
+    };
+    const showSettingsView = () => {
+        articleView.style.display = 'none';
+        settingsView.style.display = 'block';
+    };
+
+    // --- Event Listeners ---
+    settingsBtn.addEventListener('click', showSettingsView);
+    refreshBtn.addEventListener('click', () => {
+        showArticleView();
+        generateNews();
     });
+
+    saveSettingsBtn.addEventListener('click', async () => {
+        const success = await saveSettings();
+        if (success) {
+            showArticleView();
+            generateNews();
+        }
+    });
+
+    // --- Initial Load ---
+    const initialize = async () => {
+        const settingsLoaded = await loadSettings();
+        if (settingsLoaded) {
+            showArticleView();
+            generateNews();
+        }
+    };
+
+    initialize();
 });

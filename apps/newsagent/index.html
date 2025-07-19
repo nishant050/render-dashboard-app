@@ -9,34 +9,57 @@
 <body>
     <nav>
         <a href="../../index.html">&larr; Back to Dashboard</a>
+        <div class="nav-actions">
+            <button id="refresh-btn">🔄 Refresh</button>
+            <button id="settings-btn">⚙️ Settings</button>
+        </div>
     </nav>
-    <main class="container">
-        <h1>🤖 AI News Agent</h1>
-        <p class="subtitle">Get AI-powered news summaries from the sources you trust.</p>
 
-        <div class="form-container">
-            <div class="input-group">
-                <label for="topic-input">News Topic</label>
-                <input type="text" id="topic-input" placeholder="e.g., Latest AI advancements, market trends...">
+    <main class="container">
+        <!-- Main Article View -->
+        <div id="article-view" class="view">
+            <div class="article-column">
+                <div id="image-gallery"></div>
+                <div id="summary-output">
+                    <div class="placeholder">
+                        <h2>Your News Summary</h2>
+                        <p>Loading news based on your settings...</p>
+                    </div>
+                </div>
             </div>
-            <div class="input-group">
-                <label for="sites-input">Websites (comma-separated)</label>
-                <input type="text" id="sites-input" placeholder="e.g., techcrunch.com, theverge.com, *.gov">
+            <div class="log-column">
+                <div class="progress-box">
+                    <h3>Live Log</h3>
+                    <pre id="progress-log"></pre>
+                </div>
             </div>
-            <button id="summarize-btn">Summarize News</button>
         </div>
 
-        <div id="results-container" style="display: none;">
-            <div class="progress-box">
-                <h3>Live Log</h3>
-                <pre id="progress-log"></pre>
-            </div>
-            <div class="summary-box">
-                <h3>Your News Summary</h3>
-                <div id="summary-output"></div>
+        <!-- Settings View -->
+        <div id="settings-view" class="view" style="display: none;">
+            <div class="settings-form">
+                <h2>News Agent Settings</h2>
+                <div class="input-group">
+                    <label for="topic-input">News Topic</label>
+                    <input type="text" id="topic-input" placeholder="e.g., Latest AI advancements">
+                </div>
+                <div class="input-group">
+                    <label for="sites-input">Websites (comma-separated)</label>
+                    <input type="text" id="sites-input" placeholder="e.g., techcrunch.com, *.gov">
+                </div>
+                <div class="input-group">
+                    <label for="model-select">AI Model</label>
+                    <select id="model-select">
+                        <option value="compound-beta">Compound Beta (Powerful)</option>
+                        <option value="compound-beta-mini">Compound Beta Mini (Fast)</option>
+                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                    </select>
+                </div>
+                <button id="save-settings-btn">Save and Generate News</button>
             </div>
         </div>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="client.js"></script>
 </body>
 </html>
