@@ -347,16 +347,24 @@ app.get('/api/summarize-all', async (req, res) => {
             if (siteList.length === 0) throw new Error("No valid sites in settings.");
 
             const userPrompt = `
-                Please act as an expert news analyst. Your task is to provide a comprehensive, well-structured summary of the latest news regarding the topic: "${topic}".
-                You MUST restrict your search to the following websites: ${siteList.join(', ')}.
-                Your process is as follows:
-                1. Perform web searches across these sites to gather all relevant articles and information.
-                2. From the gathered articles, identify and extract the URLs of 1 to 3 of the most relevant and high-quality images that visually represent the news.
-                3. Synthesize all the gathered text information into a single, cohesive news article written in Markdown format.
-                The final output must be a single JSON object containing two keys: "summary" and "images".
-                - The "summary" key must contain the news article in Markdown. The article should have a clear headline (e.g., "# Headline"), an introductory paragraph, and several key bullet points (e.g., "* Point 1").
-                - The "images" key must contain a JSON array of the image URLs you extracted.
-                Do not output anything other than the final JSON object.
+                Your response MUST be a single, valid JSON object and nothing else. Do not include any introductory text, closing remarks, or any other content outside of the JSON object.
+
+                You are an expert news analyst. Your task is to provide a comprehensive summary of the latest news on the topic: "${topic}".
+                You MUST restrict your web search to ONLY the following websites: ${siteList.join(', ')}.
+
+                Follow these steps precisely:
+                1. Perform web searches across the specified sites to gather relevant articles.
+                2. From the articles, identify and extract the URLs of 1 to 3 of the most relevant, high-quality images that visually represent the news.
+                3. Synthesize the text information into a cohesive news article in Markdown format. The article must have a headline (e.g., "# Headline"), an introduction, and several key bullet points (e.g., "* Point 1").
+                
+                Your final output must be a single JSON object structured exactly like this example:
+                {
+                  "summary": "# Example Headline\\n\\nThis is the introductory paragraph.\\n\\n* This is the first key point.\\n* This is the second key point.",
+                  "images": [
+                    "https://example.com/image1.jpg",
+                    "https://example.com/image2.png"
+                  ]
+                }
             `;
 
             sendEvent({ type: 'status', sectionId: id, message: `Searching across ${siteList.length} sites...` });
