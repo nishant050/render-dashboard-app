@@ -54,20 +54,54 @@ document.addEventListener('DOMContentLoaded', () => {
         breadcrumb.innerHTML = '';
         const parts = currentPath.split('/').filter(p => p);
         let path = '';
-        const rootLink = document.createElement('a');
-        rootLink.href = '#';
-        rootLink.textContent = 'Root';
-        rootLink.onclick = (e) => { e.preventDefault(); navigateTo(''); };
-        breadcrumb.appendChild(rootLink);
-        parts.forEach(part => {
-            path += `${part}/`;
+
+        const createBreadcrumbLink = (text, linkPath) => {
             const link = document.createElement('a');
             link.href = '#';
-            link.textContent = part;
+            link.textContent = text;
+            link.onclick = (e) => { e.preventDefault(); navigateTo(linkPath); };
+
+            // Add drop support for moving items up the directory tree
+            link.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (draggedItem) { // Only show highlight if an internal item is being dragged
+                    link.style.backgroundColor = '#e9f5ff';
+                }
+            });
+            link.addEventListener('dragleave', (e) => {
+                e.stopPropagation();
+                link.style.backgroundColor = '';
+            });
+            link.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                link.style.backgroundColor = '';
+                if (draggedItem) {
+                    const sourcePath = pathJoin(currentPath, draggedItem.dataset.name);
+                    const targetPath = pathJoin(linkPath, draggedItem.dataset.name);
+
+                    // Prevent dropping an item into its own current directory via breadcrumb
+                    if (pathJoin(currentPath) === linkPath) return;
+
+                    try {
+                        await apiCall('/api/move', 'PUT', { sourcePath, targetPath });
+                        renderFiles(); // Refresh the view
+                    } catch (error) {
+                        alert(`Error moving file: ${error.message}`);
+                    }
+                }
+            });
+            return link;
+        };
+
+        breadcrumb.appendChild(createBreadcrumbLink('Root', ''));
+
+        parts.forEach(part => {
+            path += `${part}/`;
             const currentPartPath = path.slice(0, -1);
-            link.onclick = (e) => { e.preventDefault(); navigateTo(currentPartPath); };
             breadcrumb.appendChild(document.createTextNode(' / '));
-            breadcrumb.appendChild(link);
+            breadcrumb.appendChild(createBreadcrumbLink(part, currentPartPath));
         });
     };
 
@@ -75,10 +109,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const ext = filename.split('.').pop().toLowerCase();
         const filePath = `/uploads/${pathJoin(currentPath, filename)}`;
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-            return `<img src="${filePath}" alt="${filename}" loading="lazy">`;
+            // Add draggable="false" to prevent browser's native image drag behavior
+            return `<img src="${filePath}" alt="${filename}" loading="lazy" draggable="false">`;
         }
         if (['mp4', 'webm'].includes(ext)) {
-            return `<video src="${filePath}#t=0.1" preload="metadata"></video>`;
+            // Add draggable="false" for consistency
+            return `<video src="${filePath}#t=0.1" preload="metadata" draggable="false"></video>`;
         }
         return '📄'; // Default icon
     };
@@ -141,6 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) { alert(`Error: ${error.message}`); }
         }
     };
+    
+    // --- Folder Creation ---
+    newFolderBtn.onclick = () => {
+        showModal('Create New Folder', 'Folder name', 'Create', async (name) => {
+            if (name) {
+                await apiCall('/api/folders', 'POST', { name, path: currentPath });
+            }
+        });
+    };
 
     // --- Text File Creation ---
     newFileBtn.onclick = () => { textEditorModal.style.display = 'flex'; textEditorFilename.focus(); };
@@ -157,14 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderFiles();
         } catch (error) { alert(`Error creating file: ${error.message}`); }
     };
-    // --- Folder Creation ---
-        newFolderBtn.onclick = () => {
-            showModal('Create New Folder', 'Folder name', 'Create', async (name) => {
-                if (name) {
-                    await apiCall('/api/folders', 'POST', { name, path: currentPath });
-                }
-            });
-        };
+
     // --- File Upload & Clear All ---
     const uploadFiles = async (files, targetPath) => {
         const formData = new FormData();
@@ -197,6 +235,15 @@ document.addEventListener('DOMContentLoaded', () => {
             draggedItem = e.target;
         }
     });
+
+    fileExplorer.addEventListener('dragend', (e) => {
+        // This is the central cleanup location for any drag operation.
+        draggedItem = null;
+        // Clean up visual styles
+        document.querySelectorAll('.item').forEach(item => item.style.backgroundColor = '');
+        fileExplorer.classList.remove('drag-over');
+    });
+
     fileExplorer.addEventListener('dragover', (e) => {
         e.preventDefault();
         const target = e.target.closest('.item');
@@ -205,11 +252,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         fileExplorer.classList.add('drag-over');
     });
+
     fileExplorer.addEventListener('dragleave', (e) => {
         const target = e.target.closest('.item');
-        if (target) { target.style.backgroundColor = ''; }
+        if (target) {
+            target.style.backgroundColor = '';
+        }
+        // Only remove the main class if leaving the entire explorer area
+        if (e.currentTarget.contains(e.relatedTarget)) return;
         fileExplorer.classList.remove('drag-over');
     });
+
     fileExplorer.addEventListener('drop', async (e) => {
         e.preventDefault();
         fileExplorer.classList.remove('drag-over');
@@ -227,7 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderFiles();
                 } catch (error) { alert(`Error moving file: ${error.message}`); }
             }
-            draggedItem = null;
+            // IMPORTANT: Return here to prevent falling through to the upload logic.
+            // The draggedItem state will be cleaned up by the 'dragend' event.
             return;
         }
 
