@@ -3,14 +3,28 @@
     "id": "1721424600001",
     "title": "AI & Open Source News",
     "topic": "Latest breakthroughs and powerful free-tier releases in generative AI, focusing on open-source models and major platforms like OpenAI (GPT), Google (Gemini), Anthropic (Claude), and Groq. Specifically search for advancements in free-to-use image and video generation tools.",
-    "sites": "techcrunch.com, theverge.com, arxiv.org, huggingface.co/blog, venturebeat.com",
+    "sites": "openai.com/blog,anthropic.com/news,deepmind.google/blog,ai.meta.com/blog,huggingface.co/blog,groq.com/blog,cohere.com/blog,blog.google,developers.googleblog.com,techcrunch.com/tag/artificial-intelligence,theverge.com/artificial-intelligence,venturebeat.com/category/ai,wired.com/tag/artificial-intelligence,arstechnica.com/information-technology/artificial-intelligence,engadget.com/tag/artificial-intelligence,arxiv.org/list/cs.AI/recent,paperswithcode.com,distill.pub,mitibmwatsonailab.mit.edu/news,news.mit.edu/topic/artificial-intelligence2,artificialintelligence-news.com,ai-techpark.com,aihub.org,the-decoder.com,404media.co,aimodels.fyi,github.com,kaggle.com,towardsai.net,towardsdatascience.com,machinelearningmastery.com,aibusiness.com,semianalysis.com,analyticsindiamag.com/category/news,aws.amazon.com/blogs/machine-learning,cloud.google.com/blog/products/ai-machine-learning,azure.microsoft.com/en-us/blog/tag/artificial-intelligence,therundown.ai,superhuman.ai/newsletter,aiweekly.co,technologyreview.com/ai,kdnuggets.com/category/news",
     "model": "compound-beta"
   },
   {
     "id": "1721424600002",
-    "title": "Haryana News",
-    "topic": "Summarize the most important local news from Haryana, focusing on developments in Hisar, infrastructure projects, and local government announcements.",
-    "sites": "tribuneindia.com, timesofindia.indiatimes.com/city/gurgaon, hindustantimes.com/cities/chandigarh-news",
+    "title": "Exam News (HTET, CTET, etc.)",
+    "topic": "Latest HTET Exam, CTET, Geo Scientist, CSIR NET, KVS, NVS, EMRS, and CET related updates. Focus on exam dates, admit card releases, paper postponements, new vacancy details, or any other official announcements.",
+    "sites": "sarkariresult.app, sarkariresult.com, jagranjosh.com/jobs, ndtv.com/education, timesofindia.indiatimes.com/education, nta.ac.in, cbse.gov.in",
+    "model": "compound-beta-mini"
+  },
+  {
+    "id": "1721424600003",
+    "title": "Penukonda, Anantapur News",
+    "topic": "Summarize the most important local news from Penukonda and the surrounding Anantapur district of Andhra Pradesh. Focus on local developments, community events, and government initiatives.",
+    "sites": "eenadu.net/district/anantapur, sakshi.com/andhra-pradesh/anantapur, andhrajyothy.com, thehindu.com/topic/anantapur",
+    "model": "compound-beta-mini"
+  },
+  {
+    "id": "1721424600004",
+    "title": "Haryana News (Hisar Focus)",
+    "topic": "Summarize the latest news from Haryana, with a special focus on developments in and around the city of Hisar. Cover topics like infrastructure, local politics, and significant events.",
+    "sites": "tribuneindia.com/haryana, dainikbhaskar.com/haryana/hisar, amarujala.com/haryana/hisar, jagran.com/haryana/hisar",
     "model": "compound-beta-mini"
   }
 ]
