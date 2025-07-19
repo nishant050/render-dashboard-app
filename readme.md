@@ -6,7 +6,7 @@ The primary goal of this project is to create a single, centralized web dashboar
 
 The entire system is designed to be hosted on Render's free tier, making it a cost-effective platform for personal projects and prototypes.
 
-The first application integrated into this dashboard is the "File Hub", a simple yet functional utility for uploading and downloading files from any location.
+The first application integrated into this dashboard is the "File Explorer", a feature-rich file management system that supports folder creation, drag-and-drop uploads, file previews, and more.
 
 2. Application Architecture
 The project is architecturally divided into two main parts: the Dashboard and the Applications.
@@ -18,20 +18,24 @@ Technology: It's a simple, static website built with HTML and CSS. It contains "
 
 Hosting: It is served as a static site by the main server.js file.
 
-2.2. The "File Hub" Application (Full-Stack)
-Role: A self-contained application for file management.
+2.2. The "File Explorer" Application (Full-Stack)
+Role: A self-contained, full-featured file explorer application.
 
-Front-End (apps/filehub/): Built with HTML, CSS, and vanilla JavaScript. It provides the user interface for uploading files and viewing the list of available files.
+Front-End (apps/filehub/): Built with HTML, CSS, and vanilla JavaScript. It provides a modern user interface with:
 
-Back-End (server.js): A Node.js server using the Express framework. It handles the business logic.
+Folder and file rendering with thumbnails for images/videos.
 
-Client-Server Interaction:
+Drag-and-drop support for both uploading new files and moving existing items into folders.
 
-File Uploads: The front-end uses the fetch API to send a POST request with the file data to the /upload endpoint on the server.
+Breadcrumb navigation for easy traversal of the directory structure.
 
-File Listing: On page load, the front-end sends a GET request to the /files endpoint. The server responds with a JSON array of filenames, which the front-end then uses to dynamically render the list.
+Modals for creating new folders, new text files, and renaming items.
 
-File Downloads: The download links on the front-end point directly to the static files served from the /uploads directory on the server.
+A context menu (right-click) for actions like Rename, Delete, and Copying a direct link.
+
+A built-in previewer for images, videos, and text-based files.
+
+Back-End (server.js): A Node.js server using the Express framework. It handles all the file system logic.
 
 3. File Structure & Key Files
 Here is the complete file structure of the project.
@@ -58,11 +62,11 @@ Description
 
 server.js
 
-The heart of the back-end. This Node.js/Express file starts the web server, serves all static front-end files (including the dashboard and apps), and defines the API endpoints (/upload, /files) for the File Hub application. It uses the multer library to process file uploads.
+The heart of the back-end. This Node.js/Express file starts the web server, serves all static front-end files, and defines the comprehensive API for the File Explorer. It uses multer for uploads and Node's fs module for all file system operations (create, read, update, delete, move).
 
 package.json
 
-Node.js project manifest. It lists project metadata and, most importantly, the dependencies (express, multer) required to run the server. Render uses this file to know what to install with npm install.
+Node.js project manifest. It lists project metadata and the dependencies (express, multer) required to run the server. Render uses this file to know what to install with npm install.
 
 index.html (root)
 
@@ -78,41 +82,112 @@ Specifies files for Git to ignore. Crucially, it prevents the node_modules and u
 
 apps/filehub/index.html
 
-The main HTML file for the File Hub application's user interface. Contains the upload form and the area where the file list is displayed.
+The main HTML file for the File Explorer's user interface. Contains the layout for the toolbar, breadcrumbs, file grid, and all necessary modals.
 
 apps/filehub/style.css
 
-The stylesheet exclusively for the File Hub application.
+The stylesheet for the File Explorer, including styles for items, modals, context menus, and drag-and-drop feedback.
 
 apps/filehub/client.js
 
-Front-end logic for the File Hub app. This file handles all user interactions: listening for the form submission, sending the file to the server via fetch, and fetching/displaying the list of uploaded files.
+Front-end logic for the File Explorer. This extensive file manages the application's state (like the current path), handles all user interactions, makes API calls to the back-end, and dynamically renders the UI.
 
 uploads/ (directory)
 
-File storage location. The server.js is configured to save all uploaded files into this directory. This directory is intentionally not tracked by Git.
+File storage location. The server.js is configured to save all uploaded files and created folders into this directory. This directory is intentionally not tracked by Git.
 
 node_modules/ (directory)
 
 Contains all the installed Node.js packages (dependencies). This is managed by npm and is not included in the repository.
 
-4. Deployment on Render
+4. API Endpoints
+The server.js exposes the following API endpoints, all prefixed with /api.
+
+Method
+
+Endpoint
+
+Body / Query
+
+Description
+
+GET
+
+/files
+
+?path=<folder>
+
+Lists all files and folders within the specified path.
+
+POST
+
+/upload
+
+FormData
+
+Uploads a single file to the specified path within the form data.
+
+POST
+
+/folders
+
+{name, path}
+
+Creates a new folder with the given name inside the specified path.
+
+POST
+
+/text-file
+
+{filename, content, path}
+
+Creates a new .txt file with the given content.
+
+PUT
+
+/rename
+
+{oldName, newName, path}
+
+Renames a file or folder.
+
+PUT
+
+/move
+
+{sourcePath, targetPath}
+
+Moves a file or folder from a source to a target path.
+
+DELETE
+
+/delete
+
+{name, path}
+
+Deletes a specific file or folder.
+
+DELETE
+
+/clear-all
+
+(none)
+
+Deletes all contents of the root uploads directory.
+
+5. Deployment on Render
 The project is deployed as a single Web Service on Render.
 
 Repository: Render is connected directly to the project's GitHub repository.
 
 Build Command: npm install
 
-This command reads package.json and installs Express and Multer on the Render server.
-
 Start Command: node server.js
 
-This command executes the main server file, starting the web service after a successful build.
-
 Important Consideration: Ephemeral Filesystem
-Render's free tier uses an ephemeral filesystem. This means that any files written to the disk (like those in the /uploads folder) are temporary. They will be permanently deleted whenever the service restarts or spins down due to inactivity (15 minutes). This makes the current File Hub app suitable for temporary file sharing but not for permanent storage.
+Render's free tier uses an ephemeral filesystem. This means that any files written to the disk (like those in the /uploads folder) are temporary. They will be permanently deleted whenever the service restarts or spins down due to inactivity (15 minutes). This makes the current File Explorer app suitable for temporary file sharing and testing but not for permanent storage.
 
-5. Future Development
+6. Future Development
 To add a new application (e.g., "ToDo List"):
 
 Create a new folder inside /apps (e.g., /apps/todolist/).

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Hub - Upload & Download</title>
+    <title>File Explorer</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,25 +12,58 @@
         <a href="../../index.html">&larr; Back to Dashboard</a>
     </nav>
 
-    <main>
-        <div class="container">
-            <h1>☁️ File Hub</h1>
-            <p>Upload a file and get a downloadable link.</p>
-
-            <form id="upload-form">
-                <input type="file" id="file-input" required>
-                <button type="submit">Upload File</button>
-            </form>
-
-            <div id="status-message"></div>
-
-            <h2>Your Files</h2>
-            <div id="file-list">
-                <p>Your uploaded files will appear here.</p>
+    <main class="container">
+        <h1>☁️ File Explorer</h1>
+        
+        <div class="toolbar">
+            <div id="breadcrumb"></div>
+            <div class="actions">
+                <button id="upload-btn">Upload File</button>
+                <input type="file" id="file-input" style="display: none;" multiple>
+                <button id="new-folder-btn">New Folder</button>
+                <button id="new-file-btn">New Text File</button>
+                <button id="clear-all-btn" class="danger-btn">Clear All</button> 
             </div>
         </div>
+
+        <div id="file-explorer" class="drop-zone">
+            <!-- Items will be dynamically inserted here -->
+        </div>
     </main>
+
+    <!-- Modal for User Input (Create Folder, Rename) -->
+    <div id="modal" class="modal-container" style="display: none;">
+        <div class="modal-content">
+            <h3 id="modal-title">Modal Title</h3>
+            <input type="text" id="modal-input" placeholder="Enter name">
+            <div class="modal-actions">
+                <button id="modal-cancel-btn">Cancel</button>
+                <button id="modal-confirm-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
     
+    <!-- Modal for Text Editor -->
+    <div id="text-editor-modal" class="modal-container" style="display: none;">
+        <div class="modal-content text-editor-content">
+            <h3 id="text-editor-title">Create New File</h3>
+            <input type="text" id="text-editor-filename" placeholder="Enter filename (e.g., notes.txt)">
+            <textarea id="text-editor-content" placeholder="Enter file content..."></textarea>
+            <div class="modal-actions">
+                <button id="text-editor-cancel-btn">Cancel</button>
+                <button id="text-editor-save-btn">Save File</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for File Preview -->
+    <div id="preview-modal" class="modal-container" style="display: none;">
+        <div class="modal-content preview-content">
+            <span id="preview-close-btn" class="close-btn">&times;</span>
+            <div id="preview-body"></div>
+        </div>
+    </div>
+
     <script src="client.js"></script>
 </body>
 </html>

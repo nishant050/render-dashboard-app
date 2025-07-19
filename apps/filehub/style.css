@@ -1,3 +1,4 @@
+/* General Styles */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
@@ -17,43 +18,39 @@ nav a {
     font-weight: 600;
 }
 
-main {
-    display: flex;
-    justify-content: center;
-    padding: 2rem 1rem;
-}
-
 .container {
-    max-width: 600px;
-    width: 100%;
-    background-color: #ffffff;
+    max-width: 900px;
+    margin: 0 auto;
     padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 h1 {
     font-size: 2rem;
-    margin: 0 0 0.5rem;
+    margin: 0 0 1rem;
 }
 
-p {
-    margin-bottom: 1.5rem;
-    color: #606770;
-}
-
-#upload-form {
+/* Toolbar, Breadcrumb, and Actions */
+.toolbar {
     display: flex;
-    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #f8f9fa;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
     margin-bottom: 1rem;
 }
 
-#file-input {
-    flex-grow: 1;
+#breadcrumb a {
+    text-decoration: none;
+    color: #007bff;
 }
 
-button {
-    padding: 10px 20px;
+#breadcrumb span {
+    color: #6c757d;
+}
+
+.actions button {
+    padding: 8px 16px;
     background-color: #007bff;
     color: white;
     border: none;
@@ -61,32 +58,184 @@ button {
     cursor: pointer;
     font-weight: 600;
     transition: background-color 0.2s;
+    margin-left: 10px;
 }
 
-button:hover {
+.actions button:hover {
     background-color: #0056b3;
 }
 
-#status-message {
-    margin: 1rem 0;
-    font-weight: 600;
+/* File Explorer Grid */
+#file-explorer {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 2px dashed transparent;
+    transition: border-color 0.3s, background-color 0.3s;
 }
 
-#file-list .file-item {
+#file-explorer.drag-over {
+    border-color: #007bff;
+    background-color: #e9f5ff;
+}
+
+.item {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
+    padding: 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    position: relative;
+}
+
+.item:hover {
+    background-color: #e9ecef;
+}
+
+.item .icon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.item .icon img, .item .icon video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.item .name {
+    font-size: 0.9rem;
+    text-align: center;
+    word-break: break-word;
+}
+
+/* Modal Styles */
+.modal-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 400px;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-content input {
+    width: 100%;
     padding: 10px;
-    border: 1px solid #dddfe2;
-    border-radius: 6px;
-    margin-top: 10px;
+    margin: 1rem 0;
+    box-sizing: border-box;
 }
 
-#file-list .file-item span {
-    word-break: break-all;
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
 }
 
-#file-list .file-item a {
-    margin-left: 20px;
-    white-space: nowrap;
+/* Text Editor Modal */
+.text-editor-content {
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+}
+.text-editor-content textarea {
+    width: 100%;
+    height: 300px;
+    padding: 10px;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: monospace;
+}
+
+/* Preview Modal */
+.preview-content {
+    max-width: 80vw;
+    max-height: 80vh;
+    padding: 1rem;
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #333;
+}
+
+#preview-body {
+    max-height: 75vh;
+    overflow: auto;
+}
+
+#preview-body img, #preview-body video, #preview-body pre {
+    max-width: 100%;
+    max-height: 70vh;
+    display: block;
+    margin: 0 auto;
+}
+
+#preview-body pre {
+    background-color: #f4f4f4;
+    padding: 1em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Context Menu */
+.context-menu {
+    position: absolute;
+    background-color: white;
+    border: 1px solid #ccc;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    border-radius: 4px;
+    z-index: 2000;
+    padding: 5px 0;
+}
+
+.context-menu div {
+    padding: 8px 15px;
+    cursor: pointer;
+}
+
+.context-menu div:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+/* At the bottom of apps/filehub/style.css */
+.actions .danger-btn {
+    background-color: #dc3545;
+}
+.actions .danger-btn:hover {
+    background-color: #c82333;
 }
