@@ -3,6 +3,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+const axios = require('axios');
+const cheerio = require('cheerio');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,18 +12,23 @@ const PORT = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
+// --- Static File Serving ---
+// Serve the main front-end, apps, and uploads
+app.use(express.static(path.join(__dirname)));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve the new assets folder
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+
+
+// --- File Explorer Setup ---
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
 }
-
-// --- Multer Configuration ---
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        // Get subfolder from the request body, default to root uploads directory
         const subfolder = req.body.path || '';
         const fullPath = path.join(uploadsDir, subfolder);
-        // Create the subfolder if it doesn't exist
         fs.mkdirSync(fullPath, { recursive: true });
         cb(null, fullPath);
     },
@@ -32,9 +39,16 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 
-// --- Static File Serving ---
-app.use(express.static(path.join(__dirname)));
-app.use('/uploads', express.static(uploadsDir));
+// --- Newspaper Scraper Setup ---
+// CORRECTED: Removed hardcoded logo URLs. The path will be generated automatically.
+const NEWSPAPERS_CONFIG = [
+    { name: "Hindustan Times", url: "https://epaperwave.com/hindustan-times-epaper-pdf-today/" },
+    { name: "The Times of India", url: "https://epaperwave.com/the-times-of-india-epaper-pdf-download/" },
+    { name: "The Mint", url: "https://epaperwave.com/download-the-mint-epaper-pdf-for-free-today/" },
+    { name: "Dainik Bhaskar", url: "https://epaperwave.com/dainik-bhaskar-epaper-today-pdf/" },
+    { name: "Punjab Kesari", url: "https://epaperwave.com/free-punjab-kesari-epaper-pdf-download-now/" }
+];
+let newspaperCache = { data: null, lastFetched: 0 };
 
 
 // --- API Routes ---
@@ -43,19 +57,14 @@ app.use('/uploads', express.static(uploadsDir));
 app.get('/api/files', async (req, res) => {
     try {
         const directoryPath = req.query.path ? path.join(uploadsDir, req.query.path) : uploadsDir;
-
-        // Security check to prevent directory traversal
         if (!directoryPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
         const items = await fsPromises.readdir(directoryPath, { withFileTypes: true });
-        
         const files = items.map(item => ({
             name: item.name,
             isDirectory: item.isDirectory(),
         }));
-        
         res.json(files);
     } catch (error) {
         console.error('Error listing files:', error);
@@ -78,13 +87,10 @@ app.post('/api/folders', async (req, res) => {
         if (!name) {
             return res.status(400).send('Folder name is required.');
         }
-
         const newFolderPath = path.join(uploadsDir, currentPath || '', name);
-
         if (!newFolderPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
         await fsPromises.mkdir(newFolderPath);
         res.status(201).json({ message: `Folder '${name}' created successfully!` });
     } catch (error) {
@@ -100,20 +106,16 @@ app.delete('/api/delete', async (req, res) => {
         if (!name) {
             return res.status(400).send('Item name is required.');
         }
-
         const itemPath = path.join(uploadsDir, currentPath || '', name);
-
         if (!itemPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
         const stats = await fsPromises.stat(itemPath);
         if (stats.isDirectory()) {
             await fsPromises.rm(itemPath, { recursive: true, force: true });
         } else {
             await fsPromises.unlink(itemPath);
         }
-
         res.json({ message: `Item '${name}' deleted successfully!` });
     } catch (error) {
         console.error('Error deleting item:', error);
@@ -128,14 +130,11 @@ app.put('/api/rename', async (req, res) => {
         if (!oldName || !newName) {
             return res.status(400).send('Old and new names are required.');
         }
-
         const oldPath = path.join(uploadsDir, currentPath || '', oldName);
         const newPath = path.join(uploadsDir, currentPath || '', newName);
-
         if (!oldPath.startsWith(uploadsDir) || !newPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
         await fsPromises.rename(oldPath, newPath);
         res.json({ message: `Renamed '${oldName}' to '${newName}' successfully!` });
     } catch (error) {
@@ -151,15 +150,11 @@ app.post('/api/text-file', async (req, res) => {
         if (!filename) {
             return res.status(400).send('Filename is required.');
         }
-
-        // Ensure the filename ends with .txt
         const finalFilename = filename.endsWith('.txt') ? filename : `${filename}.txt`;
         const newFilePath = path.join(uploadsDir, currentPath || '', finalFilename);
-
         if (!newFilePath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
         await fsPromises.writeFile(newFilePath, content || '');
         res.status(201).json({ message: `File '${finalFilename}' created successfully!` });
     } catch (error) {
@@ -175,20 +170,13 @@ app.put('/api/move', async (req, res) => {
         if (!sourcePath || !targetPath) {
             return res.status(400).send('Source and target paths are required.');
         }
-
         const fullSourcePath = path.join(uploadsDir, sourcePath);
         const fullTargetPath = path.join(uploadsDir, targetPath);
-
         if (!fullSourcePath.startsWith(uploadsDir) || !fullTargetPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
-
-        // Ensure target directory exists
         await fsPromises.mkdir(path.dirname(fullTargetPath), { recursive: true });
-        
-        // Rename (move) the file
         await fsPromises.rename(fullSourcePath, fullTargetPath);
-
         res.json({ message: `Moved '${sourcePath}' to '${targetPath}' successfully!` });
     } catch (error) {
         console.error('Error moving item:', error);
@@ -215,6 +203,73 @@ app.delete('/api/clear-all', async (req, res) => {
         res.status(500).send('Server error while clearing storage.');
     }
 });
+
+
+// 9. SCRAPE for latest newspapers
+app.get('/api/newspapers', async (req, res) => {
+    const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
+
+    if (Date.now() - newspaperCache.lastFetched < CACHE_DURATION && newspaperCache.data) {
+        return res.json(newspaperCache.data);
+    }
+
+    console.log('Cache stale or empty. Scraping for new e-papers...');
+
+    const scrapeNewspaper = async (newspaperInfo, targetDate) => {
+        const dateStr = targetDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        try {
+            const { data } = await axios.get(newspaperInfo.url);
+            const $ = cheerio.load(data);
+            let foundLink = null;
+
+            $('p.has-text-align-center').each((i, el) => {
+                if ($(el).text().trim().startsWith(dateStr)) {
+                    const linkTag = $(el).find('a');
+                    if (linkTag.length) {
+                        foundLink = linkTag.attr('href');
+                        return false;
+                    }
+                }
+            });
+            
+            // CORRECTED: Automatically generate the local logo path
+            const logoFileName = newspaperInfo.name.toLowerCase().replace(/ /g, '-') + '.png';
+            return { 
+                ...newspaperInfo, 
+                link: foundLink,
+                logo: `/assets/${logoFileName}` // Use local path
+            };
+        } catch (error) {
+            console.error(`Failed to scrape ${newspaperInfo.name}:`, error.message);
+            const logoFileName = newspaperInfo.name.toLowerCase().replace(/ /g, '-') + '.png';
+            return { ...newspaperInfo, link: null, logo: `/assets/${logoFileName}` };
+        }
+    };
+
+    const findPapersForDate = async (date) => {
+        return Promise.all(NEWSPAPERS_CONFIG.map(config => scrapeNewspaper(config, date)));
+    };
+
+    let results = await findPapersForDate(new Date());
+    let displayDate = new Date();
+
+    if (!results.some(p => p.link)) {
+        console.log("No papers found for today. Checking yesterday...");
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        results = await findPapersForDate(yesterday);
+        displayDate = yesterday;
+    }
+
+    const finalData = {
+        date: displayDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        papers: results.filter(p => p.link)
+    };
+
+    newspaperCache = { data: finalData, lastFetched: Date.now() };
+    res.json(finalData);
+});
+
 
 // --- Server Start ---
 app.listen(PORT, () => {
