@@ -271,6 +271,10 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
+
+// --- API Routes (YouTube Downloader - REWRITTEN with play-dl) ---
+
+
 // --- Server Start ---
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);

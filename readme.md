@@ -6,17 +6,19 @@ The primary goal of this project is to create a single, centralized web dashboar
 
 The entire system is designed to be hosted on Render's free tier, making it a cost-effective platform for personal projects and prototypes.
 
-The first application integrated into this dashboard is the "File Explorer", a feature-rich file management system that supports folder creation, drag-and-drop uploads, file previews, and more.
+Currently, the dashboard hosts two main applications:
+
+File Explorer: A feature-rich file management system that mimics a desktop file explorer, complete with folder navigation, drag-and-drop actions, and file previews.
+
+e-Paper Digest: A dynamic web scraper that fetches and displays the latest daily newspapers from various online sources.
 
 2. Application Architecture
-The project is architecturally divided into two main parts: the Dashboard and the Applications.
+The project is architecturally divided into three main parts: the Dashboard, the File Explorer, and the e-Paper Digest.
 
 2.1. The Dashboard (Static Front-End)
 Role: Acts as the main entry point and navigation hub.
 
-Technology: It's a simple, static website built with HTML and CSS. It contains "cards" that link to the various applications.
-
-Hosting: It is served as a static site by the main server.js file.
+Technology: A simple, static website built with HTML and CSS. It contains "cards" that link to the various applications.
 
 2.2. The "File Explorer" Application (Full-Stack)
 Role: A self-contained, full-featured file explorer application.
@@ -25,7 +27,7 @@ Front-End (apps/filehub/): Built with HTML, CSS, and vanilla JavaScript. It prov
 
 Folder and file rendering with thumbnails for images/videos.
 
-Drag-and-drop support for both uploading new files and moving existing items into folders.
+Drag-and-drop support for both uploading new files and moving existing items into folders or parent directories (via breadcrumbs).
 
 Breadcrumb navigation for easy traversal of the directory structure.
 
@@ -35,7 +37,22 @@ A context menu (right-click) for actions like Rename, Delete, and Copying a dire
 
 A built-in previewer for images, videos, and text-based files.
 
-Back-End (server.js): A Node.js server using the Express framework. It handles all the file system logic.
+A "Clear All" function to wipe the storage.
+
+Back-End (server.js): The Node.js server handles all file system logic using the fs module and manages uploads with multer.
+
+2.3. The "e-Paper Digest" Application (Dynamic)
+Role: A dynamic application that scrapes and displays newspaper links.
+
+Front-End (apps/epaper/): A clean interface that displays a loading spinner, fetches data from the back-end, and renders a grid of newspaper cards with their logos and links.
+
+Back-End (server.js):
+
+Scraping: Uses axios to fetch HTML from newspaper websites and cheerio to parse the HTML and find the correct download links.
+
+Caching: Implements a 4-hour cache to prevent re-scraping on every request, significantly improving performance and reducing load on the source websites.
+
+Asset Management: Automatically serves local icons from the /assets directory based on the newspaper's name.
 
 3. File Structure & Key Files
 Here is the complete file structure of the project.
@@ -47,8 +64,14 @@ render-dashboard/
 ├── server.js
 ├── index.html
 ├── style.css
+├── assets/
+│   └── (newspaper-logos.png)
 ├── apps/
-│   └── filehub/
+│   ├── filehub/
+│   │   ├── index.html
+│   │   ├── style.css
+│   │   └── client.js
+│   └── epaper/
 │       ├── index.html
 │       ├── style.css
 │       └── client.js
@@ -62,43 +85,27 @@ Description
 
 server.js
 
-The heart of the back-end. This Node.js/Express file starts the web server, serves all static front-end files, and defines the comprehensive API for the File Explorer. It uses multer for uploads and Node's fs module for all file system operations (create, read, update, delete, move).
+The heart of the back-end. This Node.js/Express file starts the web server, serves all static files (/, /apps, /assets, /uploads), and defines all API endpoints for both the File Explorer and the e-Paper scraper.
 
 package.json
 
-Node.js project manifest. It lists project metadata and the dependencies (express, multer) required to run the server. Render uses this file to know what to install with npm install.
+Node.js project manifest. It lists project metadata and dependencies (express, multer, axios, cheerio). Render uses this file to know what to install with npm install.
 
-index.html (root)
+assets/ (directory)
 
-The main dashboard page. This is the homepage of the entire project. It contains the grid of "app cards" that link to individual applications.
-
-style.css (root)
-
-The stylesheet exclusively for the main dashboard (index.html).
-
-.gitignore
-
-Specifies files for Git to ignore. Crucially, it prevents the node_modules and uploads directories from being committed to the GitHub repository, which is essential for a clean and efficient deployment.
-
-apps/filehub/index.html
-
-The main HTML file for the File Explorer's user interface. Contains the layout for the toolbar, breadcrumbs, file grid, and all necessary modals.
-
-apps/filehub/style.css
-
-The stylesheet for the File Explorer, including styles for items, modals, context menus, and drag-and-drop feedback.
+Contains local static assets, such as the newspaper logos, for reliable and fast loading.
 
 apps/filehub/client.js
 
-Front-end logic for the File Explorer. This extensive file manages the application's state (like the current path), handles all user interactions, makes API calls to the back-end, and dynamically renders the UI.
+Front-end logic for the File Explorer. This extensive file manages the application's state, handles all user interactions (drag-drop, clicks, context menus), makes API calls, and dynamically renders the UI.
+
+apps/epaper/client.js
+
+Front-end logic for the e-Paper app. This file fetches data from the /api/newspapers endpoint and renders the results into the grid.
 
 uploads/ (directory)
 
-File storage location. The server.js is configured to save all uploaded files and created folders into this directory. This directory is intentionally not tracked by Git.
-
-node_modules/ (directory)
-
-Contains all the installed Node.js packages (dependencies). This is managed by npm and is not included in the repository.
+File storage location. The server saves all uploaded files and created folders here. This directory is intentionally not tracked by Git.
 
 4. API Endpoints
 The server.js exposes the following API endpoints, all prefixed with /api.
@@ -117,7 +124,7 @@ GET
 
 ?path=<folder>
 
-Lists all files and folders within the specified path.
+File Explorer: Lists all files and folders within the specified path.
 
 POST
 
@@ -125,7 +132,7 @@ POST
 
 FormData
 
-Uploads a single file to the specified path within the form data.
+File Explorer: Uploads a single file to the specified path.
 
 POST
 
@@ -133,7 +140,7 @@ POST
 
 {name, path}
 
-Creates a new folder with the given name inside the specified path.
+File Explorer: Creates a new folder.
 
 POST
 
@@ -141,7 +148,7 @@ POST
 
 {filename, content, path}
 
-Creates a new .txt file with the given content.
+File Explorer: Creates a new .txt file.
 
 PUT
 
@@ -149,7 +156,7 @@ PUT
 
 {oldName, newName, path}
 
-Renames a file or folder.
+File Explorer: Renames a file or folder.
 
 PUT
 
@@ -157,7 +164,7 @@ PUT
 
 {sourcePath, targetPath}
 
-Moves a file or folder from a source to a target path.
+File Explorer: Moves a file or folder.
 
 DELETE
 
@@ -165,7 +172,7 @@ DELETE
 
 {name, path}
 
-Deletes a specific file or folder.
+File Explorer: Deletes a specific file or folder.
 
 DELETE
 
@@ -173,7 +180,15 @@ DELETE
 
 (none)
 
-Deletes all contents of the root uploads directory.
+File Explorer: Deletes all contents of the root uploads directory.
+
+GET
+
+/newspapers
+
+(none)
+
+e-Paper: Scrapes or retrieves from cache the list of newspapers and their links.
 
 5. Deployment on Render
 The project is deployed as a single Web Service on Render.
