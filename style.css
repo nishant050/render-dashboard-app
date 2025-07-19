@@ -1,0 +1,100 @@
+/* General Body Styles */
+body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    background-color: #f4f7f6;
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Header Styles */
+header {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+header h1 {
+    margin: 0;
+    font-weight: 700;
+}
+
+header p {
+    margin: 0.5rem 0 0;
+    font-weight: 300;
+    opacity: 0.9;
+}
+
+/* Main Content Styles */
+main {
+    padding: 2rem 1rem;
+}
+
+/* App Grid Layout */
+.app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* App Card Styles */
+.app-card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    padding: 1.5rem;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.app-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px widened(0, 0, 0, 0.15);
+}
+
+.app-card .app-icon {
+    font-size: 2.5rem;
+    margin-right: 1.5rem;
+}
+
+.app-card .app-info h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.app-card .app-info p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+
+.app-card.placeholder {
+    border: 2px dashed #bdc3c7;
+    background-color: transparent;
+    box-shadow: none;
+    text-align: center;
+    justify-content: center;
+}
+
+.app-card.placeholder:hover {
+    transform: none;
+    box-shadow: none;
+    background-color: #ecf0f1;
+}
+
+/* Footer Styles */
+footer {
+    text-align: center;
+    padding: 1.5rem;
+    background-color: #ecf0f1;
+    color: #7f8c8d;
+    font-size: 0.9rem;
+}
