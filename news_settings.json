@@ -1,30 +1,30 @@
 [
   {
-    "id": "1721424600001",
-    "title": "AI & Open Source News",
-    "topic": "Latest breakthroughs and powerful free-tier releases in generative AI, focusing on open-source models and major platforms like OpenAI (GPT), Google (Gemini), Anthropic (Claude), and Groq. Specifically search for advancements in free-to-use image and video generation tools.",
-    "sites": "openai.com/blog,anthropic.com/news,deepmind.google/blog,ai.meta.com/blog,huggingface.co/blog,groq.com/blog,cohere.com/blog,blog.google,developers.googleblog.com,techcrunch.com/tag/artificial-intelligence,theverge.com/artificial-intelligence,venturebeat.com/category/ai,wired.com/tag/artificial-intelligence,arstechnica.com/information-technology/artificial-intelligence,engadget.com/tag/artificial-intelligence,arxiv.org/list/cs.AI/recent,paperswithcode.com,distill.pub,mitibmwatsonailab.mit.edu/news,news.mit.edu/topic/artificial-intelligence2,artificialintelligence-news.com,ai-techpark.com,aihub.org,the-decoder.com,404media.co,aimodels.fyi,github.com,kaggle.com,towardsai.net,towardsdatascience.com,machinelearningmastery.com,aibusiness.com,semianalysis.com,analyticsindiamag.com/category/news,aws.amazon.com/blogs/machine-learning,cloud.google.com/blog/products/ai-machine-learning,azure.microsoft.com/en-us/blog/tag/artificial-intelligence,therundown.ai,superhuman.ai/newsletter,aiweekly.co,technologyreview.com/ai,kdnuggets.com/category/news",
-    "model": "compound-beta"
-  },
+  "id": "1721424600001",
+  "title": "AI & Open Source Intelligence Briefing",
+  "topic": "Generate an executive intelligence briefing on the latest developments in generative AI from the last two months. The report must be structured into the following distinct sections: 1. **Major Platform Updates (Proprietary Models):** Detail significant announcements, new model releases, or major feature updates from leading platforms like OpenAI (GPT series), Google (Gemini family), Anthropic (Claude series), and major enterprise AI offerings (e.g., from AWS, Microsoft). 2. **Open-Source Model Releases & Analysis:** Report on new and significant open-source model releases (e.g., from Meta's Llama series, Mistral, Alibaba's Qwen, etc.). For each, detail its size (parameters), key capabilities, performance benchmarks, and licensing terms (e.g., Apache 2.0, Llama Community License). Also, note any reported security concerns or malicious uses of these models. 3. **Free-Tier Image & Video Generation Tools:** Provide a comparative analysis of the best free-to-use or freemium AI image and video generation tools. For each tool, specify the limitations of its free tier (e.g., watermarks, resolution, generation time/credits per month) and its ideal use case. 4. **Emerging Trends & Strategic Implications:** Synthesize news to identify and report on significant underlying trends, specifically focusing on the connection between AI development and energy consumption/infrastructure, and the evolving legal and regulatory landscape for AI. For all sections, cite the primary source of the information and provide direct URLs to key announcements or reports where available.",
+  "sites": "openai.com/blog,anthropic.com/news,deepmind.google/blog,ai.meta.com/blog,huggingface.co/blog,groq.com/blog,cohere.com/blog,blog.google,techcrunch.com/tag/artificial-intelligence,theverge.com/artificial-intelligence,wired.com/tag/artificial-intelligence,arstechnica.com/information-technology/artificial-intelligence,technologyreview.com/ai,arxiv.org/list/cs.AI/recent,paperswithcode.com,crescendo.ai/news,jetruby.com/blog,synthesia.io/post,zapier.com/blog,semianalysis.com,the-decoder.com",
+  "model": "compound-beta"
+},
   {
-    "id": "1721424600002",
-    "title": "Exam News (HTET, CTET, etc.)",
-    "topic": "Latest HTET Exam, CTET, Geo Scientist, CSIR NET, KVS, NVS, EMRS, and CET related updates. Focus on exam dates, admit card releases, paper postponements, new vacancy details, or any other official announcements.",
-    "sites": "sarkariresult.app, sarkariresult.com, jagranjosh.com/jobs, ndtv.com/education, timesofindia.indiatimes.com/education, nta.ac.in, cbse.gov.in",
-    "model": "compound-beta-mini"
-  },
+  "id": "1721424600002",
+  "title": "Competitive Exam Alerts (HTET, CTET, NTA, etc.)",
+  "topic": "Generate a status report on the following competitive examinations for the current and previous month: HTET, CTET, UPSC Geo-Scientist, CSIR NET, KVS Recruitment, NVS Recruitment, EMRS Recruitment, and Haryana CET. For each exam, systematically perform the following steps: 1. **Prioritize Official Sources:** First, scan the official websites for any new announcements. 2. **Search for Lifecycle Events:** Look for keywords such as 'Notification', 'Advertisement', 'Application Form', 'Registration Dates', 'Exam Date', 'Admit Card', 'Hall Ticket', 'City Intimation Slip', 'Result', 'Answer Key', or 'Postponed'. 3. **Extract Key Data:** If a new notice is found, report its title, release date, and the direct URL to the official PDF or announcement page. Summarize the key information (e.g., exam dates, application deadlines). 4. **Report No Updates:** If no new updates are found on the official portal for a specific exam in the last two months, explicitly state 'No new updates found on the official portal.' 5. **Format as a Table:** Present the final findings in a table with columns: 'Exam Name', 'Latest Update Type', 'Announcement Date', 'Key Details', and 'Official Link/Source'.",
+  "sites": "bseh.org.in,ctet.nic.in,upsc.gov.in,csirnet.nta.ac.in,nta.ac.in,kvsangathan.nic.in,navodaya.gov.in,emrs.tribal.gov.in,hssc.gov.in,onetimeregn.haryana.gov.in,sarkariresult.com,jagranjosh.com/jobs,ndtv.com/education,timesofindia.indiatimes.com/education,cbse.gov.in",
+  "model": "compound-beta-mini"
+},
   {
-    "id": "1721424600003",
-    "title": "Penukonda, Anantapur News",
-    "topic": "Summarize the most important local news from Penukonda and the surrounding Anantapur district of Andhra Pradesh. Focus on local developments, community events, and government initiatives.",
-    "sites": "eenadu.net/district/anantapur, sakshi.com/andhra-pradesh/anantapur, andhrajyothy.com, thehindu.com/topic/anantapur",
-    "model": "compound-beta-mini"
-  },
+  "id": "1721424600003",
+  "title": "Penukonda & Anantapur District News Briefing",
+  "topic": "Generate a hyperlocal news briefing for Penukonda and the surrounding Anantapur district from the last two months. The briefing must adhere to the following structure: 1. **Priority:** Give highest priority to news explicitly mentioning Penukonda town. Second priority should be given to significant news from nearby areas like Tadipatri and Puttaparthi, and major developments in Anantapur district that have a direct local impact. 2. **Thematic Summary:** Organize the summary into clear categories: 'Local Governance & Politics' (e.g., government initiatives, political events), 'Infrastructure & Civic Issues' (e.g., roads, water supply, agriculture, weather), 'Law & Order' (e.g., crime reports, police actions), and 'Community Events'. 3. **Source Attribution:** For each major news item, cite the publishing source. Provide URLs to the original articles where possible.",
+  "sites": "eenadu.net/district/anantapur,sakshi.com/andhra-pradesh/ananthapur,andhrajyothy.com/andhra-pradesh/ananthapuram,thehindu.com/topic/anantapur,timesofindia.indiatimes.com/topic/anantapur-district,deccanchronicle.com/andhra-pradesh",
+  "model": "compound-beta-mini"
+},
   {
-    "id": "1721424600004",
-    "title": "Haryana News (Hisar Focus)",
-    "topic": "Summarize the latest news from Haryana, with a special focus on developments in and around the city of Hisar. Cover topics like infrastructure, local politics, and significant events.",
-    "sites": "tribuneindia.com/haryana, dainikbhaskar.com/haryana/hisar, amarujala.com/haryana/hisar, jagran.com/haryana/hisar",
-    "model": "compound-beta-mini"
-  }
+  "id": "1721424600004",
+  "title": "Haryana News Briefing (Hisar Focus)",
+  "topic": "Generate a hyperlocal news briefing for the city of Hisar, Haryana, from the last two months. The briefing must follow this structure: 1. **Priority:** Give highest priority to news explicitly mentioning Hisar city and its immediate localities (e.g., Hansi). Second priority should be given to major news from the state of Haryana that has a direct and clear impact on Hisar residents. 2. **Thematic Summary:** Organize the summary into clear categories: 'Local Politics & Administration' (e.g., statements by local leaders, administrative actions), 'Infrastructure & Development' (e.g., airport expansion, roads, civic amenities), 'Law & Order' (e.g., crime reports, police investigations), and 'Significant Local Events'. 3. **Source Attribution:** For each major news item, cite the publishing source. Provide URLs to the original articles where possible.",
+  "sites": "tribuneindia.com/haryana,tribuneindia.com/topic/hisarnews,bhaskardigital.com/haryana/hisar,amarujala.com/haryana/hisar,jagran.com/haryana/hisar,ndtv.com/topic/hisar",
+  "model": "compound-beta-mini"
+}
 ]
