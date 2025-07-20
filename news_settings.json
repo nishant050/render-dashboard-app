@@ -10,7 +10,7 @@
   "id": "1721424600002",
   "title": "Competitive Exam Alerts (HTET, CTET, NTA, etc.)",
   "topic": "Generate a status report on the following competitive examinations for the current and previous month: HTET, CTET, UPSC Geo-Scientist, CSIR NET, KVS Recruitment, NVS Recruitment, EMRS Recruitment, and Haryana CET. For each exam, systematically perform the following steps: 1. **Prioritize Official Sources:** First, scan the official websites for any new announcements. 2. **Search for Lifecycle Events:** Look for keywords such as 'Notification', 'Advertisement', 'Application Form', 'Registration Dates', 'Exam Date', 'Admit Card', 'Hall Ticket', 'City Intimation Slip', 'Result', 'Answer Key', or 'Postponed'. 3. **Extract Key Data:** If a new notice is found, report its title, release date, and the direct URL to the official PDF or announcement page. Summarize the key information (e.g., exam dates, application deadlines). 4. **Report No Updates:** If no new updates are found on the official portal for a specific exam in the last two months, explicitly state 'No new updates found on the official portal.' 5. **Format as a Table:** Present the final findings in a table with columns: 'Exam Name', 'Latest Update Type', 'Announcement Date', 'Key Details', and 'Official Link/Source'.",
-  "sites": "bseh.org.in,ctet.nic.in,upsc.gov.in,csirnet.nta.ac.in,nta.ac.in,kvsangathan.nic.in,navodaya.gov.in,emrs.tribal.gov.in,hssc.gov.in,onetimeregn.haryana.gov.in,sarkariresult.com,jagranjosh.com/jobs,ndtv.com/education,timesofindia.indiatimes.com/education,cbse.gov.in",
+  "sites": "sarkariresult.app,adda247.com/teaching-jobs-exam/upcoming-govt-teaching-exams/",
   "model": "compound-beta-mini"
 },
   {
