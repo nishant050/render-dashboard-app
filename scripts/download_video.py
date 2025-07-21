@@ -56,18 +56,25 @@ def main():
         
         # 1. Get video metadata using yt-dlp
         report_progress("Fetching video metadata...", 10)
-        result = subprocess.run(
-            ['yt-dlp', '--dump-json', VIDEO_URL],
-            check=True, capture_output=True, text=True
-        )
-        metadata = json.loads(result.stdout)
+        try:
+            result = subprocess.run(
+                ['yt-dlp', '--dump-json', VIDEO_URL],
+                check=True, capture_output=True, text=True, encoding='utf-8'
+            )
+            metadata = json.loads(result.stdout)
+        except subprocess.CalledProcessError as e:
+            # THIS IS THE NEW ERROR HANDLING BLOCK
+            error_output = e.stderr.strip()
+            # Provide a user-friendly error message
+            raise Exception(f"Invalid URL or video is unavailable. yt-dlp failed: {error_output}")
+
         video_title = metadata.get('title', 'Untitled')
         video_author = metadata.get('uploader', 'Unknown Author')
         
         report_progress(f"Details found: {video_title}", 20)
         sanitized_title = sanitize_filename(video_title)
         
-        # 2. Define file paths
+        # Define file paths
         video_filename = f"{sanitized_title}_video.mp4"
         audio_filename = f"{sanitized_title}_audio.mp4"
         final_video_filename = f"{sanitized_title}.mp4"
@@ -78,7 +85,7 @@ def main():
         final_video_path = os.path.join(output_dir, final_video_filename)
         final_audio_path = os.path.join(output_dir, final_audio_filename)
 
-        # 3. Download best video and audio separately
+        # Download best video and audio separately
         report_progress("Downloading video stream...", 30)
         subprocess.run(
             ['yt-dlp', '-f', 'bestvideo[ext=mp4]', '--output', temp_video_path, VIDEO_URL],
@@ -91,14 +98,14 @@ def main():
             check=True
         )
 
-        # 4. Merge video and audio with ffmpeg
+        # Merge video and audio with ffmpeg
         report_progress("Merging video and audio...", 80)
         subprocess.run(
             ['ffmpeg', '-i', temp_video_path, '-i', temp_audio_path, '-c:v', 'copy', '-c:a', 'aac', '-y', final_video_path],
             check=True, capture_output=True
         )
         
-        # 5. Convert audio to MP3 for separate download
+        # Convert audio to MP3 for separate download
         report_progress("Creating separate audio file...", 90)
         subprocess.run(
             ['ffmpeg', '-i', temp_audio_path, '-q:a', '0', '-map', 'a', '-y', final_audio_path],
@@ -121,7 +128,7 @@ def main():
 
     except Exception as e:
         error_message = f"An error occurred: {e}"
-        report_progress(error_message, 100)
+        report_progress(error_message, 100) # Report 100 to stop polling on failure
         sys.exit(1)
 
 if __name__ == "__main__":
