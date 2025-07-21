@@ -3,6 +3,7 @@ import sys
 import json
 import subprocess
 import requests
+from pytubefix import YouTube
 
 # --- Configuration from Environment Variables ---
 JOB_ID = os.environ.get('JOB_ID')
