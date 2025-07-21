@@ -51,7 +51,8 @@ def main():
 
     try:
         report_progress("Fetching video details...", 5)
-        yt = YouTube(VIDEO_URL)
+        # ADD use_po_token=True to bypass bot detection
+        yt = YouTube(VIDEO_URL, use_po_token=True) 
         
         report_progress(f"Details found: {yt.title}", 10)
         video_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
