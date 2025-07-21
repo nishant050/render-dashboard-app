@@ -51,8 +51,8 @@ def main():
 
     try:
         report_progress("Fetching video details...", 5)
-        # 👇 NEW FIX: Use the 'WEB' client instead of the token method.
-        yt = YouTube(VIDEO_URL, client='WEB') 
+        # 👇 NEW FIX: Combine both client='WEB' and use_po_token=True
+        yt = YouTube(VIDEO_URL, client='WEB', use_po_token=True) 
         
         report_progress(f"Details found: {yt.title}", 10)
         video_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
