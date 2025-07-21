@@ -8,6 +8,10 @@ jobs:
   download-and-commit:
     runs-on: ubuntu-latest
 
+    # 👇 ADD THIS PERMISSIONS BLOCK
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,7 +45,7 @@ jobs:
           VIDEO_URL: ${{ github.event.client_payload.videoUrl }}
           RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
           PROGRESS_UPDATE_SECRET: ${{ secrets.PROGRESS_UPDATE_SECRET }}
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }} # <-- ADD THIS LINE
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: python scripts/download_video.py
 
       - name: Commit and push new video
