@@ -3,22 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HQ YouTube Downloader</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Downloaded Videos</title>
+    <link rel="stylesheet" href="../../style.css"> 
+    <style>
+        .video-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 900px;
+            margin: 2rem auto;
+        }
+        .video-card {
+            background-color: #2d3748;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .video-card h3 {
+            margin-top: 0;
+            color: #ffffff;
+        }
+        .video-card p {
+            color: #a0aec0;
+            margin-bottom: 1rem;
+        }
+        video {
+            width: 100%;
+            border-radius: 6px;
+        }
+    </style>
 </head>
 <body>
-    <nav>
-        <a href="../../index.html">&larr; Back to Dashboard</a>
-    </nav>
-    <main class="container">
-        <div class="iframe-container">
-            <iframe
-                src="https://youtube101.streamlit.app/?embed=true"
-                frameborder="0"
-                allow="clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen>
-            </iframe>
+    <div class="video-container" id="video-list">
         </div>
-    </main>
+
+    <script src="client.js"></script>
 </body>
 </html>

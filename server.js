@@ -20,6 +20,7 @@ app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Serve the new assets folder
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use('/public', express.static('public')); 
 
 
 // --- File Explorer Setup ---
