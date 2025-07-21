@@ -2,7 +2,7 @@ name: 🎬 Process YouTube Video Request
 
 on:
   repository_dispatch:
-    types: [trigger-youtube-download] # Must match event_type in server.js
+    types: [trigger-youtube-download]
 
 jobs:
   download-and-commit:
@@ -16,16 +16,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      
+      # 👇 ADD THIS ENTIRE CACHING STEP
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip # The folder where pip stores its cache
+          # Create a unique key for the cache based on the OS and the requirements file.
+          # If requirements.txt changes, a new cache will be created.
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      # 👇 UPDATE THIS STEP to use requirements.txt
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytubefix requests
+          pip install -r requirements.txt
 
       - name: Run video download script
         env:
@@ -40,7 +52,6 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add public/videos/*.mp4 public/videos/*.mp3 public/videos.json
-          # Commit only if there are changes to commit
           if ! git diff-index --quiet HEAD; then
             git commit -m "BOT: 🤖 Add video for job ${{ github.event.client_payload.jobId }}"
             git push
