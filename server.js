@@ -6,6 +6,7 @@ const fsPromises = require('fs').promises;
 const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -401,6 +402,105 @@ app.get('/api/summarize-all', async (req, res) => {
     } finally {
         sendEvent({ type: 'done' });
         res.end();
+    }
+});
+
+// ===============================================
+// === YOUTUBE DOWNLOADER API - MISSION CONTROL ===
+// ===============================================
+
+// In-memory store for download jobs. In a real production app, use a database like Redis.
+const jobs = {};
+
+// 1. Endpoint for your WEBSITE to START a new download job
+app.post('/api/ytdownloader/start-download', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ message: 'URL is required' });
+    }
+
+    // Generate a unique ID for this job
+    const jobId = crypto.randomBytes(12).toString('hex');
+    
+    // Store the initial state of the job
+    jobs[jobId] = {
+        id: jobId,
+        url: url,
+        status: 'Queued',
+        progress: 0,
+        message: 'Workflow is being triggered...',
+        timestamp: Date.now()
+    };
+
+    // Use the GitHub API to trigger the 'repository_dispatch' event in your workflow
+    try {
+        await axios.post(
+            // This is the GitHub API endpoint for triggering a workflow
+            `https://api.github.com/repos/${process.env.GITHUB_USER}/${process.env.GITHUB_REPO}/dispatches`,
+            // This is the payload we send. The workflow will receive it.
+            {
+                event_type: 'trigger-youtube-download', // A custom name for this trigger
+                client_payload: {
+                    jobId: jobId,
+                    videoUrl: url
+                }
+            },
+            // These are the required headers, including your secret Personal Access Token (PAT)
+            {
+                headers: {
+                    'Authorization': `token ${process.env.GITHUB_PAT}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+
+        console.log(`Job ${jobId} triggered successfully for URL: ${url}`);
+        // Send the Job ID back to the website so it can start asking for status updates
+        res.status(202).json({ jobId: jobId });
+
+    } catch (error) {
+        console.error('Error triggering GitHub Action:', error.response ? error.response.data : error.message);
+        jobs[jobId].status = 'Failed';
+        jobs[jobId].message = 'Error triggering the download workflow.';
+        res.status(500).json({ message: 'Failed to start download workflow.' });
+    }
+});
+
+// 2. Endpoint for the GITHUB ACTION to POST progress updates
+app.post('/api/ytdownloader/update-progress', (req, res) => {
+    const { jobId, message, progress, finalFile, secret } = req.body;
+
+    // A simple security check to ensure updates are coming from our GitHub Action
+    if (secret !== process.env.PROGRESS_UPDATE_SECRET) {
+        return res.status(403).send('Forbidden: Invalid secret.');
+    }
+    
+    const job = jobs[jobId];
+    if (job) {
+        job.message = message;
+        job.progress = progress;
+        if (progress === 100) {
+            job.status = (message.startsWith("An error occurred")) ? 'Failed' : 'Complete';
+            job.finalFile = finalFile; // Store the final video filename and path
+        } else {
+            job.status = 'Processing';
+        }
+        console.log(`Progress for Job ${jobId}: ${progress}% - ${message}`);
+        res.status(200).send('Progress updated.');
+    } else {
+        res.status(404).send('Job not found.');
+    }
+});
+
+// 3. Endpoint for your WEBSITE to GET the status of a job
+app.get('/api/ytdownloader/status/:jobId', (req, res) => {
+    const { jobId } = req.params;
+    const job = jobs[jobId];
+
+    if (job) {
+        res.json(job);
+    } else {
+        res.status(404).json({ message: 'Job not found.' });
     }
 });
 

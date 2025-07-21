@@ -3,40 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Downloaded Videos</title>
-    <link rel="stylesheet" href="../../style.css"> 
-    <style>
-        .video-container {
-            display: flex;
-            flex-direction: column;
-            gap: 2rem;
-            max-width: 900px;
-            margin: 2rem auto;
-        }
-        .video-card {
-            background-color: #2d3748;
-            border-radius: 8px;
-            padding: 1rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .video-card h3 {
-            margin-top: 0;
-            color: #ffffff;
-        }
-        .video-card p {
-            color: #a0aec0;
-            margin-bottom: 1rem;
-        }
-        video {
-            width: 100%;
-            border-radius: 6px;
-        }
-    </style>
+    <title>YouTube Downloader Dashboard</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="video-container" id="video-list">
-        </div>
+    <header>
+        <h1>YouTube Downloader</h1>
+        <form id="download-form">
+            <input type="text" id="youtube-url" placeholder="Paste YouTube link here..." required>
+            <button type="submit">Download</button>
+        </form>
+    </header>
 
+    <main>
+        <section id="ongoing-downloads">
+            <h2>In Progress</h2>
+            <div id="progress-container">
+                </div>
+        </section>
+
+        <section id="completed-downloads">
+            <h2>Previously Downloaded</h2>
+            <div id="video-list-container">
+                </div>
+        </section>
+    </main>
     <script src="client.js"></script>
 </body>
 </html>
