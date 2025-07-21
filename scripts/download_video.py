@@ -3,9 +3,8 @@ import sys
 import json
 import subprocess
 import requests
-from pytubefix import YouTube
 
-# --- Configuration from Environment Variables ---
+# --- Configuration ---
 JOB_ID = os.environ.get('JOB_ID')
 VIDEO_URL = os.environ.get('VIDEO_URL')
 RENDER_APP_URL = os.environ.get('RENDER_APP_URL', '').rstrip('/')
@@ -50,59 +49,78 @@ def main():
         sys.exit(1)
 
     try:
-        report_progress("Fetching video details...", 5)
-        # 👇 NEW FIX: Combine both client='WEB' and use_po_token=True
-        yt = YouTube(VIDEO_URL, client='WEB', use_po_token=True) 
-        
-        report_progress(f"Details found: {yt.title}", 10)
-        video_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
-        audio_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_audio=True).order_by('abr').desc().first()
-
         temp_dir = "temp_downloads"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        report_progress(f"Downloading video ({video_stream.resolution})...", 25)
-        video_filepath = video_stream.download(output_path=temp_dir)
-        
-        report_progress("Downloading audio...", 50)
-        audio_filepath = audio_stream.download(output_path=temp_dir)
-
         output_dir = "public/videos"
+        os.makedirs(temp_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
-        sanitized_title = sanitize_filename(yt.title)
-        video_filename = f"{sanitized_title}_{video_stream.resolution}.mp4"
-        audio_filename = f"{sanitized_title}_audio.mp3"
         
-        final_video_path = os.path.join(output_dir, video_filename)
-
-        report_progress("Merging video and audio...", 75)
-        subprocess.run(
-            ['ffmpeg', '-i', video_filepath, '-i', audio_filepath, '-c:v', 'copy', '-c:a', 'aac', '-y', final_video_path],
+        # 1. Get video metadata using yt-dlp
+        report_progress("Fetching video metadata...", 10)
+        result = subprocess.run(
+            ['yt-dlp', '--dump-json', VIDEO_URL],
             check=True, capture_output=True, text=True
         )
+        metadata = json.loads(result.stdout)
+        video_title = metadata.get('title', 'Untitled')
+        video_author = metadata.get('uploader', 'Unknown Author')
         
-        final_audio_path = os.path.join(output_dir, audio_filename)
+        report_progress(f"Details found: {video_title}", 20)
+        sanitized_title = sanitize_filename(video_title)
+        
+        # 2. Define file paths
+        video_filename = f"{sanitized_title}_video.mp4"
+        audio_filename = f"{sanitized_title}_audio.mp4"
+        final_video_filename = f"{sanitized_title}.mp4"
+        final_audio_filename = f"{sanitized_title}_audio.mp3"
+
+        temp_video_path = os.path.join(temp_dir, video_filename)
+        temp_audio_path = os.path.join(temp_dir, audio_filename)
+        final_video_path = os.path.join(output_dir, final_video_filename)
+        final_audio_path = os.path.join(output_dir, final_audio_filename)
+
+        # 3. Download best video and audio separately
+        report_progress("Downloading video stream...", 30)
         subprocess.run(
-            ['ffmpeg', '-i', audio_filepath, '-q:a', '0', '-map', 'a', '-y', final_audio_path],
-            check=True, capture_output=True, text=True
+            ['yt-dlp', '-f', 'bestvideo[ext=mp4]', '--output', temp_video_path, VIDEO_URL],
+            check=True
+        )
+        
+        report_progress("Downloading audio stream...", 60)
+        subprocess.run(
+            ['yt-dlp', '-f', 'bestaudio[ext=m4a]', '--output', temp_audio_path, VIDEO_URL],
+            check=True
+        )
+
+        # 4. Merge video and audio with ffmpeg
+        report_progress("Merging video and audio...", 80)
+        subprocess.run(
+            ['ffmpeg', '-i', temp_video_path, '-i', temp_audio_path, '-c:v', 'copy', '-c:a', 'aac', '-y', final_video_path],
+            check=True, capture_output=True
+        )
+        
+        # 5. Convert audio to MP3 for separate download
+        report_progress("Creating separate audio file...", 90)
+        subprocess.run(
+            ['ffmpeg', '-i', temp_audio_path, '-q:a', '0', '-map', 'a', '-y', final_audio_path],
+            check=True, capture_output=True
         )
 
         report_progress("Cleaning up...", 95)
-        os.remove(video_filepath)
-        os.remove(audio_filepath)
+        os.remove(temp_video_path)
+        os.remove(temp_audio_path)
         os.rmdir(temp_dir)
 
         final_file_info = {
-            "title": yt.title, "author": yt.author, "videoFile": video_filename,
-            "audioFile": audio_filename, "videoPath": f"public/videos/{video_filename}",
-            "audioPath": f"public/videos/{audio_filename}",
+            "title": video_title, "author": video_author, "videoFile": final_video_filename,
+            "audioFile": final_audio_filename, "videoPath": f"public/videos/{final_video_filename}",
+            "audioPath": f"public/videos/{final_audio_filename}",
         }
         update_video_manifest(final_file_info)
         
         report_progress("Download complete! ✅", 100, final_file_info)
 
     except Exception as e:
-        error_message = f"An error occurred: {str(e)}"
+        error_message = f"An error occurred: {e}"
         report_progress(error_message, 100)
         sys.exit(1)
 
