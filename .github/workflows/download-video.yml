@@ -30,7 +30,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # This step now installs yt-dlp from your new requirements file
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -42,6 +41,7 @@ jobs:
           VIDEO_URL: ${{ github.event.client_payload.videoUrl }}
           RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
           PROGRESS_UPDATE_SECRET: ${{ secrets.PROGRESS_UPDATE_SECRET }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }} # <-- ADD THIS LINE
         run: python scripts/download_video.py
 
       - name: Commit and push new video
