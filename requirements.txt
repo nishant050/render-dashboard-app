@@ -1,2 +1,3 @@
 yt-dlp
 requests
+curl-cffi>=0.6.0
