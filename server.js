@@ -10,7 +10,13 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Read GROQ API key from environment. Support both `GROQ_API_KEY`
+// and `REDACTED_GROQ_API_KEY` (in case you added that name on Render).
+const groqApiKey = process.env.GROQ_API_KEY || process.env.REDACTED_GROQ_API_KEY;
+if (!groqApiKey) {
+    console.warn('Warning: GROQ API key not found in environment variables. Set GROQ_API_KEY on Render.');
+}
+const groq = new Groq({ apiKey: groqApiKey });
 
 // Middleware to parse JSON bodies
 app.use(express.json());

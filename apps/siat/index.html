@@ -201,9 +201,10 @@
 
     <script>
         // --- CONFIGURATION ---
-        // GROQ API key removed from source for security. Set this at runtime
-        // via an environment-specific config or server-side proxy.
-        const GROQ_API_KEY = "REDACTED_GROQ_API_KEY";
+        // Do NOT store API keys in client-side code. The site should call
+        // server endpoints (e.g. `/api/...`) that use the GROQ key from
+        // `process.env.GROQ_API_KEY` on the server. Remove any client-side
+        // key constants before deploying.
         const STORAGE_KEY = "expo_companion_v2";
 
         // --- RAW DATA ---
