@@ -72,11 +72,87 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+
+        .modal-backdrop {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .profile-card {
+            transition: all 0.2s ease;
+        }
+
+        .profile-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .avatar-gradient {
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
+    <!-- Profile Selection Modal -->
+    <div id="profileModal" class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden fade-in">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-emerald-500 to-teal-600 p-8 text-center text-white">
+                <div class="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-chart-line text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">Stock Market Mastery</h2>
+                <p class="text-sm opacity-90">Complete Hindi Course</p>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="p-6">
+                <!-- Existing Profiles -->
+                <div id="existingProfiles" class="mb-6 hidden">
+                    <h3 class="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
+                        <i class="fas fa-users text-slate-400"></i>
+                        Select Your Profile
+                    </h3>
+                    <div id="profilesList" class="space-y-2 max-h-48 overflow-y-auto">
+                        <!-- Profiles will be rendered here -->
+                    </div>
+                    <div class="relative my-5">
+                        <hr class="border-slate-200">
+                        <span class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-xs text-slate-400">or</span>
+                    </div>
+                </div>
+
+                <!-- Create New Profile -->
+                <div id="createProfileSection">
+                    <h3 class="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
+                        <i class="fas fa-user-plus text-slate-400"></i>
+                        <span id="createProfileTitle">Create Your Profile</span>
+                    </h3>
+                    <div class="flex gap-3">
+                        <input type="text" id="newProfileName" placeholder="Enter your name" 
+                            class="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-slate-700"
+                            onkeypress="if(event.key === 'Enter') createProfile()">
+                        <button onclick="createProfile()" 
+                            class="px-5 py-3 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+                    <p id="profileError" class="text-red-500 text-xs mt-2 hidden">Please enter your name</p>
+                </div>
+            </div>
+
+            <!-- Footer Note -->
+            <div class="px-6 pb-6">
+                <div class="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
+                    <i class="fas fa-info-circle text-slate-400 mt-0.5"></i>
+                    <p class="text-xs text-slate-500">Your progress is saved locally on this device. Each profile tracks progress separately.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Header -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <header id="mainHeader" class="bg-white border-b border-slate-200 sticky top-0 z-50 hidden">
         <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
@@ -88,6 +164,14 @@
                 </div>
             </div>
             <div class="flex items-center gap-4">
+                <!-- User Profile Badge -->
+                <button onclick="showProfileSwitcher()" class="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-full transition-colors">
+                    <div class="w-6 h-6 avatar-gradient rounded-full flex items-center justify-center">
+                        <span id="headerUserInitial" class="text-white text-xs font-bold">U</span>
+                    </div>
+                    <span id="headerUserName" class="text-sm font-medium text-slate-700 max-w-[100px] truncate hidden sm:block">User</span>
+                    <i class="fas fa-chevron-down text-xs text-slate-400"></i>
+                </button>
                 <div class="hidden sm:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full">
                     <svg class="w-5 h-5 text-emerald-600" viewBox="0 0 36 36">
                         <circle class="progress-ring" stroke="#e2e8f0" stroke-width="3" fill="none" r="15" cx="18" cy="18"/>
@@ -103,7 +187,8 @@
         </div>
     </header>
 
-    <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
+    <!-- Main App Container -->
+    <div id="mainApp" class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 hidden">
         <!-- Sidebar -->
         <aside class="lg:w-80 flex-shrink-0">
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-24">
@@ -187,6 +272,27 @@
                 <!-- Generated dynamically -->
             </div>
         </main>
+    </div>
+
+    <!-- Profile Switcher Modal -->
+    <div id="profileSwitcherModal" class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden fade-in">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 class="font-semibold text-slate-800">Switch Profile</h3>
+                <button onclick="hideProfileSwitcher()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="switcherProfilesList" class="p-4 max-h-64 overflow-y-auto space-y-2">
+                <!-- Profiles will be rendered here -->
+            </div>
+            <div class="p-4 border-t border-slate-100">
+                <button onclick="hideProfileSwitcher(); showProfileModal();" class="w-full px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
+                    <i class="fas fa-user-plus text-sm"></i>
+                    Add New Profile
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Notification -->
@@ -373,24 +479,250 @@
             ]
         };
 
-        // State Management
+        // Multi-User State Management
+        let profiles = {};
+        let currentProfileId = null;
         let state = {
             currentVideoId: null,
             completedVideos: [],
             lastWatched: null
         };
 
-        // Load state from localStorage
-        function loadState() {
-            const saved = localStorage.getItem('stockMarketCourse');
+        // Generate unique ID
+        function generateId() {
+            return 'profile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Get initials from name
+        function getInitials(name) {
+            return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        }
+
+        // Load all profiles from localStorage
+        function loadProfiles() {
+            const saved = localStorage.getItem('stockMarketCourseProfiles');
             if (saved) {
-                state = JSON.parse(saved);
+                profiles = JSON.parse(saved);
+            }
+            currentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile');
+        }
+
+        // Save all profiles to localStorage
+        function saveProfiles() {
+            localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
+            if (currentProfileId) {
+                localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
             }
         }
 
-        // Save state to localStorage
+        // Save current user's state
         function saveState() {
-            localStorage.setItem('stockMarketCourse', JSON.stringify(state));
+            if (!currentProfileId) return;
+            profiles[currentProfileId].progress = state;
+            saveProfiles();
+        }
+
+        // Load current user's state
+        function loadCurrentUserState() {
+            if (!currentProfileId || !profiles[currentProfileId]) return;
+            state = profiles[currentProfileId].progress || {
+                currentVideoId: null,
+                completedVideos: [],
+                lastWatched: null
+            };
+        }
+
+        // Create new profile
+        function createProfile() {
+            const nameInput = document.getElementById('newProfileName');
+            const name = nameInput.value.trim();
+            const errorEl = document.getElementById('profileError');
+
+            if (!name) {
+                errorEl.classList.remove('hidden');
+                nameInput.focus();
+                return;
+            }
+
+            errorEl.classList.add('hidden');
+
+            const profileId = generateId();
+            profiles[profileId] = {
+                id: profileId,
+                name: name,
+                createdAt: new Date().toISOString(),
+                progress: {
+                    currentVideoId: null,
+                    completedVideos: [],
+                    lastWatched: null
+                }
+            };
+
+            currentProfileId = profileId;
+            saveProfiles();
+            loadCurrentUserState();
+            
+            hideProfileModal();
+            showMainApp();
+            updateHeaderUserInfo();
+            initCourse();
+            
+            showToast(`Welcome, ${name}! Let's start learning 🚀`, 'user-check', 'emerald');
+        }
+
+        // Select existing profile
+        function selectProfile(profileId) {
+            currentProfileId = profileId;
+            saveProfiles();
+            loadCurrentUserState();
+            
+            hideProfileModal();
+            hideProfileSwitcher();
+            showMainApp();
+            updateHeaderUserInfo();
+            initCourse();
+            
+            const profile = profiles[profileId];
+            showToast(`Welcome back, ${profile.name}!`, 'user-check', 'emerald');
+        }
+
+        // Delete profile
+        function deleteProfile(profileId, event) {
+            event.stopPropagation();
+            const profile = profiles[profileId];
+            
+            if (confirm(`Delete profile "${profile.name}"? All progress will be lost.`)) {
+                delete profiles[profileId];
+                saveProfiles();
+                
+                if (currentProfileId === profileId) {
+                    currentProfileId = null;
+                    localStorage.removeItem('stockMarketCourseCurrentProfile');
+                }
+                
+                renderProfilesList();
+                renderSwitcherProfilesList();
+                showToast('Profile deleted', 'trash', 'red');
+                
+                // If no more profiles, show create new
+                if (Object.keys(profiles).length === 0) {
+                    hideProfileSwitcher();
+                    showProfileModal();
+                }
+            }
+        }
+
+        // Render profiles list in initial modal
+        function renderProfilesList() {
+            const container = document.getElementById('profilesList');
+            const existingSection = document.getElementById('existingProfiles');
+            const createTitle = document.getElementById('createProfileTitle');
+            const profilesArray = Object.values(profiles);
+
+            if (profilesArray.length === 0) {
+                existingSection.classList.add('hidden');
+                createTitle.textContent = 'Create Your Profile';
+                return;
+            }
+
+            existingSection.classList.remove('hidden');
+            createTitle.textContent = 'Add New Profile';
+
+            container.innerHTML = profilesArray.map(profile => {
+                const completedCount = profile.progress?.completedVideos?.length || 0;
+                const totalVideos = getAllVideos().length;
+                const percent = Math.round((completedCount / totalVideos) * 100);
+
+                return `
+                    <button onclick="selectProfile('${profile.id}')" 
+                        class="profile-card w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all group">
+                        <div class="w-10 h-10 avatar-gradient rounded-full flex items-center justify-center flex-shrink-0">
+                            <span class="text-white font-bold text-sm">${getInitials(profile.name)}</span>
+                        </div>
+                        <div class="flex-1 text-left min-w-0">
+                            <p class="font-medium text-slate-800 truncate">${profile.name}</p>
+                            <p class="text-xs text-slate-500">${percent}% complete • ${completedCount}/${totalVideos} videos</p>
+                        </div>
+                        <button onclick="deleteProfile('${profile.id}', event)" 
+                            class="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 transition-all">
+                            <i class="fas fa-trash text-xs"></i>
+                        </button>
+                        <i class="fas fa-chevron-right text-slate-300"></i>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Render profiles in switcher modal
+        function renderSwitcherProfilesList() {
+            const container = document.getElementById('switcherProfilesList');
+            const profilesArray = Object.values(profiles);
+
+            container.innerHTML = profilesArray.map(profile => {
+                const isActive = profile.id === currentProfileId;
+                const completedCount = profile.progress?.completedVideos?.length || 0;
+                const totalVideos = getAllVideos().length;
+                const percent = Math.round((completedCount / totalVideos) * 100);
+
+                return `
+                    <button onclick="selectProfile('${profile.id}')" 
+                        class="w-full flex items-center gap-3 p-3 ${isActive ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 hover:bg-slate-100'} rounded-xl transition-all group">
+                        <div class="w-10 h-10 avatar-gradient rounded-full flex items-center justify-center flex-shrink-0">
+                            <span class="text-white font-bold text-sm">${getInitials(profile.name)}</span>
+                        </div>
+                        <div class="flex-1 text-left min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="font-medium text-slate-800 truncate">${profile.name}</p>
+                                ${isActive ? '<span class="px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] rounded-full">Active</span>' : ''}
+                            </div>
+                            <p class="text-xs text-slate-500">${percent}% complete</p>
+                        </div>
+                        <button onclick="deleteProfile('${profile.id}', event)" 
+                            class="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 transition-all">
+                            <i class="fas fa-trash text-xs"></i>
+                        </button>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Update header with current user info
+        function updateHeaderUserInfo() {
+            if (!currentProfileId || !profiles[currentProfileId]) return;
+            const profile = profiles[currentProfileId];
+            document.getElementById('headerUserName').textContent = profile.name;
+            document.getElementById('headerUserInitial').textContent = getInitials(profile.name);
+        }
+
+        // Modal controls
+        function showProfileModal() {
+            document.getElementById('profileModal').classList.remove('hidden');
+            document.getElementById('newProfileName').value = '';
+            document.getElementById('profileError').classList.add('hidden');
+            renderProfilesList();
+        }
+
+        function hideProfileModal() {
+            document.getElementById('profileModal').classList.add('hidden');
+        }
+
+        function showProfileSwitcher() {
+            renderSwitcherProfilesList();
+            document.getElementById('profileSwitcherModal').classList.remove('hidden');
+        }
+
+        function hideProfileSwitcher() {
+            document.getElementById('profileSwitcherModal').classList.add('hidden');
+        }
+
+        function showMainApp() {
+            document.getElementById('mainHeader').classList.remove('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+        }
+
+        function hideMainApp() {
+            document.getElementById('mainHeader').classList.add('hidden');
+            document.getElementById('mainApp').classList.add('hidden');
         }
 
         // Get all videos as flat array
@@ -407,7 +739,6 @@
         // Get next video to watch
         function getNextVideo() {
             const allVideos = getAllVideos();
-            // First priority: continue from last watched
             if (state.lastWatched) {
                 const lastIndex = allVideos.findIndex(v => v.id === state.lastWatched);
                 if (lastIndex !== -1 && lastIndex < allVideos.length - 1) {
@@ -417,7 +748,6 @@
                     }
                 }
             }
-            // Second priority: first incomplete video
             return allVideos.find(v => !state.completedVideos.includes(v.id)) || allVideos[0];
         }
 
@@ -427,7 +757,7 @@
             return allVideos.find(v => v.id === id);
         }
 
-        // Play video (select it as current)
+        // Play video
         function playVideo(videoId, openInNewTab = false) {
             const video = getVideoById(videoId);
             if (!video) return;
@@ -436,7 +766,6 @@
             state.lastWatched = videoId;
             saveState();
 
-            // Update info
             document.getElementById('currentVideoTitle').textContent = video.title;
             document.getElementById('currentVideoChannel').textContent = video.channel;
             document.getElementById('currentVideoDesc').textContent = video.description;
@@ -445,22 +774,15 @@
             badge.textContent = video.moduleTitle;
             badge.className = `inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 bg-${video.moduleColor}-100 text-${video.moduleColor}-700`;
 
-            // Show watch button
             document.getElementById('watchNowBtn').classList.remove('hidden');
-
-            // Update complete button
             updateCompleteButton();
-
-            // Update UI highlights
             updateVideoHighlights();
             updateNextUpCard();
 
-            // Scroll to top on mobile
             if (window.innerWidth < 1024) {
                 document.getElementById('videoSection').scrollIntoView({ behavior: 'smooth' });
             }
 
-            // Open in new tab if requested
             if (openInNewTab) {
                 window.open(video.url, '_blank');
             }
@@ -484,15 +806,7 @@
             playVideo(videoId, true);
         }
 
-        // Play next video
-        function playNextVideo() {
-            const next = getNextVideo();
-            if (next) {
-                playVideo(next.id);
-            }
-        }
-
-        // Watch next video (opens in new tab)
+        // Watch next video
         function watchNextVideo() {
             const next = getNextVideo();
             if (next) {
@@ -553,7 +867,7 @@
             }
         }
 
-        // Update video highlights in curriculum
+        // Update video highlights
         function updateVideoHighlights() {
             document.querySelectorAll('.video-item').forEach(item => {
                 const videoId = item.dataset.videoId;
@@ -592,13 +906,12 @@
             document.getElementById('progressBar').style.width = `${percent}%`;
             document.getElementById('headerPercent').textContent = percent;
 
-            // Update header ring
             const ring = document.getElementById('headerProgress');
             const circumference = 94.2;
             ring.style.strokeDashoffset = circumference - (percent / 100) * circumference;
         }
 
-        // Update module progress in nav
+        // Update module nav
         function updateModuleNav() {
             const nav = document.getElementById('moduleNav');
             nav.innerHTML = courseData.modules.map(module => {
@@ -639,9 +952,9 @@
             
             container.innerHTML = courseData.modules.map(module => {
                 const colorClasses = {
-                    emerald: { bg: 'bg-emerald-500', light: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200' },
-                    blue: { bg: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
-                    purple: { bg: 'bg-purple-500', light: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-200' }
+                    emerald: { bg: 'bg-emerald-500', light: 'bg-emerald-50', text: 'text-emerald-600' },
+                    blue: { bg: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-600' },
+                    purple: { bg: 'bg-purple-500', light: 'bg-purple-50', text: 'text-purple-600' }
                 };
                 const colors = colorClasses[module.color];
 
@@ -693,7 +1006,7 @@
             }).join('');
         }
 
-        // Show toast notification
+        // Show toast
         function showToast(message, icon = 'check-circle', color = 'emerald') {
             const toast = document.getElementById('toast');
             const toastIcon = document.getElementById('toastIcon');
@@ -711,7 +1024,7 @@
 
         // Reset progress
         function resetProgress() {
-            if (confirm('Are you sure you want to reset all progress? This cannot be undone.')) {
+            if (confirm('Are you sure you want to reset all progress for this profile? This cannot be undone.')) {
                 state = {
                     currentVideoId: null,
                     completedVideos: [],
@@ -719,18 +1032,18 @@
                 };
                 saveState();
                 
-                // Reset video info
                 document.getElementById('currentVideoTitle').textContent = 'Welcome to Stock Market Mastery';
                 document.getElementById('currentVideoChannel').textContent = 'Select a video from the curriculum below';
-                document.getElementById('currentVideoDesc').textContent = 'Start with Module 1 to learn the basics of stock market investing in Hindi.';
+                document.getElementById('currentVideoDesc').textContent = 'Start with Module 1 to learn the basics.';
                 document.getElementById('currentModuleBadge').textContent = 'Get Started';
+                document.getElementById('watchNowBtn').classList.add('hidden');
                 
                 updateUI();
                 showToast('Progress has been reset', 'redo', 'blue');
             }
         }
 
-        // Update all UI elements
+        // Update all UI
         function updateUI() {
             updateProgress();
             updateModuleNav();
@@ -740,13 +1053,11 @@
             renderCurriculum();
         }
 
-        // Initialize
-        function init() {
-            loadState();
+        // Initialize course content
+        function initCourse() {
             renderCurriculum();
             updateUI();
 
-            // Restore last watched video info
             if (state.lastWatched) {
                 const video = getVideoById(state.lastWatched);
                 if (video) {
@@ -760,22 +1071,55 @@
                     updateCompleteButton();
                 }
             } else {
-                // Set default state for new users
                 document.getElementById('currentVideoDesc').textContent = 'Start with Module 1 to learn the basics of stock market investing in Hindi.';
                 document.getElementById('currentModuleBadge').textContent = 'Get Started';
                 document.getElementById('currentModuleBadge').className = 'inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 bg-slate-100 text-slate-700';
+                document.getElementById('watchNowBtn').classList.add('hidden');
             }
+        }
 
-            // Show welcome or progress message
-            if (state.completedVideos.length > 0) {
-                showToast(`Welcome back! ${state.completedVideos.length} videos completed`, 'cloud-download-alt', 'blue');
+        // Main initialization
+        function init() {
+            loadProfiles();
+
+            // Check if user was previously logged in
+            if (currentProfileId && profiles[currentProfileId]) {
+                loadCurrentUserState();
+                hideProfileModal();
+                showMainApp();
+                updateHeaderUserInfo();
+                initCourse();
+
+                if (state.completedVideos.length > 0) {
+                    showToast(`Welcome back, ${profiles[currentProfileId].name}! ${state.completedVideos.length} videos completed`, 'user-check', 'blue');
+                } else {
+                    showToast(`Welcome back, ${profiles[currentProfileId].name}!`, 'user-check', 'emerald');
+                }
             } else {
-                showToast('Welcome! Start your learning journey 🚀', 'rocket', 'emerald');
+                // Show profile selection/creation modal
+                showProfileModal();
+                hideMainApp();
             }
         }
 
         // Run on load
         document.addEventListener('DOMContentLoaded', init);
+
+        // Close modals on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (!document.getElementById('profileSwitcherModal').classList.contains('hidden')) {
+                    hideProfileSwitcher();
+                }
+            }
+        });
+
+        // Close profile switcher when clicking outside
+        document.getElementById('profileSwitcherModal').addEventListener('click', (e) => {
+            if (e.target.id === 'profileSwitcherModal') {
+                hideProfileSwitcher();
+            }
+        });
     </script>
 </body>
 </html>
