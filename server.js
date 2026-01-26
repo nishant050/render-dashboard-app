@@ -411,6 +411,24 @@ app.get('/api/summarize-all', async (req, res) => {
     }
 });
 
+// Proxy endpoint: POST /api/groq-chat
+// Accepts { model, messages, temperature, search_settings } and returns
+// the Groq chat completion. Keeps the API key on the server.
+app.post('/api/groq-chat', async (req, res) => {
+    try {
+        if (!groqApiKey) return res.status(500).json({ error: 'GROQ API key not configured on server.' });
+
+        const { model = 'groq/compound', messages, temperature = 0.1, search_settings } = req.body;
+        if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: 'messages array is required' });
+
+        const completion = await groq.chat.completions.create({ model, messages, temperature, search_settings });
+        res.json(completion);
+    } catch (err) {
+        console.error('Error in /api/groq-chat:', err?.response?.data || err.message || err);
+        res.status(500).json({ error: err.message || 'Groq request failed' });
+    }
+});
+
 // ===============================================
 // === YOUTUBE DOWNLOADER API - MISSION CONTROL ===
 // ===============================================

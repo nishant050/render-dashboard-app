@@ -993,21 +993,22 @@
             const prompt = `Research "${c.name}" (Stall ${c.stall}). Return a JSON object with keys: "owner", "location", "turnover", "products" (simple HTML list). No markdown.`;
 
             try {
-                const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+                const response = await fetch('/api/groq-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: "groq/compound",
+                        model: 'groq/compound',
                         messages: [
-                            { role: "system", content: "You are a JSON-only bot. Output strict JSON." },
-                            { role: "user", content: prompt }
+                            { role: 'system', content: 'You are a JSON-only bot. Output strict JSON.' },
+                            { role: 'user', content: prompt }
                         ],
                         temperature: 0.1
                     })
                 });
 
                 const json = await response.json();
-                let content = json.choices[0].message.content;
+                // Support the same shape returned by the Groq SDK
+                let content = (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || JSON.stringify(json);
                 
                 // Robust Parse
                 const start = content.indexOf('{');
