@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Notes</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .notes-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:1rem; }
+        .notes-list { display:flex; flex-direction:column; gap:0.75rem; }
+        .note-card { background:#fff; padding:0.75rem; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.06); }
+        .note-meta { display:flex; justify-content:space-between; gap:8px; font-size:0.9rem; color:#666; }
+        textarea#note-content { width:100%; min-height:120px; resize:vertical; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="../../index.html">&larr; Back to Dashboard</a>
+    </nav>
+
+    <main class="container">
+        <h1>📝 Quick Notes</h1>
+
+        <div class="notes-toolbar">
+            <input id="note-title" placeholder="Title (optional)" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd;">
+            <button id="clear-all-btn" class="danger-btn">Clear All</button>
+        </div>
+
+        <textarea id="note-content" placeholder="Write a quick note..."></textarea>
+        <div style="margin-top:0.5rem; display:flex; gap:8px;">
+            <button id="save-note-btn">Save Note</button>
+            <button id="new-note-btn">New Note</button>
+        </div>
+
+        <hr style="margin:1.25rem 0;">
+
+        <h2>Saved Notes</h2>
+        <div id="notes-list" class="notes-list"></div>
+    </main>
+
+    <script src="client.js"></script>
+</body>
+</html>

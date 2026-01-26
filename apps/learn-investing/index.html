@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Mastery | Complete Hindi Course</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        .module-gradient-1 {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+        
+        .module-gradient-2 {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+        }
+        
+        .module-gradient-3 {
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+        }
+        
+        .progress-ring {
+            transform: rotate(-90deg);
+        }
+        
+        .video-item.completed {
+            opacity: 0.7;
+        }
+        
+        .video-item.current {
+            border-left: 3px solid #10b981;
+            background: #f0fdf4;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .pulse-dot {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-chart-line text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-slate-800 text-lg">Stock Market Mastery</h1>
+                    <p class="text-xs text-slate-500">Complete Hindi Course</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="hidden sm:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full">
+                    <svg class="w-5 h-5 text-emerald-600" viewBox="0 0 36 36">
+                        <circle class="progress-ring" stroke="#e2e8f0" stroke-width="3" fill="none" r="15" cx="18" cy="18"/>
+                        <circle class="progress-ring" id="headerProgress" stroke="#10b981" stroke-width="3" fill="none" r="15" cx="18" cy="18" 
+                            stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round"/>
+                    </svg>
+                    <span class="text-sm font-medium text-slate-700"><span id="headerPercent">0</span>% Complete</span>
+                </div>
+                <button onclick="resetProgress()" class="text-slate-400 hover:text-red-500 transition-colors" title="Reset Progress">
+                    <i class="fas fa-redo text-sm"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
+        <!-- Sidebar -->
+        <aside class="lg:w-80 flex-shrink-0">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-24">
+                <!-- Next Up Card -->
+                <div id="nextUpCard" class="p-5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="pulse-dot w-2 h-2 bg-white rounded-full"></span>
+                        <span class="text-xs font-medium uppercase tracking-wide opacity-90">Continue Learning</span>
+                    </div>
+                    <h3 id="nextVideoTitle" class="font-semibold text-lg mb-1 line-clamp-2">Loading...</h3>
+                    <p id="nextVideoModule" class="text-sm opacity-80 mb-3">Module</p>
+                    <button onclick="watchNextVideo()" class="bg-white text-emerald-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50 transition-colors flex items-center gap-2">
+                        <i class="fab fa-youtube text-sm"></i>
+                        Watch Now
+                        <i class="fas fa-external-link-alt text-xs"></i>
+                    </button>
+                </div>
+
+                <!-- Progress Summary -->
+                <div class="p-5 border-b border-slate-100">
+                    <h4 class="text-sm font-medium text-slate-500 mb-4">Your Progress</h4>
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-600">Videos Completed</span>
+                            <span class="font-semibold text-slate-800"><span id="completedCount">0</span>/<span id="totalCount">0</span></span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div id="progressBar" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Module Navigation -->
+                <nav class="p-4 max-h-[400px] overflow-y-auto">
+                    <div class="space-y-2" id="moduleNav">
+                        <!-- Generated dynamically -->
+                    </div>
+                </nav>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 min-w-0">
+            <!-- Current Video Info Section -->
+            <div id="videoSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 fade-in">
+                <div class="p-6">
+                    <div class="flex items-start justify-between gap-4 mb-4">
+                        <div class="flex-1">
+                            <span id="currentModuleBadge" class="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full mb-2">Module 1</span>
+                            <h2 id="currentVideoTitle" class="text-xl font-bold text-slate-800">Welcome to Stock Market Mastery</h2>
+                            <p id="currentVideoChannel" class="text-sm text-slate-500 mt-1">Select a video from the curriculum below</p>
+                            <p id="currentVideoDesc" class="text-sm text-slate-400 mt-2"></p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-100">
+                        <button id="watchNowBtn" onclick="openCurrentVideo()" class="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2 hidden">
+                            <i class="fab fa-youtube text-lg"></i>
+                            <span>Watch on YouTube</span>
+                            <i class="fas fa-external-link-alt text-xs ml-1"></i>
+                        </button>
+                        <button id="markCompleteBtn" onclick="toggleComplete()" class="px-4 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                            <i class="fas fa-check"></i>
+                            <span>Mark Complete</span>
+                        </button>
+                        <div class="flex items-center gap-2 ml-auto">
+                            <button id="prevBtn" onclick="playPrevVideo()" class="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
+                                <i class="fas fa-chevron-left"></i>
+                                Prev
+                            </button>
+                            <button id="nextBtn" onclick="playNextVideoInSequence()" class="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
+                                Next
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Course Curriculum -->
+            <div class="space-y-6" id="curriculum">
+                <!-- Generated dynamically -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 z-50">
+        <i id="toastIcon" class="fas fa-check-circle text-emerald-400"></i>
+        <span id="toastMessage">Progress saved!</span>
+    </div>
+
+    <script>
+        // Course Data Structure
+        const courseData = {
+            modules: [
+                {
+                    id: 1,
+                    title: "Basics Module",
+                    subtitle: "Introduction to Stock Market",
+                    gradient: "module-gradient-1",
+                    color: "emerald",
+                    topics: [
+                        {
+                            id: "1-1",
+                            title: "Stock Market Basics Playlist",
+                            channel: "FinnovationZ by Prasad",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLbEgUtKoxfxZ3AnWi3zjDNbTmCzNAnM6K",
+                            embedId: "videoseries?list=PLbEgUtKoxfxZ3AnWi3zjDNbTmCzNAnM6K",
+                            description: "7+ videos covering all basics with animations"
+                        },
+                        {
+                            id: "1-2",
+                            title: "Basics of Stock Market Lecture 1",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=Xn7KWR9EOGQ&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=1",
+                            embedId: "Xn7KWR9EOGQ",
+                            description: "Most recommended series - Start here!"
+                        },
+                        {
+                            id: "1-3",
+                            title: "Basics of Stock Market Lecture 2",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=bLl_VRQ7pBs&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=3",
+                            embedId: "bLl_VRQ7pBs",
+                            description: "Continue the series - Building foundations"
+                        },
+                        {
+                            id: "1-4",
+                            title: "Basics of Stock Market Lecture 3",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=hBKqk5oYexw&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=2",
+                            embedId: "hBKqk5oYexw",
+                            description: "Sensex, Nifty and Market Indices"
+                        },
+                        {
+                            id: "1-5",
+                            title: "Complete Stock Market Basics Overview",
+                            channel: "Comprehensive Guide",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=RFP3ooXIiyI",
+                            embedId: "RFP3ooXIiyI",
+                            description: "Detailed overview with high engagement"
+                        }
+                    ]
+                },
+                {
+                    id: 2,
+                    title: "Intermediate Module",
+                    subtitle: "Fundamental & Technical Analysis",
+                    gradient: "module-gradient-2",
+                    color: "blue",
+                    topics: [
+                        {
+                            id: "2-1",
+                            title: "Stock Market Classes - Value Investing",
+                            channel: "Pranjal Kamra",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLFQ0hRWyH11RS4KUPadj6aoC2KtEHVIfN",
+                            embedId: "videoseries?list=PLFQ0hRWyH11RS4KUPadj6aoC2KtEHVIfN",
+                            description: "Ratio analysis, value investing, balance sheets"
+                        },
+                        {
+                            id: "2-2",
+                            title: "Fundamental Analysis Series",
+                            channel: "Groww",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLnVPnbw2tB4Nw0-gtmc5e9C57_581rDRU",
+                            embedId: "videoseries?list=PLnVPnbw2tB4Nw0-gtmc5e9C57_581rDRU",
+                            description: "Balance sheet reading, P/E, ROE ratios"
+                        },
+                        {
+                            id: "2-3",
+                            title: "Fundamental Analysis Beginner to Pro",
+                            channel: "Complete Course",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLYR1jiScjAL5rJVg382HH0CG2EqEi2J4A",
+                            embedId: "videoseries?list=PLYR1jiScjAL5rJVg382HH0CG2EqEi2J4A",
+                            description: "Qualitative aspects included"
+                        },
+                        {
+                            id: "2-4",
+                            title: "Technical Analysis Basics",
+                            channel: "Candlesticks & Support/Resistance",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLpU2-cZd3Pvf7QvzWPaS1uQVyqy8G3KM1",
+                            embedId: "videoseries?list=PLpU2-cZd3Pvf7QvzWPaS1uQVyqy8G3KM1",
+                            description: "Beginner series in Hindi"
+                        },
+                        {
+                            id: "2-5",
+                            title: "Price Action & Candlesticks",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=ohtb5BQqEA0",
+                            embedId: "ohtb5BQqEA0",
+                            description: "Practical trading examples"
+                        }
+                    ]
+                },
+                {
+                    id: 3,
+                    title: "Advanced Module",
+                    subtitle: "F&O, Derivatives & Trading Strategies",
+                    gradient: "module-gradient-3",
+                    color: "purple",
+                    topics: [
+                        {
+                            id: "3-1",
+                            title: "Futures & Options Lecture 1",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=LRgWGsrzMAU",
+                            embedId: "LRgWGsrzMAU",
+                            description: "Most popular F&O explanation in Hindi"
+                        },
+                        {
+                            id: "3-2",
+                            title: "Basics of Futures Trading",
+                            channel: "FinnovationZ by Prasad",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLbEgUtKoxfxZvYJ8KEodyAniuBui5lU7K",
+                            embedId: "videoseries?list=PLbEgUtKoxfxZvYJ8KEodyAniuBui5lU7K",
+                            description: "Structured progression to options"
+                        },
+                        {
+                            id: "3-3",
+                            title: "Technical Indicators Analysis",
+                            channel: "MACD, RSI, Bollinger Bands",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PL6GeIaFlwBpvVnssc77zaCsbjdqxrsYMa",
+                            embedId: "videoseries?list=PL6GeIaFlwBpvVnssc77zaCsbjdqxrsYMa",
+                            description: "All major indicators explained"
+                        },
+                        {
+                            id: "3-4",
+                            title: "Top Technical Indicators Overview",
+                            channel: "Comprehensive Guide",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=QQG3NTjeUP4",
+                            embedId: "QQG3NTjeUP4",
+                            description: "Popular indicators overview"
+                        },
+                        {
+                            id: "3-5",
+                            title: "5 Proven Intraday Strategies",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=CpcRmFd34jg",
+                            embedId: "CpcRmFd34jg",
+                            description: "Practical intraday strategies"
+                        },
+                        {
+                            id: "3-6",
+                            title: "Intraday Trading Full Course",
+                            channel: "Beginner to Advanced",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLJwRwY_zmmSF-yTeebHZ1h5rm-3WZiWVf",
+                            embedId: "videoseries?list=PLJwRwY_zmmSF-yTeebHZ1h5rm-3WZiWVf",
+                            description: "Complete intraday course in Hindi"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // State Management
+        let state = {
+            currentVideoId: null,
+            completedVideos: [],
+            lastWatched: null
+        };
+
+        // Load state from localStorage
+        function loadState() {
+            const saved = localStorage.getItem('stockMarketCourse');
+            if (saved) {
+                state = JSON.parse(saved);
+            }
+        }
+
+        // Save state to localStorage
+        function saveState() {
+            localStorage.setItem('stockMarketCourse', JSON.stringify(state));
+        }
+
+        // Get all videos as flat array
+        function getAllVideos() {
+            const videos = [];
+            courseData.modules.forEach(module => {
+                module.topics.forEach(topic => {
+                    videos.push({ ...topic, moduleId: module.id, moduleTitle: module.title, moduleColor: module.color });
+                });
+            });
+            return videos;
+        }
+
+        // Get next video to watch
+        function getNextVideo() {
+            const allVideos = getAllVideos();
+            // First priority: continue from last watched
+            if (state.lastWatched) {
+                const lastIndex = allVideos.findIndex(v => v.id === state.lastWatched);
+                if (lastIndex !== -1 && lastIndex < allVideos.length - 1) {
+                    const next = allVideos[lastIndex + 1];
+                    if (!state.completedVideos.includes(next.id)) {
+                        return next;
+                    }
+                }
+            }
+            // Second priority: first incomplete video
+            return allVideos.find(v => !state.completedVideos.includes(v.id)) || allVideos[0];
+        }
+
+        // Get video by ID
+        function getVideoById(id) {
+            const allVideos = getAllVideos();
+            return allVideos.find(v => v.id === id);
+        }
+
+        // Play video (select it as current)
+        function playVideo(videoId, openInNewTab = false) {
+            const video = getVideoById(videoId);
+            if (!video) return;
+
+            state.currentVideoId = videoId;
+            state.lastWatched = videoId;
+            saveState();
+
+            // Update info
+            document.getElementById('currentVideoTitle').textContent = video.title;
+            document.getElementById('currentVideoChannel').textContent = video.channel;
+            document.getElementById('currentVideoDesc').textContent = video.description;
+            
+            const badge = document.getElementById('currentModuleBadge');
+            badge.textContent = video.moduleTitle;
+            badge.className = `inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 bg-${video.moduleColor}-100 text-${video.moduleColor}-700`;
+
+            // Show watch button
+            document.getElementById('watchNowBtn').classList.remove('hidden');
+
+            // Update complete button
+            updateCompleteButton();
+
+            // Update UI highlights
+            updateVideoHighlights();
+            updateNextUpCard();
+
+            // Scroll to top on mobile
+            if (window.innerWidth < 1024) {
+                document.getElementById('videoSection').scrollIntoView({ behavior: 'smooth' });
+            }
+
+            // Open in new tab if requested
+            if (openInNewTab) {
+                window.open(video.url, '_blank');
+            }
+        }
+
+        // Open current video in new tab
+        function openCurrentVideo() {
+            if (!state.currentVideoId) {
+                showToast('Please select a video first', 'info-circle', 'blue');
+                return;
+            }
+            const video = getVideoById(state.currentVideoId);
+            if (video) {
+                window.open(video.url, '_blank');
+                showToast('Video opened in new tab!', 'external-link-alt', 'blue');
+            }
+        }
+
+        // Open video directly in new tab
+        function openVideoInNewTab(videoId) {
+            playVideo(videoId, true);
+        }
+
+        // Play next video
+        function playNextVideo() {
+            const next = getNextVideo();
+            if (next) {
+                playVideo(next.id);
+            }
+        }
+
+        // Watch next video (opens in new tab)
+        function watchNextVideo() {
+            const next = getNextVideo();
+            if (next) {
+                playVideo(next.id, true);
+            }
+        }
+
+        // Play next in sequence
+        function playNextVideoInSequence() {
+            const allVideos = getAllVideos();
+            const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
+            if (currentIndex !== -1 && currentIndex < allVideos.length - 1) {
+                playVideo(allVideos[currentIndex + 1].id);
+            }
+        }
+
+        // Play previous video
+        function playPrevVideo() {
+            const allVideos = getAllVideos();
+            const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
+            if (currentIndex > 0) {
+                playVideo(allVideos[currentIndex - 1].id);
+            }
+        }
+
+        // Toggle complete status
+        function toggleComplete() {
+            if (!state.currentVideoId) return;
+            toggleCompleteById(state.currentVideoId);
+        }
+
+        // Toggle complete by video ID
+        function toggleCompleteById(videoId) {
+            const index = state.completedVideos.indexOf(videoId);
+            if (index === -1) {
+                state.completedVideos.push(videoId);
+                showToast('Video marked as complete! 🎉', 'check-circle', 'emerald');
+            } else {
+                state.completedVideos.splice(index, 1);
+                showToast('Video marked as incomplete', 'times-circle', 'red');
+            }
+            
+            saveState();
+            updateUI();
+        }
+
+        // Update complete button
+        function updateCompleteButton() {
+            const btn = document.getElementById('markCompleteBtn');
+            const isComplete = state.completedVideos.includes(state.currentVideoId);
+            
+            if (isComplete) {
+                btn.innerHTML = '<i class="fas fa-check-circle"></i><span>Completed</span>';
+                btn.className = 'flex-shrink-0 px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-300 transition-colors flex items-center gap-2';
+            } else {
+                btn.innerHTML = '<i class="fas fa-check"></i><span>Mark Complete</span>';
+                btn.className = 'flex-shrink-0 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2';
+            }
+        }
+
+        // Update video highlights in curriculum
+        function updateVideoHighlights() {
+            document.querySelectorAll('.video-item').forEach(item => {
+                const videoId = item.dataset.videoId;
+                item.classList.remove('current', 'completed');
+                
+                if (videoId === state.currentVideoId) {
+                    item.classList.add('current');
+                }
+                if (state.completedVideos.includes(videoId)) {
+                    item.classList.add('completed');
+                }
+            });
+        }
+
+        // Update next up card
+        function updateNextUpCard() {
+            const next = getNextVideo();
+            if (next) {
+                document.getElementById('nextVideoTitle').textContent = next.title;
+                document.getElementById('nextVideoModule').textContent = next.moduleTitle;
+            } else {
+                document.getElementById('nextVideoTitle').textContent = 'Course Completed! 🎉';
+                document.getElementById('nextVideoModule').textContent = 'Congratulations!';
+            }
+        }
+
+        // Update progress stats
+        function updateProgress() {
+            const allVideos = getAllVideos();
+            const total = allVideos.length;
+            const completed = state.completedVideos.length;
+            const percent = Math.round((completed / total) * 100);
+
+            document.getElementById('completedCount').textContent = completed;
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('headerPercent').textContent = percent;
+
+            // Update header ring
+            const ring = document.getElementById('headerProgress');
+            const circumference = 94.2;
+            ring.style.strokeDashoffset = circumference - (percent / 100) * circumference;
+        }
+
+        // Update module progress in nav
+        function updateModuleNav() {
+            const nav = document.getElementById('moduleNav');
+            nav.innerHTML = courseData.modules.map(module => {
+                const moduleVideos = module.topics.map(t => t.id);
+                const completed = moduleVideos.filter(id => state.completedVideos.includes(id)).length;
+                const total = moduleVideos.length;
+                const percent = Math.round((completed / total) * 100);
+                
+                const colorClasses = {
+                    emerald: 'bg-emerald-500',
+                    blue: 'bg-blue-500',
+                    purple: 'bg-purple-500'
+                };
+
+                return `
+                    <button onclick="scrollToModule(${module.id})" 
+                        class="w-full text-left p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-slate-700">${module.title}</span>
+                            <span class="text-xs text-slate-500">${completed}/${total}</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-1.5">
+                            <div class="${colorClasses[module.color]} h-1.5 rounded-full transition-all duration-500" style="width: ${percent}%"></div>
+                        </div>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Scroll to module
+        function scrollToModule(moduleId) {
+            document.getElementById(`module-${moduleId}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Render curriculum
+        function renderCurriculum() {
+            const container = document.getElementById('curriculum');
+            
+            container.innerHTML = courseData.modules.map(module => {
+                const colorClasses = {
+                    emerald: { bg: 'bg-emerald-500', light: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200' },
+                    blue: { bg: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
+                    purple: { bg: 'bg-purple-500', light: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-200' }
+                };
+                const colors = colorClasses[module.color];
+
+                return `
+                    <div id="module-${module.id}" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="${module.gradient} p-6 text-white">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-xs font-medium uppercase tracking-wide opacity-80">Module ${module.id}</span>
+                            </div>
+                            <h3 class="text-xl font-bold mb-1">${module.title}</h3>
+                            <p class="text-sm opacity-90">${module.subtitle}</p>
+                        </div>
+                        <div class="divide-y divide-slate-100">
+                            ${module.topics.map((topic, index) => {
+                                const isCompleted = state.completedVideos.includes(topic.id);
+                                return `
+                                    <div class="video-item p-4 hover:bg-slate-50 transition-colors ${isCompleted ? 'completed' : ''}" 
+                                        data-video-id="${topic.id}">
+                                        <div class="flex items-start gap-4">
+                                            <div class="flex-shrink-0 w-8 h-8 rounded-full ${isCompleted ? colors.bg + ' text-white' : colors.light + ' ' + colors.text} flex items-center justify-center">
+                                                ${isCompleted ? '<i class="fas fa-check text-sm"></i>' : `<span class="text-sm font-medium">${index + 1}</span>`}
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <h4 class="font-medium text-slate-800">${topic.title}</h4>
+                                                    ${topic.type === 'playlist' ? `<span class="flex-shrink-0 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full"><i class="fas fa-list mr-1"></i>Playlist</span>` : `<span class="flex-shrink-0 px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full"><i class="fas fa-video mr-1"></i>Video</span>`}
+                                                </div>
+                                                <p class="text-sm text-slate-500 mb-1">${topic.channel}</p>
+                                                <p class="text-xs text-slate-400 mb-3">${topic.description}</p>
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <button onclick="openVideoInNewTab('${topic.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors">
+                                                        <i class="fab fa-youtube"></i>
+                                                        Watch on YouTube
+                                                        <i class="fas fa-external-link-alt text-[10px]"></i>
+                                                    </button>
+                                                    <button onclick="event.stopPropagation(); toggleCompleteById('${topic.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 ${isCompleted ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-emerald-500 text-white hover:bg-emerald-600'} text-xs font-medium rounded-lg transition-colors">
+                                                        <i class="fas fa-${isCompleted ? 'check-circle' : 'check'}"></i>
+                                                        ${isCompleted ? 'Completed' : 'Mark Done'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Show toast notification
+        function showToast(message, icon = 'check-circle', color = 'emerald') {
+            const toast = document.getElementById('toast');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastMessage.textContent = message;
+            toastIcon.className = `fas fa-${icon} text-${color}-400`;
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Reset progress
+        function resetProgress() {
+            if (confirm('Are you sure you want to reset all progress? This cannot be undone.')) {
+                state = {
+                    currentVideoId: null,
+                    completedVideos: [],
+                    lastWatched: null
+                };
+                saveState();
+                
+                // Reset video info
+                document.getElementById('currentVideoTitle').textContent = 'Welcome to Stock Market Mastery';
+                document.getElementById('currentVideoChannel').textContent = 'Select a video from the curriculum below';
+                document.getElementById('currentVideoDesc').textContent = 'Start with Module 1 to learn the basics of stock market investing in Hindi.';
+                document.getElementById('currentModuleBadge').textContent = 'Get Started';
+                
+                updateUI();
+                showToast('Progress has been reset', 'redo', 'blue');
+            }
+        }
+
+        // Update all UI elements
+        function updateUI() {
+            updateProgress();
+            updateModuleNav();
+            updateNextUpCard();
+            updateVideoHighlights();
+            updateCompleteButton();
+            renderCurriculum();
+        }
+
+        // Initialize
+        function init() {
+            loadState();
+            renderCurriculum();
+            updateUI();
+
+            // Restore last watched video info
+            if (state.lastWatched) {
+                const video = getVideoById(state.lastWatched);
+                if (video) {
+                    document.getElementById('currentVideoTitle').textContent = video.title;
+                    document.getElementById('currentVideoChannel').textContent = video.channel;
+                    document.getElementById('currentVideoDesc').textContent = video.description + ' (Resume watching)';
+                    document.getElementById('currentModuleBadge').textContent = video.moduleTitle;
+                    document.getElementById('currentModuleBadge').className = `inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 bg-${video.moduleColor}-100 text-${video.moduleColor}-700`;
+                    document.getElementById('watchNowBtn').classList.remove('hidden');
+                    state.currentVideoId = state.lastWatched;
+                    updateCompleteButton();
+                }
+            } else {
+                // Set default state for new users
+                document.getElementById('currentVideoDesc').textContent = 'Start with Module 1 to learn the basics of stock market investing in Hindi.';
+                document.getElementById('currentModuleBadge').textContent = 'Get Started';
+                document.getElementById('currentModuleBadge').className = 'inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 bg-slate-100 text-slate-700';
+            }
+
+            // Show welcome or progress message
+            if (state.completedVideos.length > 0) {
+                showToast(`Welcome back! ${state.completedVideos.length} videos completed`, 'cloud-download-alt', 'blue');
+            } else {
+                showToast('Welcome! Start your learning journey 🚀', 'rocket', 'emerald');
+            }
+        }
+
+        // Run on load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
