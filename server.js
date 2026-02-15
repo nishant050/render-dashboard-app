@@ -516,6 +516,30 @@ const getYtDlpOptionsArgs = () => {
     return args;
 };
 
+const getYtDlpCandidates = () => {
+    const candidates = [];
+    const addCandidate = (command, prefix = []) => {
+        const safeCommand = typeof command === 'string' ? command.trim() : '';
+        if (!safeCommand) return;
+        candidates.push({ command: safeCommand, prefix });
+    };
+
+    addCandidate(process.env.YTDLP_PATH, []);
+    addCandidate('yt-dlp', []);
+    addCandidate('yt-dlp.exe', []);
+    addCandidate(process.env.PYTHON_PATH, ['-m', 'yt_dlp']);
+    addCandidate('python', ['-m', 'yt_dlp']);
+    addCandidate('py', ['-m', 'yt_dlp']);
+
+    const seen = new Set();
+    return candidates.filter((candidate) => {
+        const key = `${candidate.command}::${candidate.prefix.join(' ')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
 const runCommand = (command, args, options = {}) => new Promise((resolve, reject) => {
     const child = spawn(command, args, {
         cwd: options.cwd || __dirname,
@@ -562,6 +586,28 @@ const runCommand = (command, args, options = {}) => new Promise((resolve, reject
         reject(err);
     });
 });
+
+const runYtDlp = async (args, options = {}) => {
+    const candidates = getYtDlpCandidates();
+    let lastNotFoundError = null;
+
+    for (const candidate of candidates) {
+        try {
+            return await runCommand(candidate.command, [...candidate.prefix, ...args], options);
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                lastNotFoundError = error;
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    const notFoundError = new Error('yt-dlp executable was not found. Install yt-dlp (or set YTDLP_PATH), or install Python yt-dlp and ensure `python -m yt_dlp` works.');
+    notFoundError.code = 'YTDLP_NOT_FOUND';
+    notFoundError.cause = lastNotFoundError;
+    throw notFoundError;
+};
 
 const extractFormats = (info) => {
     const formats = [];
@@ -664,7 +710,7 @@ const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
 
     try {
         updateDownload(downloadId, { status: 'downloading', message: 'Downloading...', progress: 1, error: null });
-        await runCommand('yt-dlp', args, {
+        await runYtDlp(args, {
             timeoutMs: 60 * 60 * 1000,
             onStdout: (chunk) => {
                 buffer += chunk;
@@ -751,7 +797,7 @@ app.get('/api/video-info', async (req, res) => {
     ];
 
     try {
-        const { stdout } = await runCommand('yt-dlp', args, { timeoutMs: 120000 });
+        const { stdout } = await runYtDlp(args, { timeoutMs: 120000 });
         const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         const jsonLine = [...lines].reverse().find((line) => line.startsWith('{') && line.endsWith('}'));
         if (!jsonLine) {
