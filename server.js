@@ -6,7 +6,7 @@ const fsPromises = require('fs').promises;
 const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
-const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -451,27 +451,20 @@ app.post('/api/groq-chat', async (req, res) => {
 });
 
 // ===============================================
-// === YOUTUBE DOWNLOADER API - MISSION CONTROL ===
+// === YOUTUBE DOWNLOADER API (LOCAL ytdlp) ======
 // ===============================================
 
-// In-memory store for download jobs. In a real production app, use a database like Redis.
-const jobs = {};
-const TERMINAL_JOB_STATUSES = new Set(['Complete', 'Failed']);
-const ytdownloaderRequiredEnv = ['GITHUB_USER', 'GITHUB_REPO', 'GITHUB_PAT', 'PROGRESS_UPDATE_SECRET'];
-const videosDir = path.join(__dirname, 'public', 'videos');
-const videosManifestPath = path.join(__dirname, 'public', 'videos.json');
-
-const getMissingYtdownloaderEnv = () => ytdownloaderRequiredEnv.filter((name) => !process.env[name]);
-const missingYtdownloaderEnvAtStartup = getMissingYtdownloaderEnv();
-if (missingYtdownloaderEnvAtStartup.length > 0) {
-    console.warn(`[YT Downloader] Missing environment variables: ${missingYtdownloaderEnvAtStartup.join(', ')}`);
-}
-
-const sendApiError = (res, status, message, details = undefined) => {
-    const payload = { ok: false, error: message };
-    if (details) payload.details = details;
-    return res.status(status).json(payload);
+const downloads = new Map();
+const ytdownloaderSettings = {
+    proxy: null,
+    cookies: null
 };
+const videosDir = path.join(__dirname, 'public', 'videos');
+const videoExtensions = new Set(['.mp4', '.webm', '.mkv']);
+const thumbnailExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+const sidecarExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.info.json'];
+
+const sendApiError = (res, status, message) => res.status(status).json({ ok: false, error: message });
 
 const isSafeVideoFileName = (value) => {
     if (typeof value !== 'string' || value.trim() === '') return false;
@@ -480,223 +473,447 @@ const isSafeVideoFileName = (value) => {
     return path.basename(value) === value;
 };
 
-const readVideoManifest = async () => {
+const ensureVideosDir = async () => {
+    await fsPromises.mkdir(videosDir, { recursive: true });
+};
+
+const cleanYoutubeUrl = (url) => {
     try {
-        const raw = await fsPromises.readFile(videosManifestPath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-    }
-};
-
-const writeVideoManifest = async (entries) => {
-    await fsPromises.writeFile(videosManifestPath, JSON.stringify(entries, null, 4), 'utf-8');
-};
-
-const triggerGithubDispatch = async (eventType, clientPayload) => {
-    await axios.post(
-        `https://api.github.com/repos/${process.env.GITHUB_USER}/${process.env.GITHUB_REPO}/dispatches`,
-        { event_type: eventType, client_payload: clientPayload },
-        {
-            headers: {
-                'Authorization': `token ${process.env.GITHUB_PAT}`,
-                'Accept': 'application/vnd.github.v3+json'
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        if (host.includes('youtube.com') || host === 'youtu.be' || host.endsWith('.youtu.be')) {
+            if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+                const videoId = parsed.pathname.replace(/^\/+/, '').split('/')[0];
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+            }
+            if (parsed.pathname === '/watch') {
+                const videoId = parsed.searchParams.get('v');
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+            }
+            if (parsed.pathname.startsWith('/embed/')) {
+                const videoId = parsed.pathname.split('/embed/')[1]?.split('/')[0];
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+            }
+            if (parsed.pathname.startsWith('/shorts/')) {
+                const videoId = parsed.pathname.split('/shorts/')[1]?.split('/')[0];
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
             }
         }
-    );
+    } catch {
+        return url;
+    }
+    return url;
 };
 
-// 1. Endpoint for your WEBSITE to START a new download job
-app.post('/api/ytdownloader/start-download', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return sendApiError(res, 400, 'URL is required.');
+const getYtDlpOptionsArgs = () => {
+    const args = ['--no-warnings', '--newline'];
+    if (ytdownloaderSettings.proxy) {
+        args.push('--proxy', ytdownloaderSettings.proxy);
+    }
+    if (ytdownloaderSettings.cookies) {
+        args.push('--cookies-from-browser', ytdownloaderSettings.cookies);
+    }
+    return args;
+};
+
+const runCommand = (command, args, options = {}) => new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+        cwd: options.cwd || __dirname,
+        env: process.env,
+        shell: false
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timer = null;
+
+    if (options.timeoutMs) {
+        timer = setTimeout(() => {
+            child.kill('SIGTERM');
+        }, options.timeoutMs);
     }
 
-    const missingEnv = getMissingYtdownloaderEnv();
-    if (missingEnv.length > 0) {
-        return sendApiError(res, 500, 'YT downloader is not configured correctly.', { missingEnv });
-    }
+    child.stdout.on('data', (chunk) => {
+        const text = chunk.toString();
+        stdout += text;
+        if (options.onStdout) options.onStdout(text);
+    });
+    child.stderr.on('data', (chunk) => {
+        const text = chunk.toString();
+        stderr += text;
+        if (options.onStderr) options.onStderr(text);
+    });
 
-    // Generate a unique ID for this job
-    const jobId = crypto.randomBytes(12).toString('hex');
-    
-    // Store the initial state of the job
-    jobs[jobId] = {
-        id: jobId,
-        url: url,
-        status: 'Queued',
+    child.on('error', (error) => {
+        if (timer) clearTimeout(timer);
+        reject(error);
+    });
+
+    child.on('close', (code) => {
+        if (timer) clearTimeout(timer);
+        if (code === 0) {
+            resolve({ stdout, stderr });
+            return;
+        }
+        const err = new Error(`Command failed: ${command} exited with code ${code}`);
+        err.stdout = stdout;
+        err.stderr = stderr;
+        err.code = code;
+        reject(err);
+    });
+});
+
+const extractFormats = (info) => {
+    const formats = [];
+    const seenHeights = new Set();
+    for (const format of info.formats || []) {
+        const height = format.height;
+        if (!height || seenHeights.has(height)) continue;
+        seenHeights.add(height);
+        formats.push({
+            format_id: format.format_id,
+            quality: `${height}p`,
+            height,
+            filesize: format.filesize || 0,
+            has_audio: format.acodec !== 'none' && format.acodec != null,
+            format_note: format.format_note || '',
+            ext: format.ext || 'mp4',
+            vcodec: format.vcodec || 'unknown',
+            acodec: format.acodec || 'unknown'
+        });
+    }
+    formats.sort((a, b) => b.height - a.height);
+    formats.unshift({
+        format_id: 'best',
+        quality: 'Best Available',
+        height: null,
+        filesize: 0,
+        has_audio: true,
+        format_note: 'Automatic best quality',
+        ext: 'mp4',
+        vcodec: 'best',
+        acodec: 'best'
+    });
+    return formats;
+};
+
+const parseProgressLine = (line) => {
+    const match = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+    if (!match) return null;
+    const progress = Math.max(0, Math.min(100, Math.round(Number(match[1]))));
+    const speedMatch = line.match(/at\s+([^\s]+)\s+/);
+    const etaMatch = line.match(/ETA\s+([0-9:]+)/);
+    const speedText = speedMatch ? ` | ${speedMatch[1]}` : '';
+    const etaText = etaMatch ? ` | ETA ${etaMatch[1]}` : '';
+    return {
+        progress,
+        message: `Downloading... ${progress}%${speedText}${etaText}`
+    };
+};
+
+const createDownload = (cleanUrl) => {
+    const downloadId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    downloads.set(downloadId, {
+        id: downloadId,
+        url: cleanUrl,
+        status: 'starting',
         progress: 0,
-        message: 'Workflow is being triggered...',
-        error: null,
+        message: 'Starting download...',
+        filename: '',
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        completedAt: null
-    };
+        completedAt: null,
+        error: null
+    });
+    return downloadId;
+};
 
-    // Use the GitHub API to trigger the 'repository_dispatch' event in your workflow
+const updateDownload = (downloadId, patch) => {
+    const current = downloads.get(downloadId);
+    if (!current) return;
+    downloads.set(downloadId, {
+        ...current,
+        ...patch,
+        updatedAt: Date.now()
+    });
+};
+
+const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
+    await ensureVideosDir();
+    const outputTemplate = path.join(videosDir, '%(title)s.%(ext)s');
+    const formatExpr = formatId === 'best' ? 'bestvideo+bestaudio/best' : `${formatId}+bestaudio/best`;
+    const commonArgs = getYtDlpOptionsArgs();
+    const startedAt = Date.now();
+    let lastPrintedPath = null;
+    let buffer = '';
+
+    const args = [
+        ...commonArgs,
+        '--write-thumbnail',
+        '--write-info-json',
+        '--merge-output-format',
+        'mp4',
+        '--print',
+        'after_move:filepath',
+        '-f',
+        formatExpr,
+        '-o',
+        outputTemplate,
+        cleanUrl
+    ];
+
     try {
-        await triggerGithubDispatch('trigger-youtube-download', { jobId, videoUrl: url });
-
-        console.log(`Job ${jobId} triggered successfully for URL: ${url}`);
-        // Send the Job ID back to the website so it can start asking for status updates
-        res.status(202).json({ ok: true, jobId });
-
-    } catch (error) {
-        console.error('Error triggering GitHub Action:', error.response ? error.response.data : error.message);
-        jobs[jobId].status = 'Failed';
-        jobs[jobId].message = 'Error triggering the download workflow.';
-        jobs[jobId].progress = 100;
-        jobs[jobId].error = error.message;
-        jobs[jobId].updatedAt = Date.now();
-        jobs[jobId].completedAt = Date.now();
-        return sendApiError(res, 500, 'Failed to start download workflow.');
-    }
-});
-
-// 2. Endpoint for the GITHUB ACTION to POST progress updates
-app.post('/api/ytdownloader/update-progress', (req, res) => {
-    const { jobId, message, progress, finalFile, secret } = req.body;
-
-    if (!process.env.PROGRESS_UPDATE_SECRET) {
-        return res.status(500).send('Server misconfigured: PROGRESS_UPDATE_SECRET missing.');
-    }
-
-    // A simple security check to ensure updates are coming from our GitHub Action
-    if (secret !== process.env.PROGRESS_UPDATE_SECRET) {
-        return res.status(403).send('Forbidden: Invalid secret.');
-    }
-
-    if (!jobId) {
-        return res.status(400).send('jobId is required.');
-    }
-    
-    const job = jobs[jobId];
-    if (job) {
-        if (TERMINAL_JOB_STATUSES.has(job.status)) {
-            return res.status(200).send('Job already terminal; update ignored.');
-        }
-
-        const numericProgress = Number(progress);
-        const safeProgress = Number.isFinite(numericProgress) ? Math.max(0, Math.min(100, Math.round(numericProgress))) : job.progress;
-        const safeMessage = typeof message === 'string' && message.trim() ? message : 'Processing...';
-        const isFailureMessage = safeMessage.startsWith('An error occurred') || safeMessage.startsWith('An unexpected error occurred');
-        const shouldMarkTerminal = safeProgress === 100;
-
-        job.message = safeMessage;
-        job.progress = safeProgress;
-        job.updatedAt = Date.now();
-
-        if (shouldMarkTerminal) {
-            job.status = isFailureMessage ? 'Failed' : 'Complete';
-            job.completedAt = Date.now();
-            if (job.status === 'Complete') {
-                job.finalFile = finalFile;
-                job.error = null;
-            } else {
-                job.error = safeMessage;
+        updateDownload(downloadId, { status: 'downloading', message: 'Downloading...', progress: 1, error: null });
+        await runCommand('yt-dlp', args, {
+            timeoutMs: 60 * 60 * 1000,
+            onStdout: (chunk) => {
+                buffer += chunk;
+                const lines = buffer.split(/\r?\n/);
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    const progressData = parseProgressLine(line);
+                    if (progressData) {
+                        updateDownload(downloadId, {
+                            status: 'downloading',
+                            progress: progressData.progress,
+                            message: progressData.message
+                        });
+                        continue;
+                    }
+                    const trimmed = line.trim();
+                    if (trimmed && !trimmed.startsWith('[') && trimmed.toLowerCase().includes('.mp4')) {
+                        lastPrintedPath = trimmed;
+                    }
+                }
+            },
+            onStderr: (chunk) => {
+                const text = chunk.trim();
+                if (text) {
+                    updateDownload(downloadId, { status: 'processing', message: text.slice(-220), progress: 99 });
+                }
             }
+        });
+
+        let finalFileName = '';
+        if (lastPrintedPath) {
+            finalFileName = path.basename(lastPrintedPath);
         } else {
-            job.status = 'Processing';
-            job.error = null;
+            const entries = await fsPromises.readdir(videosDir, { withFileTypes: true });
+            const candidates = [];
+            for (const entry of entries) {
+                if (!entry.isFile()) continue;
+                const ext = path.extname(entry.name).toLowerCase();
+                if (ext !== '.mp4') continue;
+                const fullPath = path.join(videosDir, entry.name);
+                const stat = await fsPromises.stat(fullPath);
+                if (stat.mtimeMs >= startedAt - 5000) {
+                    candidates.push({ name: entry.name, mtimeMs: stat.mtimeMs });
+                }
+            }
+            candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+            if (candidates.length > 0) {
+                finalFileName = candidates[0].name;
+            }
         }
-        console.log(`Progress for Job ${jobId}: ${safeProgress}% - ${safeMessage}`);
-        res.status(200).send('Progress updated.');
-    } else {
-        res.status(404).send('Job not found.');
-    }
-});
 
-// 3. Endpoint for your WEBSITE to DELETE downloaded video/audio files
-app.post('/api/ytdownloader/delete-video', async (req, res) => {
-    const { videoFile, audioFile } = req.body || {};
+        updateDownload(downloadId, {
+            status: 'completed',
+            progress: 100,
+            filename: finalFileName,
+            message: 'Download complete!',
+            completedAt: Date.now(),
+            error: null
+        });
+    } catch (error) {
+        const errorMessage = (error.stderr || error.stdout || error.message || 'Download failed').slice(0, 500);
+        updateDownload(downloadId, {
+            status: 'error',
+            progress: 100,
+            message: errorMessage,
+            completedAt: Date.now(),
+            error: errorMessage
+        });
+    }
+};
 
-    if (!videoFile && !audioFile) {
-        return sendApiError(res, 400, 'At least one of videoFile or audioFile is required.');
+app.get('/api/video-info', async (req, res) => {
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+    if (!rawUrl) {
+        return sendApiError(res, 400, 'URL is required');
     }
-    if ((videoFile && !isSafeVideoFileName(videoFile)) || (audioFile && !isSafeVideoFileName(audioFile))) {
-        return sendApiError(res, 400, 'Invalid filename provided.');
-    }
+
+    const cleanUrl = cleanYoutubeUrl(rawUrl);
+    const args = [
+        ...getYtDlpOptionsArgs(),
+        '--dump-json',
+        '--skip-download',
+        cleanUrl
+    ];
 
     try {
-        await fsPromises.mkdir(videosDir, { recursive: true });
-        const manifest = await readVideoManifest();
-        const shouldDeleteEntry = (entry) => (
-            (videoFile && entry.videoFile === videoFile) ||
-            (audioFile && entry.audioFile === audioFile)
-        );
-        const matchingEntries = manifest.filter(shouldDeleteEntry);
-        const nextManifest = manifest.filter((entry) => !shouldDeleteEntry(entry));
-
-        const filesToDelete = new Set();
-        if (videoFile) filesToDelete.add(videoFile);
-        if (audioFile) filesToDelete.add(audioFile);
-        for (const entry of matchingEntries) {
-            if (entry.videoFile) filesToDelete.add(entry.videoFile);
-            if (entry.audioFile) filesToDelete.add(entry.audioFile);
+        const { stdout } = await runCommand('yt-dlp', args, { timeoutMs: 120000 });
+        const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const jsonLine = [...lines].reverse().find((line) => line.startsWith('{') && line.endsWith('}'));
+        if (!jsonLine) {
+            return sendApiError(res, 400, 'Failed to fetch video info.');
         }
+        const info = JSON.parse(jsonLine);
 
-        const deletedFiles = [];
-        for (const fileName of filesToDelete) {
-            const fullPath = path.join(videosDir, fileName);
-            if (!fullPath.startsWith(videosDir)) {
-                throw new Error('Unsafe delete path detected.');
-            }
-            try {
-                await fsPromises.unlink(fullPath);
-                deletedFiles.push(fileName);
-            } catch (error) {
-                if (error.code !== 'ENOENT') throw error;
-            }
-        }
-
-        if (nextManifest.length !== manifest.length) {
-            await writeVideoManifest(nextManifest);
-        }
-
-        const payload = {
-            videoFile: videoFile || null,
-            audioFile: audioFile || null,
-            videoFiles: [...new Set(matchingEntries.map((entry) => entry.videoFile).filter(Boolean).concat(videoFile ? [videoFile] : []))],
-            audioFiles: [...new Set(matchingEntries.map((entry) => entry.audioFile).filter(Boolean).concat(audioFile ? [audioFile] : []))]
-        };
-
-        try {
-            await triggerGithubDispatch('trigger-youtube-delete', payload);
-            return res.json({
-                ok: true,
-                localDeleted: true,
-                repoDeleteTriggered: true,
-                deletedFiles
-            });
-        } catch (dispatchError) {
-            console.error('Error triggering delete workflow:', dispatchError.response ? dispatchError.response.data : dispatchError.message);
-            return res.status(202).json({
-                ok: true,
-                localDeleted: true,
-                repoDeleteTriggered: false,
-                warning: 'Deleted locally, but failed to trigger repo cleanup workflow.',
-                deletedFiles
-            });
-        }
+        return res.json({
+            title: info.title || 'Unknown',
+            thumbnail: info.thumbnail || '',
+            duration: info.duration || 0,
+            uploader: info.uploader || 'Unknown',
+            formats: extractFormats(info),
+            url: cleanUrl
+        });
     } catch (error) {
-        console.error('Error deleting downloaded media:', error);
-        return sendApiError(res, 500, 'Failed to delete downloaded media.');
+        const message = (error.stderr || error.stdout || error.message || 'Failed to fetch video info').slice(0, 400);
+        return sendApiError(res, 400, message);
     }
 });
 
-// 4. Endpoint for your WEBSITE to GET the status of a job
-app.get('/api/ytdownloader/status/:jobId', (req, res) => {
-    const { jobId } = req.params;
-    const job = jobs[jobId];
-
-    if (job) {
-        res.json(job);
-    } else {
-        res.status(404).json({ message: 'Job not found.' });
+app.post('/api/download', async (req, res) => {
+    const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    const quality = typeof req.body?.quality === 'string' && req.body.quality.trim() ? req.body.quality.trim() : 'best';
+    if (!rawUrl) {
+        return sendApiError(res, 400, 'URL is required');
     }
+
+    const cleanUrl = cleanYoutubeUrl(rawUrl);
+    const downloadId = createDownload(cleanUrl);
+    runDownloadJob(downloadId, cleanUrl, quality)
+        .catch((error) => {
+            const message = error?.message || 'Unexpected downloader error';
+            updateDownload(downloadId, { status: 'error', progress: 100, message, completedAt: Date.now(), error: message });
+        });
+
+    return res.status(202).json({
+        download_id: downloadId,
+        message: 'Download started'
+    });
+});
+
+app.get('/api/download-progress/:downloadId', (req, res) => {
+    const download = downloads.get(req.params.downloadId);
+    if (!download) {
+        return res.json({
+            status: 'not_found',
+            progress: 0,
+            message: 'Download not found'
+        });
+    }
+    return res.json(download);
+});
+
+app.get('/api/library', async (req, res) => {
+    try {
+        await ensureVideosDir();
+        const entries = await fsPromises.readdir(videosDir, { withFileTypes: true });
+        const files = [];
+
+        for (const entry of entries) {
+            if (!entry.isFile()) continue;
+            const ext = path.extname(entry.name).toLowerCase();
+            if (!videoExtensions.has(ext)) continue;
+
+            const fullPath = path.join(videosDir, entry.name);
+            const stat = await fsPromises.stat(fullPath);
+            const baseName = path.parse(entry.name).name;
+            let thumbnail = null;
+            for (const thumbExt of thumbnailExtensions) {
+                const thumbName = `${baseName}${thumbExt}`;
+                if (fs.existsSync(path.join(videosDir, thumbName))) {
+                    thumbnail = `/public/videos/${encodeURIComponent(thumbName)}`;
+                    break;
+                }
+            }
+
+            files.push({
+                filename: entry.name,
+                size: stat.size,
+                date: Math.floor(stat.mtimeMs / 1000),
+                url: `/api/video/${encodeURIComponent(entry.name)}`,
+                thumbnail
+            });
+        }
+
+        files.sort((a, b) => b.date - a.date);
+        return res.json(files);
+    } catch (error) {
+        console.error('Error reading video library:', error);
+        return sendApiError(res, 500, 'Failed to load library');
+    }
+});
+
+app.get('/api/video/:filename', async (req, res) => {
+    const fileName = req.params.filename;
+    if (!isSafeVideoFileName(fileName)) {
+        return sendApiError(res, 400, 'Invalid filename');
+    }
+
+    const filePath = path.join(videosDir, fileName);
+    try {
+        await fsPromises.access(filePath, fs.constants.F_OK);
+        return res.sendFile(filePath);
+    } catch {
+        return sendApiError(res, 404, 'Video not found');
+    }
+});
+
+app.delete('/api/video/:filename', async (req, res) => {
+    const fileName = req.params.filename;
+    if (!isSafeVideoFileName(fileName)) {
+        return sendApiError(res, 400, 'Invalid filename');
+    }
+
+    await ensureVideosDir();
+    const baseName = path.parse(fileName).name;
+    let deleted = false;
+
+    const allCandidates = new Set([fileName, ...sidecarExtensions.map((ext) => `${baseName}${ext}`)]);
+    for (const candidate of allCandidates) {
+        const candidatePath = path.join(videosDir, candidate);
+        try {
+            await fsPromises.unlink(candidatePath);
+            deleted = true;
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                console.error('Error deleting file:', candidatePath, error);
+                return sendApiError(res, 500, 'Failed to delete video');
+            }
+        }
+    }
+
+    if (!deleted) {
+        return sendApiError(res, 404, 'Video not found');
+    }
+    return res.json({ ok: true, message: 'Video deleted' });
+});
+
+app.get('/api/settings', (req, res) => {
+    return res.json({
+        proxy: ytdownloaderSettings.proxy,
+        cookies: ytdownloaderSettings.cookies
+    });
+});
+
+app.post('/api/settings/proxy', (req, res) => {
+    const proxy = typeof req.body?.proxy === 'string' ? req.body.proxy.trim() : '';
+    ytdownloaderSettings.proxy = proxy || null;
+    if (ytdownloaderSettings.proxy) {
+        return res.json({ ok: true, message: 'Proxy set successfully', proxy: ytdownloaderSettings.proxy });
+    }
+    return res.json({ ok: true, message: 'Proxy cleared' });
+});
+
+app.post('/api/settings/cookies', (req, res) => {
+    const browser = typeof req.body?.browser === 'string' ? req.body.browser.trim() : '';
+    ytdownloaderSettings.cookies = browser || null;
+    if (ytdownloaderSettings.cookies) {
+        return res.json({ ok: true, message: `Cookies from ${ytdownloaderSettings.cookies} will be used`, browser: ytdownloaderSettings.cookies });
+    }
+    return res.json({ ok: true, message: 'Cookies cleared' });
 });
 
 // --- Server Start ---

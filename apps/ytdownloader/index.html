@@ -1,33 +1,225 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Downloader Dashboard</title>
-    <link rel="stylesheet" href="style.css">
+    <title>YouTube Video Downloader & Player</title>
+    <link rel="stylesheet" href="./style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <h1>YouTube Downloader</h1>
-        <form id="download-form">
-            <input type="text" id="youtube-url" placeholder="Paste YouTube link here..." required>
-            <button type="submit">Download</button>
-        </form>
-    </header>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M23 7L16 12L23 17V7Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <rect x="2" y="5" width="15" height="14" rx="2" fill="currentColor" stroke="currentColor" stroke-width="2"/>
+                </svg>
+                <h1>VideoVault</h1>
+            </div>
+            <p class="tagline">Download, Store, Watch Anytime</p>
+        </header>
 
-    <main>
-        <section id="ongoing-downloads">
-            <h2>In Progress</h2>
-            <div id="progress-container">
+        <!-- Header Actions -->
+        <div class="header-actions">
+            <button id="settings-btn" class="btn btn-icon" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="download">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 4v12"/>
+                </svg>
+                Download
+            </button>
+            <button class="tab-btn" data-tab="library">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+                My Library
+            </button>
+        </nav>
+
+        <!-- Download Section -->
+        <section id="download-section" class="tab-content active">
+            <div class="card glass-card">
+                <h2 class="section-title">Download YouTube Video</h2>
+
+                <!-- URL Input -->
+                <div class="input-group">
+                    <input type="text" id="video-url" placeholder="Paste YouTube video URL here..." class="url-input">
+                    <button id="paste-btn" class="btn btn-icon" title="Paste from clipboard">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                        </svg>
+                    </button>
+                    <button id="fetch-btn" class="btn btn-primary">
+                        <span class="btn-text">Fetch Info</span>
+                        <span class="btn-loader hidden">
+                            <svg class="spinner" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="30 70"/>
+                            </svg>
+                        </span>
+                    </button>
                 </div>
+
+                <!-- Video Preview -->
+                <div id="video-preview" class="video-preview hidden">
+                    <div class="preview-thumbnail">
+                        <img id="preview-thumb" src="" alt="Video thumbnail">
+                        <div class="duration-badge" id="preview-duration"></div>
+                    </div>
+                    <div class="preview-info">
+                        <h3 id="preview-title"></h3>
+                        <p id="preview-uploader" class="text-muted"></p>
+                    </div>
+                </div>
+
+                <!-- Quality Selector -->
+                <div id="quality-section" class="quality-section hidden">
+                    <label class="quality-label">Select Quality:</label>
+                    <select id="quality-select" class="quality-select">
+                        <!-- Options populated dynamically -->
+                    </select>
+                </div>
+
+                <!-- Download Button -->
+                <div id="download-section-controls" class="hidden">
+                    <button id="download-btn" class="btn btn-download">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 4v12"/>
+                        </svg>
+                        Start Download
+                    </button>
+                </div>
+
+                <!-- Progress Section -->
+                <div id="progress-section" class="progress-section hidden">
+                    <div class="progress-header">
+                        <span id="progress-status">Downloading...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                    <p id="progress-message" class="progress-message"></p>
+                </div>
+            </div>
         </section>
 
-        <section id="completed-downloads">
-            <h2>Previously Downloaded</h2>
-            <div id="video-list-container">
-                </div>
+        <!-- Library Section -->
+        <section id="library-section" class="tab-content">
+            <div class="library-header">
+                <h2 class="section-title">My Video Library</h2>
+                <button id="refresh-library" class="btn btn-icon" title="Refresh">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6M1 20v-6h6"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Video Grid -->
+            <div id="video-grid" class="video-grid">
+                <!-- Video cards populated dynamically -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-library" class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <path d="M8 21h8M12 17v4"/>
+                </svg>
+                <p>No videos in your library yet.</p>
+                <p class="text-muted">Download your first video to get started!</p>
+            </div>
         </section>
-    </main>
-    <script src="client.js"></script>
+    </div>
+
+    <!-- Video Player Modal -->
+    <div id="player-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content glass-card">
+            <button class="modal-close" id="close-modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            <div class="video-container">
+                <video id="video-player" controls>
+                    <source src="" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="modal-info">
+                <h3 id="modal-video-title"></h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content glass-card" style="max-width: 500px;">
+            <button class="modal-close" id="close-settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            <div class="settings-container">
+                <h2 class="section-title" style="margin-bottom: 1.5rem;">Settings</h2>
+                
+                <!-- Proxy Settings -->
+                <div class="setting-group">
+                    <label class="setting-label">Proxy Server (for bypassing region restrictions)</label>
+                    <p class="setting-description">Enter your proxy URL (e.g., http://proxy.surfshark.com:3128 or socks5://proxy:1080)</p>
+                    <input type="text" id="proxy-url" class="setting-input" placeholder="http://proxy:port or socks5://proxy:port">
+                    <div class="setting-actions">
+                        <button id="save-proxy" class="btn btn-primary" style="margin-top: 1rem;">Save Proxy</button>
+                        <button id="clear-proxy" class="btn btn-icon" style="margin-top: 1rem; margin-left: 0.5rem;" title="Clear Proxy">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Cookies Settings -->
+                <div class="setting-group" style="margin-top: 2rem;">
+                    <label class="setting-label">Browser Cookies (alternative to proxy)</label>
+                    <p class="setting-description">Use cookies from your browser to bypass restrictions. Usually not needed if proxy works.</p>
+                    <select id="cookies-browser" class="setting-select">
+                        <option value="">None</option>
+                        <option value="chrome">Chrome</option>
+                        <option value="firefox">Firefox</option>
+                        <option value="edge">Edge</option>
+                        <option value="safari">Safari</option>
+                    </select>
+                    <button id="save-cookies" class="btn btn-primary" style="margin-top: 1rem;">Use Browser Cookies</button>
+                    <button id="clear-cookies" class="btn btn-icon" style="margin-top: 1rem; margin-left: 0.5rem;" title="Clear Cookies">Clear</button>
+                </div>
+
+                <div class="setting-info" style="margin-top: 2rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 0.75rem; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">
+                        <strong>Note:</strong> Changes take effect immediately. For proxy, make sure your VPN/proxy service is active. For cookies, you need to be signed into YouTube in your browser.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="./client.js"></script>
 </body>
 </html>

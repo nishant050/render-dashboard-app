@@ -1,6 +1,6 @@
-<div align="center">
+﻿<div align="center">
 
-# 🚀 Render Dashboard App
+# ðŸš€ Render Dashboard App
 
 ### A beautiful all-in-one personal productivity dashboard
 
@@ -13,37 +13,37 @@
 
 ---
 
-## ✨ What this project is
+## âœ¨ What this project is
 
-**Render Dashboard App** is a single Node.js web application that acts like a mini “app store” for personal tools.
+**Render Dashboard App** is a single Node.js web application that acts like a mini â€œapp storeâ€ for personal tools.
 
 You open one dashboard and launch multiple built-in utilities:
 
-- ☁️ **File Hub** (upload, organize, move, preview files)
-- 🗞️ **e-Paper Digest** (daily newspaper links with logo cards)
-- 🎬 **YT Downloader** (job-based YouTube processing pipeline)
-- 🤖 **News Agent** (AI-powered topic summaries using Groq)
-- 📝 **Quick Notes** (browser-local notes)
-- 📈🧠 Additional static utility pages (learning/health/event pages)
+- â˜ï¸ **File Hub** (upload, organize, move, preview files)
+- ðŸ—žï¸ **e-Paper Digest** (daily newspaper links with logo cards)
+- ðŸŽ¬ **YT Downloader** (local `yt-dlp` + `ffmpeg` downloader with video library)
+- ðŸ¤– **News Agent** (AI-powered topic summaries using Groq)
+- ðŸ“ **Quick Notes** (browser-local notes)
+- ðŸ“ˆðŸ§  Additional static utility pages (learning/health/event pages)
 
 ---
 
-## 🧭 Dashboard apps at a glance
+## ðŸ§­ Dashboard apps at a glance
 
 | App | Purpose | Backend Required |
 |---|---|---|
-| `apps/filehub` | File explorer with upload, folder/file actions, drag/drop move | ✅ Yes |
-| `apps/epaper` | Fetches latest newspaper links from configured sources | ✅ Yes |
-| `apps/ytdownloader` | Starts async download job, polls progress, shows completed media | ✅ Yes |
-| `apps/newsagent` | Manage news sections + stream AI summaries | ✅ Yes |
-| `apps/quicknotes` | Save quick notes to `localStorage` | ❌ No |
-| `apps/learn-investing` | Static course/tracker style page | ❌ No |
-| `apps/vestibular-migraine` | Static rehab tracker UI | ❌ No |
-| `apps/siat` | Static exhibition/stall exploration page | ❌ No |
+| `apps/filehub` | File explorer with upload, folder/file actions, drag/drop move | âœ… Yes |
+| `apps/epaper` | Fetches latest newspaper links from configured sources | âœ… Yes |
+| `apps/ytdownloader` | Fetches video info, downloads locally, stores and plays videos | Yes |
+| `apps/newsagent` | Manage news sections + stream AI summaries | âœ… Yes |
+| `apps/quicknotes` | Save quick notes to `localStorage` | âŒ No |
+| `apps/learn-investing` | Static course/tracker style page | âŒ No |
+| `apps/vestibular-migraine` | Static rehab tracker UI | âŒ No |
+| `apps/siat` | Static exhibition/stall exploration page | âŒ No |
 
 ---
 
-## 🏗️ How it works
+## ðŸ—ï¸ How it works
 
 ### 1) Core server
 
@@ -51,27 +51,26 @@ You open one dashboard and launch multiple built-in utilities:
 
 - serves all static files from repo root
 - serves `/uploads`, `/assets`, and `/public`
-- exposes APIs for File Hub, e-Paper, News Agent, and YT Downloader workflow
+- exposes APIs for File Hub, e-Paper, News Agent, and YT Downloader
 
 ### 2) Data and storage
 
-- `uploads/` → File Hub filesystem storage
-- `news_settings.json` → News Agent section config
-- `public/videos.json` → downloaded video metadata manifest
-- `public/videos/` → final media files
+- `uploads/` â†’ File Hub filesystem storage
+- `news_settings.json` â†’ News Agent section config
+- `public/videos/` -> downloaded videos + thumbnails/info sidecar files
 
-### 3) Async YouTube flow
+### 3) Local YouTube download flow
 
-1. Frontend calls `POST /api/ytdownloader/start-download`
-2. Server creates a job ID and triggers GitHub `repository_dispatch`
-3. External runner executes `scripts/download_video.py`
-4. Python script downloads/merges media via `yt-dlp` + `ffmpeg`
-5. Runner pushes updates to `POST /api/ytdownloader/update-progress`
-6. UI polls `GET /api/ytdownloader/status/:jobId` and updates cards
+1. Frontend calls `GET /api/video-info` for metadata + qualities
+2. Frontend starts download with `POST /api/download`
+3. Server runs local `yt-dlp` process and tracks progress in memory
+4. UI polls `GET /api/download-progress/:downloadId`
+5. Downloaded files are stored in `public/videos/`
+6. Library is loaded from `GET /api/library`
 
 ---
 
-## 🔌 API overview
+## ðŸ”Œ API overview
 
 ### File Hub
 
@@ -99,26 +98,28 @@ You open one dashboard and launch multiple built-in utilities:
 
 ### YT Downloader
 
-- `POST /api/ytdownloader/start-download`
-- `POST /api/ytdownloader/update-progress`
-- `GET /api/ytdownloader/status/:jobId`
+- `GET /api/video-info`
+- `POST /api/download`
+- `GET /api/download-progress/:downloadId`
+- `GET /api/library`
+- `GET /api/video/:filename`
+- `DELETE /api/video/:filename`
+- `GET /api/settings`
+- `POST /api/settings/proxy`
+- `POST /api/settings/cookies`
 
 ---
 
-## ⚙️ Environment variables
+## âš™ï¸ Environment variables
 
 ### Required for News Agent
 
 - `GROQ_API_KEY` *(or `REDACTED_GROQ_API_KEY`)*
 
-### Required for YT Downloader automation
+### Required runtime dependencies for YT Downloader
 
-- `GITHUB_USER`
-- `GITHUB_REPO`
-- `GITHUB_PAT`
-- `PROGRESS_UPDATE_SECRET`
-- `RENDER_APP_URL` *(used by workflow/script callback)*
-- `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_BASE64` *(strongly recommended for YouTube anti-bot challenges)*
+- `yt-dlp` installed and available on PATH
+- `ffmpeg` installed and available on PATH
 
 ### Optional
 
@@ -126,7 +127,7 @@ You open one dashboard and launch multiple built-in utilities:
 
 ---
 
-## 🧪 Run locally
+## ðŸ§ª Run locally
 
 ```bash
 npm install
@@ -137,37 +138,37 @@ Open: `http://localhost:3000`
 
 ---
 
-## 📁 Project structure
+## ðŸ“ Project structure
 
 ```text
 .
-├── server.js
-├── index.html
-├── style.css
-├── apps/
-│   ├── filehub/
-│   ├── epaper/
-│   ├── ytdownloader/
-│   ├── newsagent/
-│   ├── quicknotes/
-│   ├── learn-investing/
-│   ├── vestibular-migraine/
-│   └── siat/
-├── assets/
-├── public/
-│   ├── videos/
-│   ├── videos.json
-│   └── videos/videos.json
-├── scripts/
-│   └── download_video.py
-├── news_settings.json
-├── package.json
-└── requirements.txt
+â”œâ”€â”€ server.js
+â”œâ”€â”€ index.html
+â”œâ”€â”€ style.css
+â”œâ”€â”€ apps/
+â”‚   â”œâ”€â”€ filehub/
+â”‚   â”œâ”€â”€ epaper/
+â”‚   â”œâ”€â”€ ytdownloader/
+â”‚   â”œâ”€â”€ newsagent/
+â”‚   â”œâ”€â”€ quicknotes/
+â”‚   â”œâ”€â”€ learn-investing/
+â”‚   â”œâ”€â”€ vestibular-migraine/
+â”‚   â””â”€â”€ siat/
+â”œâ”€â”€ assets/
+â”œâ”€â”€ public/
+â”‚   â”œâ”€â”€ videos/
+â”‚   â”œâ”€â”€ videos.json
+â”‚   â””â”€â”€ videos/videos.json
+â”œâ”€â”€ scripts/
+â”‚   â””â”€â”€ download_video.py
+â”œâ”€â”€ news_settings.json
+â”œâ”€â”€ package.json
+â””â”€â”€ requirements.txt
 ```
 
 ---
 
-## 📝 Notes
+## ðŸ“ Notes
 
 - This is a **single-repo multi-tool personal project** (not microservices).
 - Job status for YouTube workflow is currently in-memory (`jobs` object), so active job state resets after server restart.
@@ -175,7 +176,7 @@ Open: `http://localhost:3000`
 
 ---
 
-## ❤️ Why this repo is useful
+## â¤ï¸ Why this repo is useful
 
 If you want one deployable app that combines:
 
@@ -186,3 +187,4 @@ If you want one deployable app that combines:
 - and small self-contained utility pages,
 
 this project is a practical and extensible starting point.
+
