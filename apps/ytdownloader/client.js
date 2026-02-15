@@ -86,6 +86,9 @@ fetchBtn.addEventListener('click', async () => {
 
         if (response.ok) {
             currentVideoInfo = data;
+            if (!Array.isArray(data.formats) || data.formats.length === 0) {
+                throw new Error('No downloadable video formats found for this URL.');
+            }
             displayVideoPreview(data);
             populateQualitySelect(data.formats);
             showToast('Video information loaded!', 'success');

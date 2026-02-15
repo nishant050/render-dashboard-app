@@ -456,6 +456,7 @@ app.post('/api/groq-chat', async (req, res) => {
 // ===============================================
 
 const downloads = new Map();
+const videoInfoCache = new Map();
 const ytdownloaderSettings = {
     proxy: null,
     cookiesText: null,
@@ -465,6 +466,7 @@ const videosDir = path.join(__dirname, 'public', 'videos');
 const videoExtensions = new Set(['.mp4', '.webm', '.mkv']);
 const thumbnailExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
 const sidecarExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.info.json'];
+const VIDEO_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
 
 const sendApiError = (res, status, message, code = undefined, hint = undefined) => {
     const payload = { ok: false, error: message };
@@ -531,7 +533,7 @@ const cleanYoutubeUrl = (url) => {
 };
 
 const getYtDlpOptionsArgs = () => {
-    const args = ['--no-warnings', '--newline', '--impersonate', 'chrome'];
+    const args = ['--no-warnings', '--newline', '--impersonate', 'chrome', '--js-runtimes', 'node'];
     if (ytdownloaderSettings.proxy) {
         args.push('--proxy', ytdownloaderSettings.proxy);
     }
@@ -539,6 +541,30 @@ const getYtDlpOptionsArgs = () => {
         args.push('--cookies', ytdownloaderSettings.cookiesPath);
     }
     return args;
+};
+
+const cleanupVideoInfoCache = () => {
+    const now = Date.now();
+    for (const [url, entry] of videoInfoCache.entries()) {
+        if (!entry?.timestamp || now - entry.timestamp > VIDEO_INFO_CACHE_TTL_MS) {
+            videoInfoCache.delete(url);
+        }
+    }
+};
+
+const cacheVideoInfo = (url, formats) => {
+    cleanupVideoInfoCache();
+    videoInfoCache.set(url, {
+        timestamp: Date.now(),
+        formats: Array.isArray(formats) ? formats : []
+    });
+};
+
+const getCachedFormatsForUrl = (url) => {
+    cleanupVideoInfoCache();
+    const entry = videoInfoCache.get(url);
+    if (!entry) return [];
+    return Array.isArray(entry.formats) ? entry.formats : [];
 };
 
 const getYtDlpCandidates = () => {
@@ -765,25 +791,53 @@ const ensureFfmpegAvailable = async () => {
 };
 
 const extractFormats = (info) => {
-    const formats = [];
-    const seenHeights = new Set();
+    const byHeight = new Map();
     for (const format of info.formats || []) {
-        const height = format.height;
-        if (!height || seenHeights.has(height)) continue;
-        seenHeights.add(height);
-        formats.push({
+        const height = Number(format.height);
+        if (!Number.isFinite(height) || height <= 0) continue;
+
+        const formatId = `${format.format_id || ''}`;
+        const ext = (format.ext || '').toLowerCase();
+        const note = (format.format_note || '').toLowerCase();
+        const protocol = (format.protocol || '').toLowerCase();
+        const vcodec = format.vcodec || 'none';
+        const acodec = format.acodec || 'none';
+
+        const isStoryboard = formatId.startsWith('sb') || ext === 'mhtml' || note.includes('storyboard') || protocol === 'mhtml';
+        const isVideo = vcodec !== 'none';
+        if (!isVideo || isStoryboard) continue;
+
+        const hasAudio = acodec !== 'none';
+        const score =
+            (hasAudio ? 100 : 0) +
+            (ext === 'mp4' ? 10 : 0) +
+            ((format.filesize || format.filesize_approx || 0) > 0 ? 1 : 0);
+
+        const candidate = {
             format_id: format.format_id,
             quality: `${height}p`,
             height,
-            filesize: format.filesize || 0,
-            has_audio: format.acodec !== 'none' && format.acodec != null,
+            filesize: format.filesize || format.filesize_approx || 0,
+            has_audio: hasAudio,
             format_note: format.format_note || '',
             ext: format.ext || 'mp4',
             vcodec: format.vcodec || 'unknown',
-            acodec: format.acodec || 'unknown'
-        });
+            acodec: format.acodec || 'unknown',
+            _score: score
+        };
+
+        const prev = byHeight.get(height);
+        if (!prev || candidate._score > prev._score) {
+            byHeight.set(height, candidate);
+        }
     }
-    formats.sort((a, b) => b.height - a.height);
+    const formats = [...byHeight.values()]
+        .sort((a, b) => b.height - a.height)
+        .map((format) => {
+            const { _score, ...safe } = format;
+            return safe;
+        });
+
     formats.unshift({
         format_id: 'best',
         quality: 'Best Available',
@@ -842,13 +896,15 @@ const updateDownload = (downloadId, patch) => {
 const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
     await ensureVideosDir();
     const outputTemplate = path.join(videosDir, '%(title)s.%(ext)s');
-    const formatExpr = formatId === 'best' ? 'bestvideo+bestaudio/best' : `${formatId}+bestaudio/best`;
     const commonArgs = getYtDlpOptionsArgs();
     const startedAt = Date.now();
     let lastPrintedPath = null;
     let buffer = '';
+    const cachedFormats = getCachedFormatsForUrl(cleanUrl);
+    const selectedFormat = cachedFormats.find((f) => `${f.format_id}` === `${formatId}`);
+    const selectedHeight = selectedFormat?.height || null;
 
-    const args = [
+    const buildArgs = (formatExpr) => ([
         ...commonArgs,
         '--write-thumbnail',
         '--write-info-json',
@@ -861,39 +917,72 @@ const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
         '-o',
         outputTemplate,
         cleanUrl
-    ];
+    ]);
 
     try {
         updateDownload(downloadId, { status: 'downloading', message: 'Downloading...', progress: 1, error: null });
-        await runYtDlp(args, {
-            timeoutMs: 60 * 60 * 1000,
-            onStdout: (chunk) => {
-                buffer += chunk;
-                const lines = buffer.split(/\r?\n/);
-                buffer = lines.pop() || '';
-                for (const line of lines) {
-                    const progressData = parseProgressLine(line);
-                    if (progressData) {
-                        updateDownload(downloadId, {
-                            status: 'downloading',
-                            progress: progressData.progress,
-                            message: progressData.message
-                        });
-                        continue;
+        const attempts = [];
+        attempts.push(formatId === 'best' ? 'bestvideo+bestaudio/best' : `${formatId}+bestaudio/best`);
+        if (selectedHeight && Number.isFinite(Number(selectedHeight))) {
+            attempts.push(`bestvideo[height<=${selectedHeight}]+bestaudio/best[height<=${selectedHeight}]/best`);
+        }
+        attempts.push('bestvideo+bestaudio/best');
+        const uniqueAttempts = [...new Set(attempts)];
+
+        let success = false;
+        let lastError = null;
+        for (let i = 0; i < uniqueAttempts.length; i++) {
+            const formatExpr = uniqueAttempts[i];
+            if (i > 0) {
+                updateDownload(downloadId, {
+                    status: 'processing',
+                    message: 'Selected quality unavailable. Retrying with compatible format...',
+                    progress: Math.max(downloads.get(downloadId)?.progress || 1, 5)
+                });
+            }
+
+            try {
+                await runYtDlp(buildArgs(formatExpr), {
+                    timeoutMs: 60 * 60 * 1000,
+                    onStdout: (chunk) => {
+                        buffer += chunk;
+                        const lines = buffer.split(/\r?\n/);
+                        buffer = lines.pop() || '';
+                        for (const line of lines) {
+                            const progressData = parseProgressLine(line);
+                            if (progressData) {
+                                updateDownload(downloadId, {
+                                    status: 'downloading',
+                                    progress: progressData.progress,
+                                    message: progressData.message
+                                });
+                                continue;
+                            }
+                            const trimmed = line.trim();
+                            if (trimmed && !trimmed.startsWith('[') && trimmed.toLowerCase().includes('.mp4')) {
+                                lastPrintedPath = trimmed;
+                            }
+                        }
+                    },
+                    onStderr: (chunk) => {
+                        const text = chunk.trim();
+                        if (text) {
+                            updateDownload(downloadId, { status: 'processing', message: text.slice(-220), progress: 99 });
+                        }
                     }
-                    const trimmed = line.trim();
-                    if (trimmed && !trimmed.startsWith('[') && trimmed.toLowerCase().includes('.mp4')) {
-                        lastPrintedPath = trimmed;
-                    }
-                }
-            },
-            onStderr: (chunk) => {
-                const text = chunk.trim();
-                if (text) {
-                    updateDownload(downloadId, { status: 'processing', message: text.slice(-220), progress: 99 });
+                });
+                success = true;
+                break;
+            } catch (error) {
+                lastError = error;
+                const errorText = `${error?.stderr || ''} ${error?.stdout || ''} ${error?.message || ''}`;
+                const isFormatUnavailable = /Requested format is not available/i.test(errorText);
+                if (!isFormatUnavailable || i === uniqueAttempts.length - 1) {
+                    throw error;
                 }
             }
-        });
+        }
+        if (!success && lastError) throw lastError;
 
         let finalFileName = '';
         if (lastPrintedPath) {
@@ -929,6 +1018,8 @@ const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
         let errorMessage = (error.stderr || error.stdout || error.message || 'Download failed').slice(0, 500);
         if (errorMessage.includes('Sign in to confirm') || errorMessage.includes('not a bot')) {
             errorMessage = 'YouTube is asking for authentication. Open Settings, paste/upload fresh cookies.txt, save, then retry.';
+        } else if (/Requested format is not available/i.test(errorMessage)) {
+            errorMessage = 'Selected quality is currently unavailable. Please click Fetch Info again and retry.';
         }
         updateDownload(downloadId, {
             status: 'error',
@@ -963,13 +1054,15 @@ app.get('/api/video-info', async (req, res) => {
             return sendApiError(res, 400, 'Failed to fetch video info.');
         }
         const info = JSON.parse(jsonLine);
+        const formats = extractFormats(info);
+        cacheVideoInfo(cleanUrl, formats);
 
         return res.json({
             title: info.title || 'Unknown',
             thumbnail: info.thumbnail || '',
             duration: info.duration || 0,
             uploader: info.uploader || 'Unknown',
-            formats: extractFormats(info),
+            formats,
             url: cleanUrl
         });
     } catch (error) {
