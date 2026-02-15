@@ -5,24 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Explorer</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
     <nav>
-        <a href="../../index.html">&larr; Back to Dashboard</a>
+        <a href="../../index.html"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
     </nav>
 
     <main class="container">
-        <h1>☁️ File Explorer</h1>
+        <div class="header">
+            <div class="title-section">
+                <h1><i class="fas fa-cloud"></i> File Explorer</h1>
+                <p class="subtitle">Manage your files with ease</p>
+            </div>
+            <div class="storage-info">
+                <i class="fas fa-hard-drive"></i>
+                <span id="storage-used">Calculating...</span>
+            </div>
+        </div>
         
         <div class="toolbar">
             <div id="breadcrumb"></div>
             <div class="actions">
-                <button id="upload-btn">Upload File</button>
+                <button id="upload-btn" class="primary-btn">
+                    <i class="fas fa-upload"></i> Upload Files
+                </button>
                 <input type="file" id="file-input" style="display: none;" multiple>
-                <button id="new-folder-btn">New Folder</button>
-                <button id="new-file-btn">New Text File</button>
-                <button id="clear-all-btn" class="danger-btn">Clear All</button> 
+                <button id="new-folder-btn" class="secondary-btn">
+                    <i class="fas fa-folder-plus"></i> New Folder
+                </button>
+                <button id="new-file-btn" class="secondary-btn">
+                    <i class="fas fa-file-plus"></i> New Text File
+                </button>
+                <button id="clear-all-btn" class="danger-btn">
+                    <i class="fas fa-trash"></i> Clear All
+                </button> 
             </div>
         </div>
 
@@ -30,6 +48,19 @@
             <!-- Items will be dynamically inserted here -->
         </div>
     </main>
+
+    <!-- Upload Progress Panel -->
+    <div id="upload-progress-panel" class="upload-panel">
+        <div class="panel-header">
+            <h3><i class="fas fa-cloud-upload-alt"></i> Uploading Files</h3>
+            <button id="close-upload-panel" class="close-panel-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div id="upload-queue" class="upload-queue">
+            <!-- Upload items will be dynamically inserted here -->
+        </div>
+    </div>
 
     <!-- Modal for User Input (Create Folder, Rename) -->
     <div id="modal" class="modal-container" style="display: none;">

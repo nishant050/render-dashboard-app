@@ -215,8 +215,38 @@ app.delete('/api/clear-all', async (req, res) => {
     }
 });
 
+// 9. GET storage info
+const getDirectorySize = async (dirPath) => {
+    let totalSize = 0;
+    try {
+        const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+            const entryPath = path.join(dirPath, entry.name);
+            if (entry.isDirectory()) {
+                totalSize += await getDirectorySize(entryPath);
+            } else {
+                const stats = await fsPromises.stat(entryPath);
+                totalSize += stats.size;
+            }
+        }
+    } catch (error) {
+        console.error('Error calculating directory size:', error);
+    }
+    return totalSize;
+};
 
-// 9. SCRAPE for latest newspapers
+app.get('/api/storage-info', async (req, res) => {
+    try {
+        const used = await getDirectorySize(uploadsDir);
+        res.json({ used });
+    } catch (error) {
+        console.error('Error getting storage info:', error);
+        res.status(500).json({ error: 'Failed to get storage info' });
+    }
+});
+
+
+// 10. SCRAPE for latest newspapers
 app.get('/api/newspapers', async (req, res) => {
     const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
 
