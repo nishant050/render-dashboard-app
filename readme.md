@@ -1,69 +1,79 @@
-# Render Dashboard App
+<div align="center">
 
-A personal **multi-tool web dashboard** built with Node.js + vanilla front-end apps.
+# 🚀 Render Dashboard App
 
-This project acts as a single home screen for practical everyday tools: file management, newspaper digest, AI-powered news summaries, YouTube download orchestration, and a few self-contained learning/utility pages.
+### A beautiful all-in-one personal productivity dashboard
 
----
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](#)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)](#)
+[![Frontend](https://img.shields.io/badge/Frontend-HTML%20%7C%20CSS%20%7C%20Vanilla%20JS-ff69b4)](#)
+[![Status](https://img.shields.io/badge/Status-Active-success)](#)
 
-## What this app does
-
-At a high level, the app is:
-
-- A central dashboard (`/`) that links to multiple mini-apps
-- A Node/Express backend (`server.js`) that powers API features
-- A static front-end bundle under `apps/` for each tool
-- A hybrid system where some features are local (browser-only), while others are server-driven
-
-### Included mini-apps
-
-- **File Hub** (`apps/filehub`)  
-  Browser-based file manager for the server `uploads/` folder.
-- **e-Paper Digest** (`apps/epaper`)  
-  Scrapes configured newspaper sources and shows latest links with logos.
-- **YT Downloader** (`apps/ytdownloader`)  
-  Starts YouTube download jobs and tracks progress via polling.
-- **News Agent** (`apps/newsagent`)  
-  AI-generated news summaries from configurable topics and source sites.
-- **Quick Notes** (`apps/quicknotes`)  
-  Simple localStorage notes app (no backend dependency).
-- **Learn Investing / Vestibular Migraine / SIAT pages**  
-  Standalone static learning/tracker pages linked from the dashboard.
+</div>
 
 ---
 
-## Architecture overview
+## ✨ What this project is
 
-### Backend
+**Render Dashboard App** is a single Node.js web application that acts like a mini “app store” for personal tools.
 
-- **Runtime:** Node.js + Express
-- **Entry point:** `server.js`
-- **Key dependencies:** `express`, `multer`, `axios`, `cheerio`, `groq-sdk`
-- **Storage pattern:**
-  - `uploads/` for File Hub files
-  - `public/videos/` + `public/videos.json` for downloaded video artifacts and manifest
-  - `news_settings.json` for News Agent section configuration
+You open one dashboard and launch multiple built-in utilities:
 
-### Frontend
-
-- Dashboard page: `index.html` + `style.css`
-- Each tool has its own `apps/<tool>/index.html` and optional `client.js`, `style.css`
-- Plain HTML/CSS/JS (no React/Vue build system)
-
-### Async download workflow (YouTube)
-
-1. UI posts URL to `POST /api/ytdownloader/start-download`
-2. Server triggers a GitHub repository dispatch event
-3. External job runs `scripts/download_video.py` (yt-dlp + ffmpeg)
-4. Job reports status back to `POST /api/ytdownloader/update-progress`
-5. UI polls `GET /api/ytdownloader/status/:jobId`
-6. Final media is listed from `public/videos.json`
+- ☁️ **File Hub** (upload, organize, move, preview files)
+- 🗞️ **e-Paper Digest** (daily newspaper links with logo cards)
+- 🎬 **YT Downloader** (job-based YouTube processing pipeline)
+- 🤖 **News Agent** (AI-powered topic summaries using Groq)
+- 📝 **Quick Notes** (browser-local notes)
+- 📈🧠 Additional static utility pages (learning/health/event pages)
 
 ---
 
-## Core API surface
+## 🧭 Dashboard apps at a glance
 
-### File Hub APIs
+| App | Purpose | Backend Required |
+|---|---|---|
+| `apps/filehub` | File explorer with upload, folder/file actions, drag/drop move | ✅ Yes |
+| `apps/epaper` | Fetches latest newspaper links from configured sources | ✅ Yes |
+| `apps/ytdownloader` | Starts async download job, polls progress, shows completed media | ✅ Yes |
+| `apps/newsagent` | Manage news sections + stream AI summaries | ✅ Yes |
+| `apps/quicknotes` | Save quick notes to `localStorage` | ❌ No |
+| `apps/learn-investing` | Static course/tracker style page | ❌ No |
+| `apps/vestibular-migraine` | Static rehab tracker UI | ❌ No |
+| `apps/siat` | Static exhibition/stall exploration page | ❌ No |
+
+---
+
+## 🏗️ How it works
+
+### 1) Core server
+
+`server.js` runs an Express server that:
+
+- serves all static files from repo root
+- serves `/uploads`, `/assets`, and `/public`
+- exposes APIs for File Hub, e-Paper, News Agent, and YT Downloader workflow
+
+### 2) Data and storage
+
+- `uploads/` → File Hub filesystem storage
+- `news_settings.json` → News Agent section config
+- `public/videos.json` → downloaded video metadata manifest
+- `public/videos/` → final media files
+
+### 3) Async YouTube flow
+
+1. Frontend calls `POST /api/ytdownloader/start-download`
+2. Server creates a job ID and triggers GitHub `repository_dispatch`
+3. External runner executes `scripts/download_video.py`
+4. Python script downloads/merges media via `yt-dlp` + `ffmpeg`
+5. Runner pushes updates to `POST /api/ytdownloader/update-progress`
+6. UI polls `GET /api/ytdownloader/status/:jobId` and updates cards
+
+---
+
+## 🔌 API overview
+
+### File Hub
 
 - `GET /api/files`
 - `POST /api/upload`
@@ -74,20 +84,20 @@ At a high level, the app is:
 - `DELETE /api/delete`
 - `DELETE /api/clear-all`
 
-### e-Paper API
+### e-Paper
 
 - `GET /api/newspapers`
 
-### News Agent APIs
+### News Agent
 
 - `GET /api/news-sections`
 - `POST /api/news-sections`
 - `PUT /api/news-sections/:id`
 - `DELETE /api/news-sections/:id`
-- `GET /api/summarize-all` (SSE stream)
-- `POST /api/groq-chat`
+- `GET /api/summarize-all` (Server-Sent Events stream)
+- `POST /api/groq-chat` (server-side proxy for Groq)
 
-### YouTube job APIs
+### YT Downloader
 
 - `POST /api/ytdownloader/start-download`
 - `POST /api/ytdownloader/update-progress`
@@ -95,39 +105,38 @@ At a high level, the app is:
 
 ---
 
-## Environment variables
-
-Set these before running production features:
+## ⚙️ Environment variables
 
 ### Required for News Agent
 
-- `GROQ_API_KEY` (or `REDACTED_GROQ_API_KEY`)
+- `GROQ_API_KEY` *(or `REDACTED_GROQ_API_KEY`)*
 
-### Required for YT Downloader orchestration
+### Required for YT Downloader automation
 
 - `GITHUB_USER`
 - `GITHUB_REPO`
 - `GITHUB_PAT`
 - `PROGRESS_UPDATE_SECRET`
+- `RENDER_APP_URL` *(used by workflow/script callback)*
 
 ### Optional
 
-- `PORT` (defaults to `3000`)
+- `PORT` (default: `3000`)
 
 ---
 
-## Local development
+## 🧪 Run locally
 
 ```bash
 npm install
 node server.js
 ```
 
-Then open: `http://localhost:3000`
+Open: `http://localhost:3000`
 
 ---
 
-## Repository layout
+## 📁 Project structure
 
 ```text
 .
@@ -146,20 +155,33 @@ Then open: `http://localhost:3000`
 ├── assets/
 ├── public/
 │   ├── videos/
-│   └── videos.json
+│   ├── videos.json
+│   └── videos/videos.json
 ├── scripts/
 │   └── download_video.py
 ├── news_settings.json
+├── package.json
 └── requirements.txt
 ```
 
 ---
 
-## Notes and practical constraints
+## 📝 Notes
 
-- This is a **personal dashboard-style monorepo** with mixed app maturity levels.
-- File and video storage are filesystem-based (not DB-backed).
-- YouTube jobs are tracked in **in-memory server state** (`jobs` object), so server restarts clear active job status.
-- Several pages are intentionally static and self-contained.
+- This is a **single-repo multi-tool personal project** (not microservices).
+- Job status for YouTube workflow is currently in-memory (`jobs` object), so active job state resets after server restart.
+- Filesystem persistence behavior depends on your hosting plan/environment.
 
-If you want, I can also generate a second version of this README with badges, screenshots, and a deployment section tailored specifically for Render.
+---
+
+## ❤️ Why this repo is useful
+
+If you want one deployable app that combines:
+
+- file handling,
+- scraping,
+- AI summarization,
+- async background workflow integration,
+- and small self-contained utility pages,
+
+this project is a practical and extensible starting point.
