@@ -63,7 +63,14 @@ const NEWSPAPERS_CONFIG = [
     { name: "The Times of India", url: "https://epaperwave.com/the-times-of-india-epaper-pdf-download/" },
     { name: "The Mint", url: "https://epaperwave.com/download-the-mint-epaper-pdf-for-free-today/" },
     { name: "Dainik Bhaskar", url: "https://epaperwave.com/dainik-bhaskar-epaper-today-pdf/" },
-    { name: "Punjab Kesari", url: "https://epaperwave.com/free-punjab-kesari-epaper-pdf-download-now/" }
+    { name: "Punjab Kesari", url: "https://epaperwave.com/free-punjab-kesari-epaper-pdf-download-now/" },
+    { name: "The Hindu", url: "https://epaperwave.com/the-hindu-newspaper-today-pdf-download/" },
+    { name: "The Indian Express", url: "https://epaperwave.com/download-today-the-new-indian-express-newspaper/" },
+    { name: "Amar Ujala", url: "https://epaperwave.com/amar-ujala-epaper-download-link-for-free/" },
+    { name: "Jansatta", url: "https://epaperwave.com/jansatta-epaper-today-pdf-download/" },
+    { name: "The Tribune", url: "https://epaperwave.com/the-tribune-epaper-pdf-download-daily/" },
+    { name: "The Telegraph", url: "https://epaperwave.com/the-telegraph-epaper-today-pdf-download/" },
+    { name: "Pudhari", url: "https://epaperwave.com/pudhari-epaper-today-pdf/" }
 ];
 let newspaperCache = { data: null, lastFetched: 0 };
 
@@ -421,8 +428,20 @@ app.get('/api/newspapers', async (req, res) => {
                         });
                     }
 
+                    // Fallback: If no exact date match, get the first available Google Drive link
                     if (!foundLink) {
-                        console.log(`[DEBUG] ${newspaperInfo.name}: No link found for date ${dateStr}`);
+                        console.log(`[DEBUG] ${newspaperInfo.name}: No link found for date ${dateStr}, getting first available link`);
+                        $('a[href*="drive.google.com"]').each((i, el) => {
+                            const href = $(el).attr('href');
+                            if (href && href.includes('/view?')) {
+                                foundLink = href;
+                                return false;
+                            }
+                        });
+                    }
+
+                    if (!foundLink) {
+                        console.log(`[DEBUG] ${newspaperInfo.name}: No link found at all`);
                     }
                     
                     return foundLink;
