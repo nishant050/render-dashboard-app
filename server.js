@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+const os = require('os');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
@@ -483,6 +484,28 @@ const ensureVideosDir = async () => {
     await fsPromises.mkdir(videosDir, { recursive: true });
 };
 
+const getCookiesFilePathFromEnv = () => {
+    const rawCookies = (process.env.YOUTUBE_COOKIES || '').trim();
+    const base64Cookies = (process.env.YOUTUBE_COOKIES_BASE64 || '').trim();
+    if (!rawCookies && !base64Cookies) return null;
+
+    let content = rawCookies;
+    if (base64Cookies) {
+        try {
+            content = Buffer.from(base64Cookies, 'base64').toString('utf8');
+        } catch {
+            return null;
+        }
+    }
+    if (!content.trim()) return null;
+
+    const cookiesDir = path.join(os.tmpdir(), 'render-dashboard-app');
+    const cookiesPath = path.join(cookiesDir, 'youtube_cookies.txt');
+    fs.mkdirSync(cookiesDir, { recursive: true });
+    fs.writeFileSync(cookiesPath, content, { encoding: 'utf8' });
+    return cookiesPath;
+};
+
 const cleanYoutubeUrl = (url) => {
     try {
         const parsed = new URL(url);
@@ -512,9 +535,13 @@ const cleanYoutubeUrl = (url) => {
 };
 
 const getYtDlpOptionsArgs = () => {
-    const args = ['--no-warnings', '--newline'];
+    const args = ['--no-warnings', '--newline', '--impersonate', 'chrome'];
     if (ytdownloaderSettings.proxy) {
         args.push('--proxy', ytdownloaderSettings.proxy);
+    }
+    const cookiesPath = getCookiesFilePathFromEnv();
+    if (cookiesPath) {
+        args.push('--cookies', cookiesPath);
     }
     if (ytdownloaderSettings.cookies) {
         args.push('--cookies-from-browser', ytdownloaderSettings.cookies);

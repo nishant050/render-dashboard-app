@@ -127,6 +127,8 @@ You open one dashboard and launch multiple built-in utilities:
 - `PORT` (default: `3000`)
 - `YTDLP_PATH` (full path to `yt-dlp` binary if not in PATH)
 - `FFMPEG_PATH` (full path to `ffmpeg` binary if not in PATH)
+- `YOUTUBE_COOKIES_BASE64` (recommended on Render: base64 of Netscape cookies.txt)
+- `YOUTUBE_COOKIES` (raw cookies.txt content, alternative to base64)
 
 ---
 
@@ -167,6 +169,8 @@ This repo includes `render.yaml` and simple npm scripts for Render.
   - Build did not run `pip install -r requirements.txt`, or install failed.
 - Error: `spawn yt-dlp ENOENT`
   - `yt-dlp` not on PATH. Set `YTDLP_PATH` or verify Python module fallback.
+- Error: `Sign in to confirm you’re not a bot`
+  - Set `YOUTUBE_COOKIES_BASE64` in Render Environment using your exported YouTube cookies file.
 - Error: ffmpeg missing
   - Strict mode is enabled; downloads are blocked. Set `FFMPEG_PATH` to a valid binary if needed.
 
