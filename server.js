@@ -456,12 +456,68 @@ app.post('/api/groq-chat', async (req, res) => {
 
 // In-memory store for download jobs. In a real production app, use a database like Redis.
 const jobs = {};
+const TERMINAL_JOB_STATUSES = new Set(['Complete', 'Failed']);
+const ytdownloaderRequiredEnv = ['GITHUB_USER', 'GITHUB_REPO', 'GITHUB_PAT', 'PROGRESS_UPDATE_SECRET'];
+const videosDir = path.join(__dirname, 'public', 'videos');
+const videosManifestPath = path.join(__dirname, 'public', 'videos.json');
+
+const getMissingYtdownloaderEnv = () => ytdownloaderRequiredEnv.filter((name) => !process.env[name]);
+const missingYtdownloaderEnvAtStartup = getMissingYtdownloaderEnv();
+if (missingYtdownloaderEnvAtStartup.length > 0) {
+    console.warn(`[YT Downloader] Missing environment variables: ${missingYtdownloaderEnvAtStartup.join(', ')}`);
+}
+
+const sendApiError = (res, status, message, details = undefined) => {
+    const payload = { ok: false, error: message };
+    if (details) payload.details = details;
+    return res.status(status).json(payload);
+};
+
+const isSafeVideoFileName = (value) => {
+    if (typeof value !== 'string' || value.trim() === '') return false;
+    if (value.includes('\0')) return false;
+    if (value.includes('/') || value.includes('\\')) return false;
+    return path.basename(value) === value;
+};
+
+const readVideoManifest = async () => {
+    try {
+        const raw = await fsPromises.readFile(videosManifestPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+    }
+};
+
+const writeVideoManifest = async (entries) => {
+    await fsPromises.writeFile(videosManifestPath, JSON.stringify(entries, null, 4), 'utf-8');
+};
+
+const triggerGithubDispatch = async (eventType, clientPayload) => {
+    await axios.post(
+        `https://api.github.com/repos/${process.env.GITHUB_USER}/${process.env.GITHUB_REPO}/dispatches`,
+        { event_type: eventType, client_payload: clientPayload },
+        {
+            headers: {
+                'Authorization': `token ${process.env.GITHUB_PAT}`,
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        }
+    );
+};
 
 // 1. Endpoint for your WEBSITE to START a new download job
 app.post('/api/ytdownloader/start-download', async (req, res) => {
     const { url } = req.body;
     if (!url) {
-        return res.status(400).json({ message: 'URL is required' });
+        return sendApiError(res, 400, 'URL is required.');
+    }
+
+    const missingEnv = getMissingYtdownloaderEnv();
+    if (missingEnv.length > 0) {
+        return sendApiError(res, 500, 'YT downloader is not configured correctly.', { missingEnv });
     }
 
     // Generate a unique ID for this job
@@ -474,40 +530,29 @@ app.post('/api/ytdownloader/start-download', async (req, res) => {
         status: 'Queued',
         progress: 0,
         message: 'Workflow is being triggered...',
-        timestamp: Date.now()
+        error: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        completedAt: null
     };
 
     // Use the GitHub API to trigger the 'repository_dispatch' event in your workflow
     try {
-        await axios.post(
-            // This is the GitHub API endpoint for triggering a workflow
-            `https://api.github.com/repos/${process.env.GITHUB_USER}/${process.env.GITHUB_REPO}/dispatches`,
-            // This is the payload we send. The workflow will receive it.
-            {
-                event_type: 'trigger-youtube-download', // A custom name for this trigger
-                client_payload: {
-                    jobId: jobId,
-                    videoUrl: url
-                }
-            },
-            // These are the required headers, including your secret Personal Access Token (PAT)
-            {
-                headers: {
-                    'Authorization': `token ${process.env.GITHUB_PAT}`,
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            }
-        );
+        await triggerGithubDispatch('trigger-youtube-download', { jobId, videoUrl: url });
 
         console.log(`Job ${jobId} triggered successfully for URL: ${url}`);
         // Send the Job ID back to the website so it can start asking for status updates
-        res.status(202).json({ jobId: jobId });
+        res.status(202).json({ ok: true, jobId });
 
     } catch (error) {
         console.error('Error triggering GitHub Action:', error.response ? error.response.data : error.message);
         jobs[jobId].status = 'Failed';
         jobs[jobId].message = 'Error triggering the download workflow.';
-        res.status(500).json({ message: 'Failed to start download workflow.' });
+        jobs[jobId].progress = 100;
+        jobs[jobId].error = error.message;
+        jobs[jobId].updatedAt = Date.now();
+        jobs[jobId].completedAt = Date.now();
+        return sendApiError(res, 500, 'Failed to start download workflow.');
     }
 });
 
@@ -515,29 +560,134 @@ app.post('/api/ytdownloader/start-download', async (req, res) => {
 app.post('/api/ytdownloader/update-progress', (req, res) => {
     const { jobId, message, progress, finalFile, secret } = req.body;
 
+    if (!process.env.PROGRESS_UPDATE_SECRET) {
+        return res.status(500).send('Server misconfigured: PROGRESS_UPDATE_SECRET missing.');
+    }
+
     // A simple security check to ensure updates are coming from our GitHub Action
     if (secret !== process.env.PROGRESS_UPDATE_SECRET) {
         return res.status(403).send('Forbidden: Invalid secret.');
     }
+
+    if (!jobId) {
+        return res.status(400).send('jobId is required.');
+    }
     
     const job = jobs[jobId];
     if (job) {
-        job.message = message;
-        job.progress = progress;
-        if (progress === 100) {
-            job.status = (message.startsWith("An error occurred")) ? 'Failed' : 'Complete';
-            job.finalFile = finalFile; // Store the final video filename and path
+        if (TERMINAL_JOB_STATUSES.has(job.status)) {
+            return res.status(200).send('Job already terminal; update ignored.');
+        }
+
+        const numericProgress = Number(progress);
+        const safeProgress = Number.isFinite(numericProgress) ? Math.max(0, Math.min(100, Math.round(numericProgress))) : job.progress;
+        const safeMessage = typeof message === 'string' && message.trim() ? message : 'Processing...';
+        const isFailureMessage = safeMessage.startsWith('An error occurred') || safeMessage.startsWith('An unexpected error occurred');
+        const shouldMarkTerminal = safeProgress === 100;
+
+        job.message = safeMessage;
+        job.progress = safeProgress;
+        job.updatedAt = Date.now();
+
+        if (shouldMarkTerminal) {
+            job.status = isFailureMessage ? 'Failed' : 'Complete';
+            job.completedAt = Date.now();
+            if (job.status === 'Complete') {
+                job.finalFile = finalFile;
+                job.error = null;
+            } else {
+                job.error = safeMessage;
+            }
         } else {
             job.status = 'Processing';
+            job.error = null;
         }
-        console.log(`Progress for Job ${jobId}: ${progress}% - ${message}`);
+        console.log(`Progress for Job ${jobId}: ${safeProgress}% - ${safeMessage}`);
         res.status(200).send('Progress updated.');
     } else {
         res.status(404).send('Job not found.');
     }
 });
 
-// 3. Endpoint for your WEBSITE to GET the status of a job
+// 3. Endpoint for your WEBSITE to DELETE downloaded video/audio files
+app.post('/api/ytdownloader/delete-video', async (req, res) => {
+    const { videoFile, audioFile } = req.body || {};
+
+    if (!videoFile && !audioFile) {
+        return sendApiError(res, 400, 'At least one of videoFile or audioFile is required.');
+    }
+    if ((videoFile && !isSafeVideoFileName(videoFile)) || (audioFile && !isSafeVideoFileName(audioFile))) {
+        return sendApiError(res, 400, 'Invalid filename provided.');
+    }
+
+    try {
+        await fsPromises.mkdir(videosDir, { recursive: true });
+        const manifest = await readVideoManifest();
+        const shouldDeleteEntry = (entry) => (
+            (videoFile && entry.videoFile === videoFile) ||
+            (audioFile && entry.audioFile === audioFile)
+        );
+        const matchingEntries = manifest.filter(shouldDeleteEntry);
+        const nextManifest = manifest.filter((entry) => !shouldDeleteEntry(entry));
+
+        const filesToDelete = new Set();
+        if (videoFile) filesToDelete.add(videoFile);
+        if (audioFile) filesToDelete.add(audioFile);
+        for (const entry of matchingEntries) {
+            if (entry.videoFile) filesToDelete.add(entry.videoFile);
+            if (entry.audioFile) filesToDelete.add(entry.audioFile);
+        }
+
+        const deletedFiles = [];
+        for (const fileName of filesToDelete) {
+            const fullPath = path.join(videosDir, fileName);
+            if (!fullPath.startsWith(videosDir)) {
+                throw new Error('Unsafe delete path detected.');
+            }
+            try {
+                await fsPromises.unlink(fullPath);
+                deletedFiles.push(fileName);
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+            }
+        }
+
+        if (nextManifest.length !== manifest.length) {
+            await writeVideoManifest(nextManifest);
+        }
+
+        const payload = {
+            videoFile: videoFile || null,
+            audioFile: audioFile || null,
+            videoFiles: [...new Set(matchingEntries.map((entry) => entry.videoFile).filter(Boolean).concat(videoFile ? [videoFile] : []))],
+            audioFiles: [...new Set(matchingEntries.map((entry) => entry.audioFile).filter(Boolean).concat(audioFile ? [audioFile] : []))]
+        };
+
+        try {
+            await triggerGithubDispatch('trigger-youtube-delete', payload);
+            return res.json({
+                ok: true,
+                localDeleted: true,
+                repoDeleteTriggered: true,
+                deletedFiles
+            });
+        } catch (dispatchError) {
+            console.error('Error triggering delete workflow:', dispatchError.response ? dispatchError.response.data : dispatchError.message);
+            return res.status(202).json({
+                ok: true,
+                localDeleted: true,
+                repoDeleteTriggered: false,
+                warning: 'Deleted locally, but failed to trigger repo cleanup workflow.',
+                deletedFiles
+            });
+        }
+    } catch (error) {
+        console.error('Error deleting downloaded media:', error);
+        return sendApiError(res, 500, 'Failed to delete downloaded media.');
+    }
+});
+
+// 4. Endpoint for your WEBSITE to GET the status of a job
 app.get('/api/ytdownloader/status/:jobId', (req, res) => {
     const { jobId } = req.params;
     const job = jobs[jobId];

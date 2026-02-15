@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressContainer = document.getElementById('progress-container');
     const completedContainer = document.getElementById('video-list-container');
     const activePolls = new Map();
+    const terminalStatuses = new Set(['Complete', 'Failed']);
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -16,7 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url }),
             });
-            if (!response.ok) throw new Error('Failed to start download process.');
+            if (!response.ok) {
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch {
+                    payload = null;
+                }
+                throw new Error(payload?.error || payload?.message || 'Failed to start download process.');
+            }
             const { jobId } = await response.json();
             urlInput.value = '';
             addProgressCard(jobId, url);
@@ -34,12 +43,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const job = await response.json();
                 updateProgressCard(job);
 
-                if (job.progress === 100) {
+                if (terminalStatuses.has(job.status)) {
                     clearInterval(intervalId);
                     activePolls.delete(jobId);
                     const progressCard = document.getElementById(`job-${jobId}`);
                     if (progressCard) {
-                        if (job.status === 'Complete') {
+                        if (job.status === 'Complete' && job.finalFile) {
                             progressCard.remove();
                             addCompletedVideoCard(job.finalFile, completedContainer, true);
                         } else {
@@ -82,8 +91,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addCompletedVideoCard(video, container, isNew = false) {
+        if (!video || !video.videoFile || !video.audioFile) return;
         const card = document.createElement('div');
         card.className = 'video-card';
+        card.dataset.videoFile = video.videoFile;
+        card.dataset.audioFile = video.audioFile;
         card.innerHTML = `
             <video controls preload="metadata" poster="/assets/video-placeholder.png">
                 <source src="/${video.videoPath}" type="video/mp4">
@@ -94,8 +106,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="download-links">
                     <a href="/${video.videoPath}" download="${video.videoFile}">Download Video</a>
                     <a href="/${video.audioPath}" download="${video.audioFile}">Download Audio</a>
+                    <button type="button" class="danger-button delete-video-btn">Delete</button>
                 </div>
             </div>`;
+
+        const deleteButton = card.querySelector('.delete-video-btn');
+        deleteButton.addEventListener('click', async () => {
+            const confirmed = window.confirm('Delete this video and audio from server storage?');
+            if (!confirmed) return;
+
+            deleteButton.disabled = true;
+            deleteButton.textContent = 'Deleting...';
+            try {
+                const response = await fetch('/api/ytdownloader/delete-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        videoFile: video.videoFile,
+                        audioFile: video.audioFile,
+                    }),
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch {
+                    payload = null;
+                }
+
+                if (!response.ok || !payload?.ok) {
+                    const message = payload?.error || 'Failed to delete video from server.';
+                    throw new Error(message);
+                }
+
+                card.remove();
+                if (!payload.repoDeleteTriggered && payload.warning) {
+                    alert(payload.warning);
+                }
+            } catch (error) {
+                alert(`Delete failed: ${error.message}`);
+                deleteButton.disabled = false;
+                deleteButton.textContent = 'Delete';
+            }
+        });
+
         if (isNew) {
             container.prepend(card);
         } else {
@@ -108,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/public/videos.json');
             if (!response.ok) return;
             const videos = await response.json();
+            if (!Array.isArray(videos)) return;
             videos.forEach(video => addCompletedVideoCard(video, completedContainer));
         } catch (error) {
             console.log('Could not load previous videos. This is okay on first run.');

@@ -14,6 +14,23 @@ h3 { margin: 0 0 0.5rem 0; word-break: break-word; }
 video { width: 100%; display: block; background-color: #1a202c; }
 .download-links a { display: inline-block; background-color: #38a169; color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px; margin: 0.5rem 0.5rem 0 0; font-size: 0.9em; }
 .download-links a:hover { background-color: #2f855a; }
+.download-links .danger-button {
+    display: inline-block;
+    background-color: #c53030;
+    color: white;
+    border: none;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    margin: 0.5rem 0.5rem 0 0;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+.download-links .danger-button:hover { background-color: #9b2c2c; }
+.download-links .danger-button:disabled {
+    background-color: #718096;
+    cursor: not-allowed;
+}
 .progress-bar { width: 100%; background-color: #4a5568; border-radius: 4px; overflow: hidden; height: 1.25rem; }
 .progress-bar-inner { height: 100%; width: 0%; background-color: #4299e1; transition: width 0.5s ease; text-align: center; line-height: 1.25rem; font-size: 0.8em; font-weight: bold; }
 .progress-message { font-size: 0.9em; color: #a0aec0; margin-top: 0.5rem; }

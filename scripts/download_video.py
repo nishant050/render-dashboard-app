@@ -39,6 +39,11 @@ def update_video_manifest(video_info, manifest_path="public/videos.json"):
             if not isinstance(videos, list): videos = []
         except (json.JSONDecodeError, FileNotFoundError):
             videos = []
+    videos = [
+        item for item in videos
+        if item.get("videoFile") != video_info.get("videoFile")
+        and item.get("audioFile") != video_info.get("audioFile")
+    ]
     videos.insert(0, video_info)
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(videos, f, indent=4)
@@ -132,8 +137,7 @@ def main():
         report_progress(f"An unexpected error occurred: {e}", 100)
         sys.exit(1)
     finally:
-        # 5. Securely clean up the temporary files
-        report_progress("Cleaning up...", 99)
+        # 5. Securely clean up the temporary files without altering terminal job state
         if os.path.exists(temp_dir):
             for file in os.listdir(temp_dir):
                 try:
