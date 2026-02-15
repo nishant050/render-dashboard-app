@@ -450,6 +450,15 @@ app.get('/api/newspapers', async (req, res) => {
                 // No API key, skip scraping
                 console.log(`[DEBUG] ${newspaperInfo.name}: No scrape.do API key, skipping scrape`);
                 return null;
+            } catch (error) {
+                if (attempt < retries) {
+                    // Wait before retrying (exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 2000));
+                    return tryScrape(attempt + 1);
+                }
+                throw error;
+            }
+        };
         
         try {
             const foundLink = await tryScrape(1);
