@@ -120,7 +120,7 @@ You open one dashboard and launch multiple built-in utilities:
 ### Required runtime dependencies for YT Downloader
 
 - `yt-dlp` installed and available on PATH
-- `ffmpeg` installed and available on PATH
+- `ffmpeg` binary available (bundled via `ffmpeg-static` by default)
 
 ### Optional
 
@@ -149,13 +149,15 @@ ffmpeg -version
 
 ### Render native deployment (repo-driven)
 
-This repo includes `render.yaml` and build/start scripts so Render installs all runtime dependencies.
+This repo includes `render.yaml` and simple npm scripts for Render.
 
 1. Deploy the service from this repository using Render Blueprint.
-2. Confirm build logs include:
+2. Use these commands if setting manually in Render:
+   - Build Command: `npm run render:build`
+   - Start Command: `npm start`
+3. Confirm build logs include:
    - `python -m pip install --upgrade pip`
    - `pip install -r requirements.txt`
-   - ffmpeg installation step
 3. Confirm runtime checks:
    - `GET /api/dependencies` returns both `yt_dlp.ok=true` and `ffmpeg.ok=true`.
 
@@ -166,7 +168,7 @@ This repo includes `render.yaml` and build/start scripts so Render installs all 
 - Error: `spawn yt-dlp ENOENT`
   - `yt-dlp` not on PATH. Set `YTDLP_PATH` or verify Python module fallback.
 - Error: ffmpeg missing
-  - Strict mode is enabled; downloads are blocked until ffmpeg is installed/configured.
+  - Strict mode is enabled; downloads are blocked. Set `FFMPEG_PATH` to a valid binary if needed.
 
 ---
 

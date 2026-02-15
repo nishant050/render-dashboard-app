@@ -7,6 +7,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
 const { spawn } = require('child_process');
+const ffmpegStatic = require('ffmpeg-static');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -554,6 +555,7 @@ const getFfmpegCandidates = () => {
     };
 
     addCandidate(process.env.FFMPEG_PATH, []);
+    addCandidate(ffmpegStatic, []);
     addCandidate('ffmpeg', []);
     addCandidate('ffmpeg.exe', []);
 

@@ -3,8 +3,8 @@
     name: render-dashboard-app
     env: node
     plan: free
-    buildCommand: "bash ./scripts/render-install-deps.sh"
-    startCommand: "bash ./scripts/render-start.sh"
+    buildCommand: "npm run render:build"
+    startCommand: "npm start"
     envVars:
       - key: NODE_VERSION
         value: 20
