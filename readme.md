@@ -118,6 +118,7 @@ You open one dashboard and launch multiple built-in utilities:
 - `GITHUB_PAT`
 - `PROGRESS_UPDATE_SECRET`
 - `RENDER_APP_URL` *(used by workflow/script callback)*
+- `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_BASE64` *(strongly recommended for YouTube anti-bot challenges)*
 
 ### Optional
 
