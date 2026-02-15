@@ -464,7 +464,12 @@ const videoExtensions = new Set(['.mp4', '.webm', '.mkv']);
 const thumbnailExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
 const sidecarExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.info.json'];
 
-const sendApiError = (res, status, message) => res.status(status).json({ ok: false, error: message });
+const sendApiError = (res, status, message, code = undefined, hint = undefined) => {
+    const payload = { ok: false, error: message };
+    if (code) payload.code = code;
+    if (hint) payload.hint = hint;
+    return res.status(status).json(payload);
+};
 
 const isSafeVideoFileName = (value) => {
     if (typeof value !== 'string' || value.trim() === '') return false;
@@ -530,6 +535,27 @@ const getYtDlpCandidates = () => {
     addCandidate(process.env.PYTHON_PATH, ['-m', 'yt_dlp']);
     addCandidate('python', ['-m', 'yt_dlp']);
     addCandidate('py', ['-m', 'yt_dlp']);
+
+    const seen = new Set();
+    return candidates.filter((candidate) => {
+        const key = `${candidate.command}::${candidate.prefix.join(' ')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
+const getFfmpegCandidates = () => {
+    const candidates = [];
+    const addCandidate = (command, prefix = []) => {
+        const safeCommand = typeof command === 'string' ? command.trim() : '';
+        if (!safeCommand) return;
+        candidates.push({ command: safeCommand, prefix });
+    };
+
+    addCandidate(process.env.FFMPEG_PATH, []);
+    addCandidate('ffmpeg', []);
+    addCandidate('ffmpeg.exe', []);
 
     const seen = new Set();
     return candidates.filter((candidate) => {
@@ -607,6 +633,115 @@ const runYtDlp = async (args, options = {}) => {
     notFoundError.code = 'YTDLP_NOT_FOUND';
     notFoundError.cause = lastNotFoundError;
     throw notFoundError;
+};
+
+const runFfmpeg = async (args, options = {}) => {
+    const candidates = getFfmpegCandidates();
+    let lastNotFoundError = null;
+
+    for (const candidate of candidates) {
+        try {
+            return await runCommand(candidate.command, [...candidate.prefix, ...args], options);
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                lastNotFoundError = error;
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    const notFoundError = new Error('ffmpeg executable was not found. Install ffmpeg (or set FFMPEG_PATH).');
+    notFoundError.code = 'FFMPEG_NOT_FOUND';
+    notFoundError.cause = lastNotFoundError;
+    throw notFoundError;
+};
+
+const dependencyStatus = {
+    ytDlp: {
+        ok: false,
+        checkedAt: null,
+        command: null,
+        error: null
+    },
+    ffmpeg: {
+        ok: false,
+        checkedAt: null,
+        command: null,
+        error: null
+    }
+};
+
+const markDependency = (name, patch) => {
+    dependencyStatus[name] = {
+        ...dependencyStatus[name],
+        ...patch,
+        checkedAt: Date.now()
+    };
+};
+
+const probeYtDlp = async () => {
+    const candidates = getYtDlpCandidates();
+    let lastError = null;
+    for (const candidate of candidates) {
+        try {
+            await runCommand(candidate.command, [...candidate.prefix, '--version'], { timeoutMs: 15000 });
+            markDependency('ytDlp', { ok: true, command: `${candidate.command} ${candidate.prefix.join(' ')}`.trim(), error: null });
+            return dependencyStatus.ytDlp;
+        } catch (error) {
+            lastError = error;
+            if (error?.code === 'ENOENT') continue;
+        }
+    }
+    markDependency('ytDlp', {
+        ok: false,
+        command: null,
+        error: (lastError?.stderr || lastError?.stdout || lastError?.message || 'yt-dlp not available').slice(0, 300)
+    });
+    return dependencyStatus.ytDlp;
+};
+
+const probeFfmpeg = async () => {
+    const candidates = getFfmpegCandidates();
+    let lastError = null;
+    for (const candidate of candidates) {
+        try {
+            await runCommand(candidate.command, [...candidate.prefix, '-version'], { timeoutMs: 15000 });
+            markDependency('ffmpeg', { ok: true, command: `${candidate.command} ${candidate.prefix.join(' ')}`.trim(), error: null });
+            return dependencyStatus.ffmpeg;
+        } catch (error) {
+            lastError = error;
+            if (error?.code === 'ENOENT') continue;
+        }
+    }
+    markDependency('ffmpeg', {
+        ok: false,
+        command: null,
+        error: (lastError?.stderr || lastError?.stdout || lastError?.message || 'ffmpeg not available').slice(0, 300)
+    });
+    return dependencyStatus.ffmpeg;
+};
+
+const ensureYtDlpAvailable = async () => {
+    const status = await probeYtDlp();
+    if (!status.ok) {
+        const err = new Error('yt-dlp dependency is missing');
+        err.code = 'YTDLP_MISSING';
+        err.hint = 'Install yt-dlp in build step, or set YTDLP_PATH, or ensure `python -m yt_dlp --version` works.';
+        throw err;
+    }
+    return status;
+};
+
+const ensureFfmpegAvailable = async () => {
+    const status = await probeFfmpeg();
+    if (!status.ok) {
+        const err = new Error('ffmpeg dependency is missing');
+        err.code = 'FFMPEG_MISSING';
+        err.hint = 'Install ffmpeg in Render build step, or set FFMPEG_PATH to a valid binary.';
+        throw err;
+    }
+    return status;
 };
 
 const extractFormats = (info) => {
@@ -797,6 +932,7 @@ app.get('/api/video-info', async (req, res) => {
     ];
 
     try {
+        await ensureYtDlpAvailable();
         const { stdout } = await runYtDlp(args, { timeoutMs: 120000 });
         const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         const jsonLine = [...lines].reverse().find((line) => line.startsWith('{') && line.endsWith('}'));
@@ -814,6 +950,9 @@ app.get('/api/video-info', async (req, res) => {
             url: cleanUrl
         });
     } catch (error) {
+        if (error?.code === 'YTDLP_MISSING') {
+            return sendApiError(res, 500, 'yt-dlp is not available on this server.', 'YTDLP_MISSING', error.hint);
+        }
         const message = (error.stderr || error.stdout || error.message || 'Failed to fetch video info').slice(0, 400);
         return sendApiError(res, 400, message);
     }
@@ -824,6 +963,19 @@ app.post('/api/download', async (req, res) => {
     const quality = typeof req.body?.quality === 'string' && req.body.quality.trim() ? req.body.quality.trim() : 'best';
     if (!rawUrl) {
         return sendApiError(res, 400, 'URL is required');
+    }
+
+    try {
+        await ensureYtDlpAvailable();
+        await ensureFfmpegAvailable();
+    } catch (error) {
+        if (error?.code === 'YTDLP_MISSING') {
+            return sendApiError(res, 500, 'yt-dlp is not available on this server.', 'YTDLP_MISSING', error.hint);
+        }
+        if (error?.code === 'FFMPEG_MISSING') {
+            return sendApiError(res, 500, 'ffmpeg is required for strict merge mode but is not available.', 'FFMPEG_MISSING', error.hint);
+        }
+        return sendApiError(res, 500, 'Dependency validation failed.');
     }
 
     const cleanUrl = cleanYoutubeUrl(rawUrl);
@@ -837,6 +989,15 @@ app.post('/api/download', async (req, res) => {
     return res.status(202).json({
         download_id: downloadId,
         message: 'Download started'
+    });
+});
+
+app.get('/api/dependencies', async (req, res) => {
+    await Promise.all([probeYtDlp(), probeFfmpeg()]);
+    return res.json({
+        ok: dependencyStatus.ytDlp.ok && dependencyStatus.ffmpeg.ok,
+        yt_dlp: dependencyStatus.ytDlp,
+        ffmpeg: dependencyStatus.ffmpeg
     });
 });
 
@@ -961,6 +1122,19 @@ app.post('/api/settings/cookies', (req, res) => {
     }
     return res.json({ ok: true, message: 'Cookies cleared' });
 });
+
+Promise.all([probeYtDlp(), probeFfmpeg()])
+    .then(() => {
+        if (!dependencyStatus.ytDlp.ok) {
+            console.warn(`[YT Downloader] yt-dlp probe failed: ${dependencyStatus.ytDlp.error || 'unknown error'}`);
+        }
+        if (!dependencyStatus.ffmpeg.ok) {
+            console.warn(`[YT Downloader] ffmpeg probe failed: ${dependencyStatus.ffmpeg.error || 'unknown error'}`);
+        }
+    })
+    .catch((error) => {
+        console.warn('[YT Downloader] dependency probe failed unexpectedly:', error.message || error);
+    });
 
 // --- Server Start ---
 app.listen(PORT, () => {

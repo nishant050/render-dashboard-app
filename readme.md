@@ -101,6 +101,7 @@ You open one dashboard and launch multiple built-in utilities:
 - `GET /api/video-info`
 - `POST /api/download`
 - `GET /api/download-progress/:downloadId`
+- `GET /api/dependencies`
 - `GET /api/library`
 - `GET /api/video/:filename`
 - `DELETE /api/video/:filename`
@@ -124,6 +125,8 @@ You open one dashboard and launch multiple built-in utilities:
 ### Optional
 
 - `PORT` (default: `3000`)
+- `YTDLP_PATH` (full path to `yt-dlp` binary if not in PATH)
+- `FFMPEG_PATH` (full path to `ffmpeg` binary if not in PATH)
 
 ---
 
@@ -135,6 +138,35 @@ node server.js
 ```
 
 Open: `http://localhost:3000`
+
+### Verify local dependencies
+
+```bash
+yt-dlp --version
+python -m yt_dlp --version
+ffmpeg -version
+```
+
+### Render native deployment (repo-driven)
+
+This repo includes `render.yaml` and build/start scripts so Render installs all runtime dependencies.
+
+1. Deploy the service from this repository using Render Blueprint.
+2. Confirm build logs include:
+   - `python -m pip install --upgrade pip`
+   - `pip install -r requirements.txt`
+   - ffmpeg installation step
+3. Confirm runtime checks:
+   - `GET /api/dependencies` returns both `yt_dlp.ok=true` and `ffmpeg.ok=true`.
+
+### Troubleshooting
+
+- Error: `No module named yt_dlp`
+  - Build did not run `pip install -r requirements.txt`, or install failed.
+- Error: `spawn yt-dlp ENOENT`
+  - `yt-dlp` not on PATH. Set `YTDLP_PATH` or verify Python module fallback.
+- Error: ffmpeg missing
+  - Strict mode is enabled; downloads are blocked until ffmpeg is installed/configured.
 
 ---
 
@@ -171,7 +203,7 @@ Open: `http://localhost:3000`
 ## ðŸ“ Notes
 
 - This is a **single-repo multi-tool personal project** (not microservices).
-- Job status for YouTube workflow is currently in-memory (`jobs` object), so active job state resets after server restart.
+- Job status for YT Downloader is currently in-memory (`downloads` map), so active job state resets after server restart.
 - Filesystem persistence behavior depends on your hosting plan/environment.
 
 ---

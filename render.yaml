@@ -1,0 +1,14 @@
+﻿services:
+  - type: web
+    name: render-dashboard-app
+    env: node
+    plan: free
+    buildCommand: "bash ./scripts/render-install-deps.sh"
+    startCommand: "bash ./scripts/render-start.sh"
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: YTDLP_PATH
+        sync: false
+      - key: FFMPEG_PATH
+        sync: false
