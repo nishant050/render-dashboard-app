@@ -283,9 +283,27 @@ app.get('/api/newspapers', async (req, res) => {
 
 // --- API Routes (News Agent - MULTI-SECTION) ---
 const settingsFilePath = path.join(__dirname, 'news_settings.json');
+const NEWS_MODEL_ALIASES = {
+    'compound-beta': 'groq/compound',
+    'compound-beta-mini': 'groq/compound-mini',
+    'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile',
+};
+const DEFAULT_NEWS_MODEL = 'groq/compound-mini';
+
+const normalizeSection = (section = {}) => ({
+    id: section.id ? String(section.id) : Date.now().toString(),
+    title: (section.title || 'Untitled section').trim(),
+    topic: (section.topic || '').trim(),
+    sites: (section.sites || '').trim(),
+    model: NEWS_MODEL_ALIASES[section.model] || section.model || DEFAULT_NEWS_MODEL,
+});
 
 // Helper to read/write settings
-const readSettings = async () => JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf-8'));
+const readSettings = async () => {
+    const raw = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf-8'));
+    if (!Array.isArray(raw)) return [];
+    return raw.map(normalizeSection);
+};
 const writeSettings = async (data) => await fsPromises.writeFile(settingsFilePath, JSON.stringify(data, null, 2), 'utf-8');
 
 // 12. GET ALL NEWS SECTIONS
@@ -303,7 +321,7 @@ app.post('/api/news-sections', async (req, res) => {
         if (!title || !topic || !sites || !model) return res.status(400).send("All fields are required.");
         
         const sections = await readSettings();
-        const newSection = { id: Date.now().toString(), title, topic, sites, model };
+        const newSection = normalizeSection({ id: Date.now().toString(), title, topic, sites, model });
         sections.push(newSection);
         await writeSettings(sections);
         res.status(201).json(newSection);
@@ -319,7 +337,7 @@ app.put('/api/news-sections/:id', async (req, res) => {
         const index = sections.findIndex(s => s.id === id);
         if (index === -1) return res.status(404).send("Section not found.");
 
-        sections[index] = { id, title, topic, sites, model };
+        sections[index] = normalizeSection({ id, title, topic, sites, model });
         await writeSettings(sections);
         res.json(sections[index]);
     } catch (error) { res.status(500).send("Could not update section."); }
@@ -380,7 +398,7 @@ app.get('/api/summarize-all', async (req, res) => {
                 messages: [{ role: 'user', content: userPrompt }], model, search_settings: { include_domains: siteList }
             });
             
-            const responseContent = completion.choices[0].message.content;
+            const responseContent = completion.choices?.[0]?.message?.content || '';
             sendEvent({ type: 'status', sectionId: id, message: `✅ Search complete. Parsing summary...` });
 
             let parsedResponse;
@@ -389,7 +407,10 @@ app.get('/api/summarize-all', async (req, res) => {
                 if (!jsonMatch) throw new Error("No valid JSON object found in the model's response.");
                 parsedResponse = JSON.parse(jsonMatch[0]);
             } catch (parseError) {
-                parsedResponse = { summary: "The model returned a response that could not be automatically parsed.", images: [] };
+                parsedResponse = {
+                    summary: `The model returned a response that could not be parsed as JSON.\n\nRaw response excerpt:\n\n\`\`\`\n${responseContent.slice(0, 1200)}\n\`\`\``,
+                    images: []
+                };
             }
             
             sendEvent({ type: 'result', sectionId: id, data: parsedResponse });
