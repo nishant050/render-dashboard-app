@@ -1,245 +1,165 @@
-Project Documentation: Multi-Service Dashboard & Toolkit
-Last Updated: July 20, 2025
+# Render Dashboard App
 
-1. Project Overview & Core Concept
-This project is a modular, multi-application toolkit hosted on a central web dashboard. The architecture is designed around a "microservice" concept, where different functionalities are handled by separate, independent applications. This allows for robust, scalable, and maintainable development.
+A personal **multi-tool web dashboard** built with Node.js + vanilla front-end apps.
 
-The project consists of two primary, independently deployable services:
+This project acts as a single home screen for practical everyday tools: file management, newspaper digest, AI-powered news summaries, YouTube download orchestration, and a few self-contained learning/utility pages.
 
-The Node.js Dashboard: The main user-facing application. It serves as a launchpad for various tools and includes its own native applications like a File Explorer and an e-Paper scraper.
+---
 
-The Python YouTube Downloader: A powerful, standalone Python application that provides both a user-friendly web interface (built with Streamlit) and a robust backend API (built with FastAPI) for downloading and merging high-quality YouTube videos.
+## What this app does
 
-The Node.js dashboard seamlessly integrates the Python application using an <iframe>, providing a unified user experience.
+At a high level, the app is:
 
-2. High-Level Architecture
-The two services operate independently and are linked at the front-end level.
+- A central dashboard (`/`) that links to multiple mini-apps
+- A Node/Express backend (`server.js`) that powers API features
+- A static front-end bundle under `apps/` for each tool
+- A hybrid system where some features are local (browser-only), while others are server-driven
 
-[ User's Browser ]
-       |
-       |--> Accesses [ Node.js Dashboard Service (on Render) ]
-       |                 |
-       |                 |--> Serves Dashboard UI
-       |                 |--> Serves File Explorer App (uses its own Node.js API)
-       |                 |--> Serves e-Paper App (uses its own Node.js API)
-       |                 |--> Serves YT Downloader Page containing an <iframe>
-       |
-       |--> The <iframe> points to [ Python YT Downloader Service (on Render) ]
-                                     |
-                                     |--> Serves Streamlit UI
-                                     |--> Provides a public API for video processing
+### Included mini-apps
 
-3. Application 1: The Node.js Dashboard
-This is the central hub of the project.
+- **File Hub** (`apps/filehub`)  
+  Browser-based file manager for the server `uploads/` folder.
+- **e-Paper Digest** (`apps/epaper`)  
+  Scrapes configured newspaper sources and shows latest links with logos.
+- **YT Downloader** (`apps/ytdownloader`)  
+  Starts YouTube download jobs and tracks progress via polling.
+- **News Agent** (`apps/newsagent`)  
+  AI-generated news summaries from configurable topics and source sites.
+- **Quick Notes** (`apps/quicknotes`)  
+  Simple localStorage notes app (no backend dependency).
+- **Learn Investing / Vestibular Migraine / SIAT pages**  
+  Standalone static learning/tracker pages linked from the dashboard.
 
-3.1. Features
-Main Dashboard: A homepage with cards linking to all integrated applications.
+---
 
-File Explorer: A full-featured file management system with folder creation, drag-and-drop move/upload, file previews, context menus, and direct link sharing.
+## Architecture overview
 
-e-Paper Digest: A web scraper that fetches and displays the latest daily newspapers, featuring a robust caching system to improve performance.
+### Backend
 
-3.2. File Structure
-render-dashboard/
-├── .gitignore
-├── package.json
-├── package-lock.json
+- **Runtime:** Node.js + Express
+- **Entry point:** `server.js`
+- **Key dependencies:** `express`, `multer`, `axios`, `cheerio`, `groq-sdk`
+- **Storage pattern:**
+  - `uploads/` for File Hub files
+  - `public/videos/` + `public/videos.json` for downloaded video artifacts and manifest
+  - `news_settings.json` for News Agent section configuration
+
+### Frontend
+
+- Dashboard page: `index.html` + `style.css`
+- Each tool has its own `apps/<tool>/index.html` and optional `client.js`, `style.css`
+- Plain HTML/CSS/JS (no React/Vue build system)
+
+### Async download workflow (YouTube)
+
+1. UI posts URL to `POST /api/ytdownloader/start-download`
+2. Server triggers a GitHub repository dispatch event
+3. External job runs `scripts/download_video.py` (yt-dlp + ffmpeg)
+4. Job reports status back to `POST /api/ytdownloader/update-progress`
+5. UI polls `GET /api/ytdownloader/status/:jobId`
+6. Final media is listed from `public/videos.json`
+
+---
+
+## Core API surface
+
+### File Hub APIs
+
+- `GET /api/files`
+- `POST /api/upload`
+- `POST /api/folders`
+- `POST /api/text-file`
+- `PUT /api/rename`
+- `PUT /api/move`
+- `DELETE /api/delete`
+- `DELETE /api/clear-all`
+
+### e-Paper API
+
+- `GET /api/newspapers`
+
+### News Agent APIs
+
+- `GET /api/news-sections`
+- `POST /api/news-sections`
+- `PUT /api/news-sections/:id`
+- `DELETE /api/news-sections/:id`
+- `GET /api/summarize-all` (SSE stream)
+- `POST /api/groq-chat`
+
+### YouTube job APIs
+
+- `POST /api/ytdownloader/start-download`
+- `POST /api/ytdownloader/update-progress`
+- `GET /api/ytdownloader/status/:jobId`
+
+---
+
+## Environment variables
+
+Set these before running production features:
+
+### Required for News Agent
+
+- `GROQ_API_KEY` (or `REDACTED_GROQ_API_KEY`)
+
+### Required for YT Downloader orchestration
+
+- `GITHUB_USER`
+- `GITHUB_REPO`
+- `GITHUB_PAT`
+- `PROGRESS_UPDATE_SECRET`
+
+### Optional
+
+- `PORT` (defaults to `3000`)
+
+---
+
+## Local development
+
+```bash
+npm install
+node server.js
+```
+
+Then open: `http://localhost:3000`
+
+---
+
+## Repository layout
+
+```text
+.
 ├── server.js
 ├── index.html
 ├── style.css
-├── assets/
-│   └── (newspaper-logos.png)
 ├── apps/
 │   ├── filehub/
-│   │   ├── index.html, style.css, client.js
-│   └── epaper/
-│       ├── index.html, style.css, client.js
-│   └── ytdownloader/
-│       ├── index.html, style.css
-├── node_modules/
-└── uploads/
-
-3.3. Key File Descriptions
-File Path
-
-Description
-
-server.js
-
-The core back-end. This Node.js/Express file runs the web server, serves all static files, and defines all API endpoints for the File Explorer and the e-Paper scraper.
-
-package.json
-
-Node.js project manifest. Lists dependencies (express, multer, axios, cheerio).
-
-index.html (root)
-
-The main dashboard homepage.
-
-assets/
-
-Contains static assets like newspaper logos.
-
-apps/filehub/client.js
-
-Front-end logic for the File Explorer. Manages state, handles all user interactions (drag-drop, clicks), makes API calls, and renders the UI.
-
-apps/epaper/client.js
-
-Front-end logic for the e-Paper app. Fetches data from the /api/newspapers endpoint.
-
-apps/ytdownloader/index.html
-
-A simple page that embeds the Python Streamlit application via an <iframe>.
-
-uploads/
-
-Temporary file storage for the File Explorer. Subject to Render's ephemeral filesystem.
-
-3.4. API Endpoints (Node.js Service)
-Method
-
-Endpoint
-
-Description
-
-GET
-
-/api/files
-
-File Explorer: Lists contents of a directory.
-
-POST
-
-/api/upload
-
-File Explorer: Uploads a file.
-
-POST
-
-/api/folders
-
-File Explorer: Creates a new folder.
-
-POST
-
-/api/text-file
-
-File Explorer: Creates a new .txt file.
-
-PUT
-
-/api/rename
-
-File Explorer: Renames a file or folder.
-
-PUT
-
-/api/move
-
-File Explorer: Moves a file or folder.
-
-DELETE
-
-/api/delete
-
-File Explorer: Deletes a specific item.
-
-DELETE
-
-/api/clear-all
-
-File Explorer: Deletes all contents.
-
-GET
-
-/api/newspapers
-
-e-Paper: Scrapes or retrieves newspaper links from cache.
-
-3.5. Deployment (Render)
-Type: Web Service
-
-Runtime: Node
-
-Build Command: npm install
-
-Start Command: node server.js
-
-4. Application 2: The Python YouTube Downloader
-A standalone, powerful service for processing YouTube videos.
-
-4.1. Features
-Streamlit UI: A user-friendly, interactive web interface for pasting a URL, selecting qualities, and downloading the final video. Includes a live terminal log.
-
-FastAPI Backend: A robust API that handles fetching video info and processing downloads.
-
-High-Quality Downloads: Merges separate video and audio streams using FFmpeg to provide the highest possible quality.
-
-4.2. File Structure
-youtube_downloader/
-├── main.py
-├── requirements.txt
-├── packages.txt
-└── temp_downloads/
-
-4.3. Key File Descriptions
-File Path
-
-Description
-
-main.py
-
-The entire application. This single file contains both the FastAPI application (for the API) and the Streamlit application (for the UI). It uses advanced techniques to serve both from the same process.
-
-requirements.txt
-
-Python dependencies. Lists all required Python libraries (streamlit, fastapi, pytubefix, etc.) for pip.
-
-packages.txt
-
-System dependencies. Tells Render's environment to install ffmpeg using the system package manager.
-
-temp_downloads/
-
-Temporary file storage for downloaded and merged videos. Subject to Render's ephemeral filesystem.
-
-4.4. API Endpoints (Python Service)
-Method
-
-Endpoint
-
-Description
-
-GET
-
-/api/info
-
-Fetches video metadata, thumbnail, and available video/audio streams with their itags.
-
-GET
-
-/api/download
-
-Takes a URL, video itag, and audio itag. Downloads both, merges them, and returns the final video file.
-
-4.5. Deployment (Render)
-Type: Web Service
-
-Runtime: Python 3
-
-Build Command: pip install -r requirements.txt
-
-Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
-
-5. Future Development
-To Add a New App to the Node.js Dashboard:
-Create a new folder inside /apps (e.g., /apps/todo-list/).
-
-Build the app's front-end (HTML, CSS, JS) inside its new folder.
-
-If it requires a backend, add new API endpoints to the main server.js file.
-
-Add a new "app card" to the root index.html dashboard, linking to the new app.
-
-For any app requiring persistent data, a database (e.g., Render's free Postgres) will need to be added to the Node.js service.
+│   ├── epaper/
+│   ├── ytdownloader/
+│   ├── newsagent/
+│   ├── quicknotes/
+│   ├── learn-investing/
+│   ├── vestibular-migraine/
+│   └── siat/
+├── assets/
+├── public/
+│   ├── videos/
+│   └── videos.json
+├── scripts/
+│   └── download_video.py
+├── news_settings.json
+└── requirements.txt
+```
+
+---
+
+## Notes and practical constraints
+
+- This is a **personal dashboard-style monorepo** with mixed app maturity levels.
+- File and video storage are filesystem-based (not DB-backed).
+- YouTube jobs are tracked in **in-memory server state** (`jobs` object), so server restarts clear active job status.
+- Several pages are intentionally static and self-contained.
+
+If you want, I can also generate a second version of this README with badges, screenshots, and a deployment section tailored specifically for Render.
