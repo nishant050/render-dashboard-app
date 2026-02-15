@@ -619,6 +619,7 @@ body::before {
     max-width: 1000px;
     max-height: 90vh;
     padding: 1.5rem;
+    overflow-y: auto;
     animation: scaleIn 0.3s ease-out;
 }
 
@@ -681,6 +682,10 @@ body::before {
     padding: 1rem 0;
 }
 
+.settings-modal-content {
+    max-height: 85vh;
+}
+
 .setting-group {
     margin-bottom: 1.5rem;
 }
@@ -719,10 +724,16 @@ body::before {
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
+#cookies-text {
+    min-height: 180px;
+    resize: vertical;
+}
+
 .setting-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 /* Toast Notifications */
@@ -878,5 +889,6 @@ body::before {
     .modal-content {
         width: 95%;
         padding: 1rem;
+        max-height: 92vh;
     }
 }

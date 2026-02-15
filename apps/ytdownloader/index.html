@@ -178,7 +178,7 @@
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal hidden">
         <div class="modal-overlay"></div>
-        <div class="modal-content glass-card" style="max-width: 500px;">
+        <div class="modal-content glass-card settings-modal-content" style="max-width: 560px;">
             <button class="modal-close" id="close-settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
@@ -210,6 +210,15 @@
                         <button id="clear-cookies-text" class="btn btn-icon" style="margin-top: 1rem; margin-left: 0.5rem;" title="Clear Cookies">Clear</button>
                     </div>
                     <p id="cookies-status" class="setting-description" style="margin-top: 0.75rem;"></p>
+                </div>
+
+                <div class="setting-group" style="margin-top: 1.5rem;">
+                    <label class="setting-label">How to get cookies.txt</label>
+                    <p class="setting-description">1. Install a browser extension like “Get cookies.txt LOCALLY”.</p>
+                    <p class="setting-description">2. Open YouTube and make sure you are signed in.</p>
+                    <p class="setting-description">3. Use the extension to export cookies as Netscape format `cookies.txt`.</p>
+                    <p class="setting-description">4. Upload the file here (or open and paste text), then click Save Cookies.</p>
+                    <p class="setting-description">5. If downloads fail again later, export fresh cookies and re-save.</p>
                 </div>
 
                 <div class="setting-info" style="margin-top: 2rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 0.75rem; border: 1px solid rgba(99, 102, 241, 0.3);">
