@@ -10,9 +10,16 @@
     <nav>
         <a href="../../index.html">&larr; Back to Dashboard</a>
         <div class="nav-actions">
+            <button id="refresh-btn">🔄 Refresh Briefing</button>
+            <button id="stop-btn" disabled>⏹ Stop</button>
             <button id="settings-btn">⚙️ Manage Sections</button>
         </div>
     </nav>
+
+    <section id="dashboard-status" class="dashboard-status" aria-live="polite">
+        <span id="status-pill" class="status-pill idle">Idle</span>
+        <span id="last-updated">No run yet</span>
+    </section>
 
     <main id="main-container" class="container">
         <!-- News sections will be dynamically inserted here -->
