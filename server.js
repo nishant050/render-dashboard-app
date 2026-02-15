@@ -9,6 +9,11 @@ const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
 const { spawn } = require('child_process');
 const AdmZip = require('adm-zip');
+const puppeteer = require('puppeteer');
+
+// Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
+// Default to user-provided key if not set, will fall back to manual links
+const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac053e55d17fb2bacb64a543d';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +67,8 @@ const NEWSPAPERS_CONFIG = [
 ];
 let newspaperCache = { data: null, lastFetched: 0 };
 
+// Store for manually updated newspaper links
+let manualNewspaperLinks = {};
 
 // --- API Routes ---
 
@@ -322,6 +329,22 @@ app.post('/api/extract-zip', async (req, res) => {
 });
 
 
+// 12A. Manually update newspaper link
+app.post('/api/newspapers/update', (req, res) => {
+    const { newspaperName, link } = req.body;
+    if (!newspaperName || !link) {
+        return res.status(400).json({ error: 'newspaperName and link are required' });
+    }
+    
+    manualNewspaperLinks[newspaperName.toLowerCase()] = link;
+    
+    // Clear cache so the new link is used immediately
+    newspaperCache = { data: null, lastFetched: 0 };
+    
+    res.json({ success: true, message: `Updated ${newspaperName} link` });
+});
+
+
 // 12. SCRAPE for latest newspapers
 app.get('/api/newspapers', async (req, res) => {
     const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
@@ -332,29 +355,90 @@ app.get('/api/newspapers', async (req, res) => {
 
     console.log('Cache stale or empty. Scraping for new e-papers...');
 
-    const scrapeNewspaper = async (newspaperInfo, targetDate) => {
-        const dateStr = targetDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-        try {
-            const { data } = await axios.get(newspaperInfo.url);
-            const $ = cheerio.load(data);
-            let foundLink = null;
+    const scrapeNewspaper = async (newspaperInfo, targetDate, retries = 3) => {
+        // Use IST timezone for date calculation
+        const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+        const istDate = new Date(targetDate.getTime() + istOffset);
+        const dateStr = istDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        
+        const tryScrape = async (attempt) => {
+            try {
+                // Use scrape.do API if API key is available
+                if (SCRAPE_DO_API_KEY) {
+                    console.log(`[DEBUG] ${newspaperInfo.name}: Using scrape.do API (super mode)`);
+                    
+                    // Use improved scrape.do API with super=true, render=true, returnJSON=true
+                    const scrapeUrl = `http://api.scrape.do/?url=${encodeURIComponent(newspaperInfo.url)}&token=${SCRAPE_DO_API_KEY}&super=true&sessionId=${Date.now()}&render=true&returnJSON=true`;
+                    
+                    const { data } = await axios.get(scrapeUrl, { timeout: 90000 });
+                    
+                    // With returnJSON=true, response is JSON with 'content' property containing HTML
+                    const html = data.content || data;
+                    const $ = cheerio.load(html);
+                    let foundLink = null;
 
-            $('p.has-text-align-center').each((i, el) => {
-                if ($(el).text().trim().startsWith(dateStr)) {
-                    const linkTag = $(el).find('a');
-                    if (linkTag.length) {
-                        foundLink = linkTag.attr('href');
-                        return false;
+                    // Debug: Log sample of HTML
+                    const bodyText = $('body').text().substring(0, 500);
+                    console.log(`[DEBUG] ${newspaperInfo.name} - Sample HTML: ${bodyText.replace(/\s+/g, ' ')}`);
+
+                    // Look for the PDF download links in the HTML
+                    // Method 1: Look for center-aligned paragraphs with the date
+                    $('p.has-text-align-center').each((i, el) => {
+                        const text = $(el).text();
+                        if (text.includes(dateStr) || text.includes(istDate.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }))) {
+                            const linkTag = $(el).find('a').first();
+                            if (linkTag.length) {
+                                foundLink = linkTag.attr('href');
+                                return false;
+                            }
+                        }
+                    });
+
+                    // Method 2: Look for Google Drive links
+                    if (!foundLink) {
+                        $('a[href*="drive.google.com"]').each((i, el) => {
+                            const linkText = $(el).text();
+                            const parentText = $(el).parent().text();
+                            if (linkText.toLowerCase().includes(dateStr.toLowerCase()) || 
+                                parentText.toLowerCase().includes(dateStr.toLowerCase())) {
+                                foundLink = $(el).attr('href');
+                                return false;
+                            }
+                        });
                     }
+
+                    // Method 3: Look for links with "Download" and date
+                    if (!foundLink) {
+                        $('a').each((i, el) => {
+                            const linkText = $(el).text();
+                            if (linkText.toLowerCase().includes('download') && linkText.includes(dateStr)) {
+                                const href = $(el).attr('href');
+                                if (href && (href.includes('drive.google.com') || href.includes('epaperwave.com'))) {
+                                    foundLink = href;
+                                    return false;
+                                }
+                            }
+                        });
+                    }
+
+                    if (!foundLink) {
+                        console.log(`[DEBUG] ${newspaperInfo.name}: No link found for date ${dateStr}`);
+                    }
+                    
+                    return foundLink;
                 }
-            });
-            
-            // CORRECTED: Automatically generate the local logo path
+                
+                // No API key, skip scraping
+                console.log(`[DEBUG] ${newspaperInfo.name}: No scrape.do API key, skipping scrape`);
+                return null;
+        
+        try {
+            const foundLink = await tryScrape(1);
             const logoFileName = newspaperInfo.name.toLowerCase().replace(/ /g, '-') + '.png';
             return { 
                 ...newspaperInfo, 
                 link: foundLink,
-                logo: `/assets/${logoFileName}` // Use local path
+                logo: `/assets/${logoFileName}`
             };
         } catch (error) {
             console.error(`Failed to scrape ${newspaperInfo.name}:`, error.message);
@@ -364,7 +448,14 @@ app.get('/api/newspapers', async (req, res) => {
     };
 
     const findPapersForDate = async (date) => {
-        return Promise.all(NEWSPAPERS_CONFIG.map(config => scrapeNewspaper(config, date)));
+        const results = [];
+        for (const config of NEWSPAPERS_CONFIG) {
+            // Add delay between each request to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const result = await scrapeNewspaper(config, date);
+            results.push(result);
+        }
+        return results;
     };
 
     let results = await findPapersForDate(new Date());
@@ -377,6 +468,14 @@ app.get('/api/newspapers', async (req, res) => {
         results = await findPapersForDate(yesterday);
         displayDate = yesterday;
     }
+
+    // Add manual links as fallback for newspapers that don't have scraped links
+    results = results.map(paper => {
+        if (!paper.link && manualNewspaperLinks[paper.name.toLowerCase()]) {
+            return { ...paper, link: manualNewspaperLinks[paper.name.toLowerCase()] };
+        }
+        return paper;
+    });
 
     const finalData = {
         date: displayDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),

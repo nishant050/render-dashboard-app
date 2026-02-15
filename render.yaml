@@ -8,6 +8,8 @@
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: SCRAPE_DO_API_KEY
+        value: 942211ddfd1b40c5aaac053e55d17fb2bacb64a543d
       - key: YTDLP_PATH
         sync: false
       - key: FFMPEG_PATH
