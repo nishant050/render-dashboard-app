@@ -406,6 +406,12 @@ const closeSettingsBtn = document.getElementById('close-settings');
 const proxyUrlInput = document.getElementById('proxy-url');
 const saveProxyBtn = document.getElementById('save-proxy');
 const clearProxyBtn = document.getElementById('clear-proxy');
+const cookiesTextInput = document.getElementById('cookies-text');
+const cookiesFileInput = document.getElementById('cookies-file');
+const uploadCookiesFileBtn = document.getElementById('upload-cookies-file');
+const saveCookiesTextBtn = document.getElementById('save-cookies-text');
+const clearCookiesTextBtn = document.getElementById('clear-cookies-text');
+const cookiesStatusEl = document.getElementById('cookies-status');
 
 // Open settings modal
 settingsBtn.addEventListener('click', async () => {
@@ -415,6 +421,7 @@ settingsBtn.addEventListener('click', async () => {
         const settings = await response.json();
         
         proxyUrlInput.value = settings.proxy || '';
+        cookiesStatusEl.textContent = settings.hasCookies ? 'Cookies are currently loaded on server.' : 'No cookies loaded.';
     } catch (error) {
         console.error('Failed to load settings:', error);
     }
@@ -457,6 +464,59 @@ clearProxyBtn.addEventListener('click', async () => {
         showToast(data.message, 'success');
     } catch (error) {
         showToast('Failed to clear proxy', 'error');
+    }
+});
+
+uploadCookiesFileBtn.addEventListener('click', () => {
+    cookiesFileInput.click();
+});
+
+cookiesFileInput.addEventListener('change', async () => {
+    const file = cookiesFileInput.files?.[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        cookiesTextInput.value = text;
+        showToast('Cookies file loaded. Click "Save Cookies".', 'success');
+    } catch {
+        showToast('Could not read cookies file', 'error');
+    } finally {
+        cookiesFileInput.value = '';
+    }
+});
+
+saveCookiesTextBtn.addEventListener('click', async () => {
+    const cookiesText = cookiesTextInput.value || '';
+    try {
+        const response = await fetch('/api/settings/cookies-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cookiesText })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to save cookies');
+        cookiesStatusEl.textContent = data.hasCookies ? 'Cookies are currently loaded on server.' : 'No cookies loaded.';
+        showToast(data.message || 'Cookies saved', 'success');
+        settingsModal.classList.add('hidden');
+    } catch (error) {
+        showToast(error.message || 'Failed to save cookies', 'error');
+    }
+});
+
+clearCookiesTextBtn.addEventListener('click', async () => {
+    cookiesTextInput.value = '';
+    try {
+        const response = await fetch('/api/settings/cookies-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cookiesText: '' })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to clear cookies');
+        cookiesStatusEl.textContent = 'No cookies loaded.';
+        showToast(data.message || 'Cookies cleared', 'success');
+    } catch (error) {
+        showToast(error.message || 'Failed to clear cookies', 'error');
     }
 });
 
