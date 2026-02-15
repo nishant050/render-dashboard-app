@@ -3,12 +3,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const os = require('os');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
 const { spawn } = require('child_process');
-const ffmpegStatic = require('ffmpeg-static');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -458,8 +456,7 @@ app.post('/api/groq-chat', async (req, res) => {
 
 const downloads = new Map();
 const ytdownloaderSettings = {
-    proxy: null,
-    cookies: null
+    proxy: null
 };
 const videosDir = path.join(__dirname, 'public', 'videos');
 const videoExtensions = new Set(['.mp4', '.webm', '.mkv']);
@@ -482,28 +479,6 @@ const isSafeVideoFileName = (value) => {
 
 const ensureVideosDir = async () => {
     await fsPromises.mkdir(videosDir, { recursive: true });
-};
-
-const getCookiesFilePathFromEnv = () => {
-    const rawCookies = (process.env.YOUTUBE_COOKIES || '').trim();
-    const base64Cookies = (process.env.YOUTUBE_COOKIES_BASE64 || '').trim();
-    if (!rawCookies && !base64Cookies) return null;
-
-    let content = rawCookies;
-    if (base64Cookies) {
-        try {
-            content = Buffer.from(base64Cookies, 'base64').toString('utf8');
-        } catch {
-            return null;
-        }
-    }
-    if (!content.trim()) return null;
-
-    const cookiesDir = path.join(os.tmpdir(), 'render-dashboard-app');
-    const cookiesPath = path.join(cookiesDir, 'youtube_cookies.txt');
-    fs.mkdirSync(cookiesDir, { recursive: true });
-    fs.writeFileSync(cookiesPath, content, { encoding: 'utf8' });
-    return cookiesPath;
 };
 
 const cleanYoutubeUrl = (url) => {
@@ -538,13 +513,6 @@ const getYtDlpOptionsArgs = () => {
     const args = ['--no-warnings', '--newline', '--impersonate', 'chrome'];
     if (ytdownloaderSettings.proxy) {
         args.push('--proxy', ytdownloaderSettings.proxy);
-    }
-    const cookiesPath = getCookiesFilePathFromEnv();
-    if (cookiesPath) {
-        args.push('--cookies', cookiesPath);
-    }
-    if (ytdownloaderSettings.cookies) {
-        args.push('--cookies-from-browser', ytdownloaderSettings.cookies);
     }
     return args;
 };
@@ -582,7 +550,6 @@ const getFfmpegCandidates = () => {
     };
 
     addCandidate(process.env.FFMPEG_PATH, []);
-    addCandidate(ffmpegStatic, []);
     addCandidate('ffmpeg', []);
     addCandidate('ffmpeg.exe', []);
 
@@ -1129,8 +1096,7 @@ app.delete('/api/video/:filename', async (req, res) => {
 
 app.get('/api/settings', (req, res) => {
     return res.json({
-        proxy: ytdownloaderSettings.proxy,
-        cookies: ytdownloaderSettings.cookies
+        proxy: ytdownloaderSettings.proxy
     });
 });
 
@@ -1141,15 +1107,6 @@ app.post('/api/settings/proxy', (req, res) => {
         return res.json({ ok: true, message: 'Proxy set successfully', proxy: ytdownloaderSettings.proxy });
     }
     return res.json({ ok: true, message: 'Proxy cleared' });
-});
-
-app.post('/api/settings/cookies', (req, res) => {
-    const browser = typeof req.body?.browser === 'string' ? req.body.browser.trim() : '';
-    ytdownloaderSettings.cookies = browser || null;
-    if (ytdownloaderSettings.cookies) {
-        return res.json({ ok: true, message: `Cookies from ${ytdownloaderSettings.cookies} will be used`, browser: ytdownloaderSettings.cookies });
-    }
-    return res.json({ ok: true, message: 'Cookies cleared' });
 });
 
 Promise.all([probeYtDlp(), probeFfmpeg()])

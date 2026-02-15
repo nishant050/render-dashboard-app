@@ -404,11 +404,8 @@ const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
 const closeSettingsBtn = document.getElementById('close-settings');
 const proxyUrlInput = document.getElementById('proxy-url');
-const cookiesBrowserSelect = document.getElementById('cookies-browser');
 const saveProxyBtn = document.getElementById('save-proxy');
 const clearProxyBtn = document.getElementById('clear-proxy');
-const saveCookiesBtn = document.getElementById('save-cookies');
-const clearCookiesBtn = document.getElementById('clear-cookies');
 
 // Open settings modal
 settingsBtn.addEventListener('click', async () => {
@@ -418,7 +415,6 @@ settingsBtn.addEventListener('click', async () => {
         const settings = await response.json();
         
         proxyUrlInput.value = settings.proxy || '';
-        cookiesBrowserSelect.value = settings.cookies || '';
     } catch (error) {
         console.error('Failed to load settings:', error);
     }
@@ -461,39 +457,6 @@ clearProxyBtn.addEventListener('click', async () => {
         showToast(data.message, 'success');
     } catch (error) {
         showToast('Failed to clear proxy', 'error');
-    }
-});
-
-// Save cookies (browser)
-saveCookiesBtn.addEventListener('click', async () => {
-    const browser = cookiesBrowserSelect.value;
-    try {
-        const response = await fetch('/api/settings/cookies', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ browser })
-        });
-        const data = await response.json();
-        showToast(data.message, 'success');
-        settingsModal.classList.add('hidden');
-    } catch (error) {
-        showToast('Failed to save cookies', 'error');
-    }
-});
-
-// Clear cookies
-clearCookiesBtn.addEventListener('click', async () => {
-    cookiesBrowserSelect.value = '';
-    try {
-        const response = await fetch('/api/settings/cookies', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ browser: '' })
-        });
-        const data = await response.json();
-        showToast(data.message, 'success');
-    } catch (error) {
-        showToast('Failed to clear cookies', 'error');
     }
 });
 
