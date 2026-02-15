@@ -8,6 +8,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const Groq = require('groq-sdk');
 const { spawn } = require('child_process');
+const AdmZip = require('adm-zip');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -245,8 +246,83 @@ app.get('/api/storage-info', async (req, res) => {
     }
 });
 
+// 10. DOWNLOAD folder as ZIP
+const addFolderToZip = (zip, folderPath, basePath = '') => {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+        const entryPath = path.join(folderPath, entry.name);
+        const zipPath = basePath ? path.join(basePath, entry.name) : entry.name;
+        if (entry.isDirectory()) {
+            addFolderToZip(zip, entryPath, zipPath);
+        } else {
+            zip.addLocalFile(entryPath, basePath);
+        }
+    }
+};
 
-// 10. SCRAPE for latest newspapers
+app.get('/api/download-zip', async (req, res) => {
+    try {
+        const currentPath = req.query.path || '';
+        const folderPath = path.join(uploadsDir, currentPath);
+        
+        if (!folderPath.startsWith(uploadsDir)) {
+            return res.status(403).send('Forbidden');
+        }
+
+        const zip = new AdmZip();
+        const folderName = currentPath.split('/').pop() || 'root';
+        
+        // Add all files and folders to ZIP
+        addFolderToZip(zip, folderPath);
+
+        const zipBuffer = zip.toBuffer();
+        
+        res.set('Content-Type', 'application/zip');
+        res.set('Content-Disposition', `attachment; filename="${folderName}.zip"`);
+        res.send(zipBuffer);
+    } catch (error) {
+        console.error('Error creating ZIP:', error);
+        res.status(500).json({ error: 'Failed to create ZIP archive' });
+    }
+});
+
+// 11. EXTRACT ZIP file
+app.post('/api/extract-zip', async (req, res) => {
+    try {
+        const { name, path: currentPath } = req.body;
+        
+        if (!name) {
+            return res.status(400).send('ZIP filename is required.');
+        }
+
+        const ext = name.split('.').pop().toLowerCase();
+        if (ext !== 'zip') {
+            return res.status(400).send('Only ZIP files can be extracted.');
+        }
+
+        const zipPath = path.join(uploadsDir, currentPath || '', name);
+        const extractPath = path.join(uploadsDir, currentPath || '', name.replace('.zip', ''));
+        
+        if (!zipPath.startsWith(uploadsDir) || !extractPath.startsWith(uploadsDir)) {
+            return res.status(403).send('Forbidden');
+        }
+
+        // Create extraction directory
+        await fsPromises.mkdir(extractPath, { recursive: true });
+
+        // Extract ZIP
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(extractPath, true);
+
+        res.json({ message: `ZIP file extracted successfully to '${path.basename(extractPath)}'!` });
+    } catch (error) {
+        console.error('Error extracting ZIP:', error);
+        res.status(500).json({ error: 'Failed to extract ZIP file' });
+    }
+});
+
+
+// 12. SCRAPE for latest newspapers
 app.get('/api/newspapers', async (req, res) => {
     const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
 

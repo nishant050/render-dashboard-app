@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const newFolderBtn = document.getElementById('new-folder-btn');
     const newFileBtn = document.getElementById('new-file-btn');
     const clearAllBtn = document.getElementById('clear-all-btn');
+    const downloadZipBtn = document.getElementById('download-zip-btn');
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modal-title');
     const modalInput = document.getElementById('modal-input');
@@ -516,6 +517,23 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
     };
 
+    // --- Download as ZIP ---
+    downloadZipBtn.onclick = async () => {
+        try {
+            const items = await apiCall(`/api/files?path=${encodeURIComponent(currentPath)}`);
+            if (items.length === 0) {
+                showNotification('No files to download', 'error');
+                return;
+            }
+            
+            showNotification('Preparing ZIP download...', 'success');
+            const zipPath = currentPath ? `?path=${encodeURIComponent(currentPath)}` : '';
+            window.location.href = `/api/download-zip${zipPath}`;
+        } catch (error) {
+            showNotification('Error preparing download: ' + error.message, 'error');
+        }
+    };
+
     // --- Clear All ---
     clearAllBtn.onclick = async () => {
         if (confirm('WARNING: This will permanently delete ALL files and folders. Are you sure?')) {
@@ -603,6 +621,23 @@ document.addEventListener('DOMContentLoaded', () => {
         menu.className = 'context-menu';
         menu.style.top = `${event.pageY}px`;
         menu.style.left = `${event.pageX}px`;
+
+        // Add Extract ZIP option for zip files
+        if (!item.isDirectory && item.name.toLowerCase().endsWith('.zip')) {
+            const extractBtn = document.createElement('div');
+            extractBtn.innerHTML = '<i class="fas fa-file-zipper"></i> Extract Here';
+            extractBtn.onclick = async () => {
+                menu.remove();
+                try {
+                    await apiCall('/api/extract-zip', 'POST', { name: item.name, path: currentPath });
+                    showNotification('ZIP file extracted successfully!');
+                    renderFiles();
+                } catch (error) {
+                    showNotification('Error extracting ZIP: ' + error.message, 'error');
+                }
+            };
+            menu.appendChild(extractBtn);
+        }
 
         if (!item.isDirectory) {
             const linkBtn = document.createElement('div');
