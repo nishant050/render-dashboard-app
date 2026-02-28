@@ -34,7 +34,7 @@ app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Serve the new assets folder
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
-app.use('/public', express.static('public')); 
+app.use('/public', express.static('public'));
 
 
 // --- File Explorer Setup ---
@@ -278,19 +278,19 @@ app.get('/api/download-zip', async (req, res) => {
     try {
         const currentPath = req.query.path || '';
         const folderPath = path.join(uploadsDir, currentPath);
-        
+
         if (!folderPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
 
         const zip = new AdmZip();
         const folderName = currentPath.split('/').pop() || 'root';
-        
+
         // Add all files and folders to ZIP
         addFolderToZip(zip, folderPath);
 
         const zipBuffer = zip.toBuffer();
-        
+
         res.set('Content-Type', 'application/zip');
         res.set('Content-Disposition', `attachment; filename="${folderName}.zip"`);
         res.send(zipBuffer);
@@ -304,7 +304,7 @@ app.get('/api/download-zip', async (req, res) => {
 app.post('/api/extract-zip', async (req, res) => {
     try {
         const { name, path: currentPath } = req.body;
-        
+
         if (!name) {
             return res.status(400).send('ZIP filename is required.');
         }
@@ -316,7 +316,7 @@ app.post('/api/extract-zip', async (req, res) => {
 
         const zipPath = path.join(uploadsDir, currentPath || '', name);
         const extractPath = path.join(uploadsDir, currentPath || '', name.replace('.zip', ''));
-        
+
         if (!zipPath.startsWith(uploadsDir) || !extractPath.startsWith(uploadsDir)) {
             return res.status(403).send('Forbidden');
         }
@@ -342,12 +342,12 @@ app.post('/api/newspapers/update', (req, res) => {
     if (!newspaperName || !link) {
         return res.status(400).json({ error: 'newspaperName and link are required' });
     }
-    
+
     manualNewspaperLinks[newspaperName.toLowerCase()] = link;
-    
+
     // Clear cache so the new link is used immediately
     newspaperCache = { data: null, lastFetched: 0 };
-    
+
     res.json({ success: true, message: `Updated ${newspaperName} link` });
 });
 
@@ -367,19 +367,19 @@ app.get('/api/newspapers', async (req, res) => {
         const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
         const istDate = new Date(targetDate.getTime() + istOffset);
         const dateStr = istDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-        
+
         const tryScrape = async (attempt) => {
             try {
                 // Use scrape.do API if API key is available
                 if (SCRAPE_DO_API_KEY) {
                     console.log(`[DEBUG] ${newspaperInfo.name}: Using scrape.do API (super mode)`);
-                    
+
                     // Use improved scrape.do API with super=true, render=true, returnJSON=true
                     const scrapeUrl = `http://api.scrape.do/?url=${encodeURIComponent(newspaperInfo.url)}&token=${SCRAPE_DO_API_KEY}&super=true&sessionId=${Date.now()}&render=true&returnJSON=true`;
-                    
+
                     console.log(`[DEBUG] ${newspaperInfo.name}: Calling scrape.do API...`);
                     const { data } = await axios.get(scrapeUrl, { timeout: 120000 });
-                    
+
                     // With returnJSON=true, response is JSON with 'content' property containing HTML
                     const html = data.content || data;
                     const $ = cheerio.load(html);
@@ -407,7 +407,7 @@ app.get('/api/newspapers', async (req, res) => {
                         $('a[href*="drive.google.com"]').each((i, el) => {
                             const linkText = $(el).text();
                             const parentText = $(el).parent().text();
-                            if (linkText.toLowerCase().includes(dateStr.toLowerCase()) || 
+                            if (linkText.toLowerCase().includes(dateStr.toLowerCase()) ||
                                 parentText.toLowerCase().includes(dateStr.toLowerCase())) {
                                 foundLink = $(el).attr('href');
                                 return false;
@@ -444,10 +444,10 @@ app.get('/api/newspapers', async (req, res) => {
                     if (!foundLink) {
                         console.log(`[DEBUG] ${newspaperInfo.name}: No link found at all`);
                     }
-                    
+
                     return foundLink;
                 }
-                
+
                 // No API key, skip scraping
                 console.log(`[DEBUG] ${newspaperInfo.name}: No scrape.do API key, skipping scrape`);
                 return null;
@@ -460,12 +460,12 @@ app.get('/api/newspapers', async (req, res) => {
                 throw error;
             }
         };
-        
+
         try {
             const foundLink = await tryScrape(1);
             const logoFileName = newspaperInfo.name.toLowerCase().replace(/ /g, '-') + '.png';
-            return { 
-                ...newspaperInfo, 
+            return {
+                ...newspaperInfo,
                 link: foundLink,
                 logo: `/assets/${logoFileName}`
             };
@@ -516,6 +516,92 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
+// --- API Routes (Chemistry Schedule) ---
+const chemistrySchedulePath = path.join(__dirname, 'news_settings_chemistry_schedule.json');
+const chemistryProgressPath = path.join(__dirname, 'news_settings_chemistry_progress.json');
+
+const defaultChemistrySchedule = [
+    { id: 1, dates: "March 1", topics: "Basic concept of chemistry + Thermodynamics" },
+    { id: 2, dates: "March 2", topics: "Basic concept of chemistry + Thermodynamics" },
+    { id: 3, dates: "March 3", topics: "Revision + Full length paper (Sunday)" },
+    { id: 4, dates: "March 4", topics: "Electrochemistry + Solution" },
+    { id: 5, dates: "March 5", topics: "Electrochemistry + Solution" },
+    { id: 6, dates: "March 6", topics: "Revision" },
+    { id: 7, dates: "March 7", topics: "Chemical Bonding + Structure of atom" },
+    { id: 8, dates: "March 8", topics: "Chemical Bonding + Structure of atom + Revision + Full length paper (Mar 8 Sunday)" },
+    { id: 9, dates: "March 9", topics: "Chemical kinetics + Aldehyde ketone" },
+    { id: 10, dates: "March 10", topics: "Chemical kinetics + Aldehyde ketone + Chemo -> So Revision (Side Note)" },
+    { id: 11, dates: "March 11", topics: "Chemical kinetics + Aldehyde ketone" },
+    { id: 12, dates: "March 12", topics: "Periodicity classification of elements + Aliphatic Hydrocarbon" },
+    { id: 13, dates: "March 13", topics: "Periodicity classification of elements + Aliphatic Hydrocarbon" },
+    { id: 14, dates: "March 14", topics: "Revision" },
+    { id: 15, dates: "March 15", topics: "d & f block + Biomolecules" },
+    { id: 16, dates: "March 16", topics: "d & f block + Biomolecules" },
+    { id: 17, dates: "March 17", topics: "Revision + Full length paper (Sunday)" },
+    { id: 18, dates: "March 18", topics: "Coordination chemistry + Amines" },
+    { id: 19, dates: "March 19", topics: "Coordination chemistry + Amines" },
+    { id: 20, dates: "March 20", topics: "Revision" },
+    { id: 21, dates: "March 21", topics: "Alcohol, phenol and ethers + Haloalkanes, Haloarenes" },
+    { id: 22, dates: "March 22", topics: "Alcohol, phenol and ethers + Haloalkanes, Haloarenes" },
+    { id: 23, dates: "March 23", topics: "Revision + Full length paper" },
+    { id: 24, dates: "March 24", topics: "Principles, techniques + Equilibrium + Redox Rxn [less Important]" },
+    { id: 25, dates: "March 25", topics: "Principles, techniques + Equilibrium + Redox Rxn [less Important]" },
+    { id: 26, dates: "March 26", topics: "Principles, techniques + Equilibrium + Redox Rxn + Revision + Full length paper [less Important]" }
+];
+
+app.get('/api/chemistry/schedule', async (req, res) => {
+    try {
+        let schedule = defaultChemistrySchedule;
+        if (fs.existsSync(chemistrySchedulePath)) {
+            schedule = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
+        } else {
+            // Seed it
+            await fsPromises.writeFile(chemistrySchedulePath, JSON.stringify(defaultChemistrySchedule, null, 2), 'utf-8');
+        }
+        res.json(schedule);
+    } catch (error) {
+        console.error('Error reading chemistry schedule:', error);
+        res.status(500).json({ error: 'Failed to load schedule' });
+    }
+});
+
+app.post('/api/chemistry/schedule', async (req, res) => {
+    try {
+        const schedule = req.body;
+        if (!Array.isArray(schedule)) return res.status(400).json({ error: 'Schedule must be an array' });
+        await fsPromises.writeFile(chemistrySchedulePath, JSON.stringify(schedule, null, 2), 'utf-8');
+        res.json({ message: 'Schedule updated successfully' });
+    } catch (error) {
+        console.error('Error saving chemistry schedule:', error);
+        res.status(500).json({ error: 'Failed to save schedule' });
+    }
+});
+
+app.get('/api/chemistry/progress', async (req, res) => {
+    try {
+        let progress = {};
+        if (fs.existsSync(chemistryProgressPath)) {
+            progress = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
+        }
+        res.json(progress);
+    } catch (error) {
+        console.error('Error reading chemistry progress:', error);
+        res.status(500).json({ error: 'Failed to load progress' });
+    }
+});
+
+app.post('/api/chemistry/progress', async (req, res) => {
+    try {
+        const progress = req.body;
+        await fsPromises.writeFile(chemistryProgressPath, JSON.stringify(progress, null, 2), 'utf-8');
+        res.json({ message: 'Progress updated successfully' });
+    } catch (error) {
+        console.error('Error saving chemistry progress:', error);
+        res.status(500).json({ error: 'Failed to save progress' });
+    }
+});
+
+
 // --- API Routes (News Agent - MULTI-SECTION) ---
 const settingsFilePath = path.join(__dirname, 'news_settings.json');
 const NEWS_MODEL_ALIASES = {
@@ -554,7 +640,7 @@ app.post('/api/news-sections', async (req, res) => {
     try {
         const { title, topic, sites, model } = req.body;
         if (!title || !topic || !sites || !model) return res.status(400).send("All fields are required.");
-        
+
         const sections = await readSettings();
         const newSection = normalizeSection({ id: Date.now().toString(), title, topic, sites, model });
         sections.push(newSection);
@@ -632,7 +718,7 @@ app.get('/api/summarize-all', async (req, res) => {
             const completion = await groq.chat.completions.create({
                 messages: [{ role: 'user', content: userPrompt }], model, search_settings: { include_domains: siteList }
             });
-            
+
             const responseContent = completion.choices?.[0]?.message?.content || '';
             sendEvent({ type: 'status', sectionId: id, message: `✅ Search complete. Parsing summary...` });
 
@@ -647,7 +733,7 @@ app.get('/api/summarize-all', async (req, res) => {
                     images: []
                 };
             }
-            
+
             sendEvent({ type: 'result', sectionId: id, data: parsedResponse });
 
         } catch (error) {

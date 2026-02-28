@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,16 +11,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="background-animation"></div>
     <div class="glass-container">
         <header>
-            <div class="icon-container">
-                <span class="icon">🧪</span>
+            <div class="header-top">
+                <div class="icon-container">
+                    <span class="icon">🧪</span>
+                </div>
+                <button id="settings-btn" class="settings-btn" title="Edit Schedule">⚙️</button>
             </div>
             <h1>Chemistry Tracker</h1>
             <p class="subtitle">Stay on top of your revision schedule</p>
-            
+
             <div class="progress-section">
                 <div class="progress-info">
                     <span class="progress-text">Progress</span>
@@ -46,6 +51,27 @@
             </a>
         </footer>
     </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content glass-container">
+            <div class="modal-header">
+                <h2>Edit Schedule</h2>
+                <button id="close-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-subtitle">Modify your daily topics below.</p>
+                <div id="settings-schedule-list" class="settings-list">
+                    <!-- Settings inputs dynamically added here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="save-settings-btn" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
+
 </html>
