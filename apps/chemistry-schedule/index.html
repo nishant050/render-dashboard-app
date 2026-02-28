@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chemistry Revision Tracker</title>
+    <!-- Use Google Fonts (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-animation"></div>
+    <div class="glass-container">
+        <header>
+            <div class="icon-container">
+                <span class="icon">🧪</span>
+            </div>
+            <h1>Chemistry Tracker</h1>
+            <p class="subtitle">Stay on top of your revision schedule</p>
+            
+            <div class="progress-section">
+                <div class="progress-info">
+                    <span class="progress-text">Progress</span>
+                    <span id="progress-percentage" class="progress-percentage">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <ul id="schedule-list" class="schedule-list">
+                <!-- Dynamically populated via JS -->
+            </ul>
+        </main>
+
+        <footer>
+            <button id="reset-btn" class="btn btn-secondary">
+                <span>🔄</span> Reset Progress
+            </button>
+            <a href="../../index.html" class="btn btn-primary">
+                <span>🏠</span> Back to Dashboard
+            </a>
+        </footer>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

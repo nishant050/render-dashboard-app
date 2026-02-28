@@ -377,7 +377,8 @@ app.get('/api/newspapers', async (req, res) => {
                     // Use improved scrape.do API with super=true, render=true, returnJSON=true
                     const scrapeUrl = `http://api.scrape.do/?url=${encodeURIComponent(newspaperInfo.url)}&token=${SCRAPE_DO_API_KEY}&super=true&sessionId=${Date.now()}&render=true&returnJSON=true`;
                     
-                    const { data } = await axios.get(scrapeUrl, { timeout: 90000 });
+                    console.log(`[DEBUG] ${newspaperInfo.name}: Calling scrape.do API...`);
+                    const { data } = await axios.get(scrapeUrl, { timeout: 120000 });
                     
                     // With returnJSON=true, response is JSON with 'content' property containing HTML
                     const html = data.content || data;
