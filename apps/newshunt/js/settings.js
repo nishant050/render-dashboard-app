@@ -715,6 +715,18 @@ const Settings = {
       </div>
 
       <div class="settings-card" style="margin-top: var(--space-6)">
+        <h3 class="settings-card__title">📦 Export / Import</h3>
+        <p class="text-muted" style="margin: var(--space-2) 0 var(--space-4)">Export all your data (settings, feeds, articles, preferences) as a JSON file so you can back it up or transfer to another device.</p>
+        <div style="display: flex; gap: var(--space-3); flex-wrap: wrap;">
+          <button class="btn btn--primary" onclick="Settings.exportAllData()">📤 Export All Data</button>
+          <label class="btn btn--secondary" style="cursor: pointer">
+            📥 Import Data
+            <input type="file" accept=".json" style="display:none" onchange="Settings.importData(this.files[0])">
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-card" style="margin-top: var(--space-6)">
         <h3 class="settings-card__title">Actions</h3>
         <div style="display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3)">
           <button class="btn btn--secondary" onclick="Settings.clearReadArticles()">📚 Clear Read History</button>
@@ -755,5 +767,110 @@ const Settings = {
         action: async () => { indexedDB.deleteDatabase(DB_NAME); window.location.reload(); }
       }
     ]);
+  },
+
+  async exportAllData() {
+    try {
+      const settings = await db.getAllSettings();
+      const feeds = await db.getAllFeeds();
+      const articles = await db.getAllArticles();
+
+      const exportData = {
+        _meta: {
+          app: 'NewsHunt',
+          version: '1.0',
+          exportedAt: new Date().toISOString(),
+          articleCount: articles.length,
+          feedCount: feeds.length
+        },
+        settings,
+        feeds,
+        articles
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `newshunt-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      Components.showToast(`Exported ${articles.length} articles, ${feeds.length} feeds, and all settings`, 'success');
+    } catch (error) {
+      console.error('Export error:', error);
+      Components.showToast('Failed to export data: ' + error.message, 'error');
+    }
+  },
+
+  async importData(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (!data.settings && !data.feeds && !data.articles) {
+        Components.showToast('Invalid backup file — no settings, feeds, or articles found.', 'error');
+        return;
+      }
+
+      const counts = [];
+      if (data.feeds) counts.push(`${data.feeds.length} feeds`);
+      if (data.articles) counts.push(`${data.articles.length} articles`);
+      if (data.settings) counts.push('all settings');
+
+      Components.showModal('Import Data?', `
+        <p>This will import: <strong>${counts.join(', ')}</strong></p>
+        <p class="text-muted" style="margin-top: var(--space-2);">Existing data will be merged — nothing will be deleted.</p>
+      `, [
+        { label: 'Cancel', class: 'btn--secondary' },
+        {
+          label: '📥 Import', class: 'btn--primary',
+          action: async () => {
+            // Import settings
+            if (data.settings && typeof data.settings === 'object') {
+              for (const [key, value] of Object.entries(data.settings)) {
+                await db.setSetting(key, value);
+              }
+            }
+
+            // Import feeds (add missing)
+            if (Array.isArray(data.feeds)) {
+              const existing = await db.getAllFeeds();
+              const existingUrls = new Set(existing.map(f => f.url));
+              for (const feed of data.feeds) {
+                if (!existingUrls.has(feed.url)) {
+                  await db.addFeed(feed.url, feed.name || '');
+                }
+              }
+            }
+
+            // Import articles (add missing)
+            if (Array.isArray(data.articles)) {
+              for (const article of data.articles) {
+                const existing = await db.getArticle(article.guid);
+                if (!existing) {
+                  await db.addArticle(article);
+                } else {
+                  // Merge: keep read state and stars if newer
+                  let changed = false;
+                  if (article.isRead && !existing.isRead) { existing.isRead = true; existing.readAt = article.readAt; changed = true; }
+                  if (article.ratedAt && (!existing.ratedAt || article.ratedAt > existing.ratedAt)) {
+                    existing.stars = article.stars; existing.ratingReason = article.ratingReason; existing.ratedAt = article.ratedAt; changed = true;
+                  }
+                  if (changed) await db.addArticle(existing);
+                }
+              }
+            }
+
+            Components.showToast('Data imported successfully! Reloading...', 'success');
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        }
+      ]);
+    } catch (error) {
+      console.error('Import error:', error);
+      Components.showToast('Failed to import: ' + error.message, 'error');
+    }
   }
 };
