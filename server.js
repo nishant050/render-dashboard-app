@@ -6,7 +6,7 @@ const fsPromises = require('fs').promises;
 const os = require('os');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const Groq = require('groq-sdk');
+const https = require('https');
 const { spawn } = require('child_process');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
@@ -17,13 +17,7 @@ const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Read GROQ API key from environment. Support both `GROQ_API_KEY`
-// and `REDACTED_GROQ_API_KEY` (in case you added that name on Render).
-const groqApiKey = process.env.GROQ_API_KEY || process.env.REDACTED_GROQ_API_KEY;
-if (!groqApiKey) {
-    console.warn('Warning: GROQ API key not found in environment variables. Set GROQ_API_KEY on Render.');
-}
-const groq = new Groq({ apiKey: groqApiKey });
+
 
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '2mb' }));
@@ -602,174 +596,189 @@ app.post('/api/chemistry/progress', async (req, res) => {
 });
 
 
-// --- API Routes (News Agent - MULTI-SECTION) ---
-const settingsFilePath = path.join(__dirname, 'news_settings.json');
-const NEWS_MODEL_ALIASES = {
-    'compound-beta': 'groq/compound',
-    'compound-beta-mini': 'groq/compound-mini',
-    'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile',
-};
-const DEFAULT_NEWS_MODEL = 'groq/compound-mini';
-
-const normalizeSection = (section = {}) => ({
-    id: section.id ? String(section.id) : Date.now().toString(),
-    title: (section.title || 'Untitled section').trim(),
-    topic: (section.topic || '').trim(),
-    sites: (section.sites || '').trim(),
-    model: NEWS_MODEL_ALIASES[section.model] || section.model || DEFAULT_NEWS_MODEL,
-});
-
-// Helper to read/write settings
-const readSettings = async () => {
-    const raw = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf-8'));
-    if (!Array.isArray(raw)) return [];
-    return raw.map(normalizeSection);
-};
-const writeSettings = async (data) => await fsPromises.writeFile(settingsFilePath, JSON.stringify(data, null, 2), 'utf-8');
-
-// 12. GET ALL NEWS SECTIONS
-app.get('/api/news-sections', async (req, res) => {
-    try {
-        const sections = await readSettings();
-        res.json(sections);
-    } catch (error) { res.status(500).send("Could not load sections."); }
-});
-
-// 13. ADD A NEWS SECTION
-app.post('/api/news-sections', async (req, res) => {
-    try {
-        const { title, topic, sites, model } = req.body;
-        if (!title || !topic || !sites || !model) return res.status(400).send("All fields are required.");
-
-        const sections = await readSettings();
-        const newSection = normalizeSection({ id: Date.now().toString(), title, topic, sites, model });
-        sections.push(newSection);
-        await writeSettings(sections);
-        res.status(201).json(newSection);
-    } catch (error) { res.status(500).send("Could not save new section."); }
-});
-
-// 14. UPDATE A NEWS SECTION
-app.put('/api/news-sections/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { title, topic, sites, model } = req.body;
-        let sections = await readSettings();
-        const index = sections.findIndex(s => s.id === id);
-        if (index === -1) return res.status(404).send("Section not found.");
-
-        sections[index] = normalizeSection({ id, title, topic, sites, model });
-        await writeSettings(sections);
-        res.json(sections[index]);
-    } catch (error) { res.status(500).send("Could not update section."); }
-});
-
-// 15. DELETE A NEWS SECTION
-app.delete('/api/news-sections/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        let sections = await readSettings();
-        const filteredSections = sections.filter(s => s.id !== id);
-        if (sections.length === filteredSections.length) return res.status(404).send("Section not found.");
-
-        await writeSettings(filteredSections);
-        res.status(204).send();
-    } catch (error) { res.status(500).send("Could not delete section."); }
-});
-
-// 16. SUMMARIZE ALL SECTIONS (PARALLEL)
-app.get('/api/summarize-all', async (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
-
-    const processSection = async (section) => {
-        try {
-            const { id, title, topic, sites, model } = section;
-            sendEvent({ type: 'status', sectionId: id, message: `🔍 Initializing "${title}"...` });
-            const siteList = sites.split(',').map(s => s.trim()).filter(s => s);
-            if (siteList.length === 0) throw new Error("No valid sites in settings.");
-
-            const userPrompt = `
-                Your response MUST be a single, valid JSON object and nothing else. Do not include any introductory text, closing remarks, or any other content outside of the JSON object.
-
-                You are an expert news analyst. Your task is to provide a comprehensive summary of the latest news on the topic: "${topic}".
-                You MUST restrict your web search to ONLY the following websites: ${siteList.join(', ')}.
-
-                Follow these steps precisely:
-                1. Perform web searches across the specified sites to gather relevant articles.
-                2. From the articles, identify and extract the URLs of 1 to 3 of the most relevant, high-quality images that visually represent the news.
-                3. Synthesize the text information into a cohesive news article in Markdown format. The article must have a headline (e.g., "# Headline"), an introduction, and several key bullet points (e.g., "* Point 1").
-                
-                Your final output must be a single JSON object structured exactly like this example:
-                {
-                  "summary": "# Example Headline\\n\\nThis is the introductory paragraph.\\n\\n* This is the first key point.\\n* This is the second key point.",
-                  "images": [
-                    "https://example.com/image1.jpg",
-                    "https://example.com/image2.png"
-                  ]
-                }
-            `;
-
-            sendEvent({ type: 'status', sectionId: id, message: `Searching across ${siteList.length} sites...` });
-            const completion = await groq.chat.completions.create({
-                messages: [{ role: 'user', content: userPrompt }], model, search_settings: { include_domains: siteList }
-            });
-
-            const responseContent = completion.choices?.[0]?.message?.content || '';
-            sendEvent({ type: 'status', sectionId: id, message: `✅ Search complete. Parsing summary...` });
-
-            let parsedResponse;
-            try {
-                const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-                if (!jsonMatch) throw new Error("No valid JSON object found in the model's response.");
-                parsedResponse = JSON.parse(jsonMatch[0]);
-            } catch (parseError) {
-                parsedResponse = {
-                    summary: `The model returned a response that could not be parsed as JSON.\n\nRaw response excerpt:\n\n\`\`\`\n${responseContent.slice(0, 1200)}\n\`\`\``,
-                    images: []
-                };
+// --- CORS Proxy (used by NewsHunt to fetch RSS feeds) ---
+const proxyFetch = (targetUrl) => {
+    return new Promise((resolve, reject) => {
+        const lib = targetUrl.startsWith('https') ? https : require('http');
+        const req = lib.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            },
+            timeout: 15000
+        }, (response) => {
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                proxyFetch(response.headers.location).then(resolve).catch(reject);
+                return;
             }
+            let data = '';
+            response.setEncoding('utf8');
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => resolve(data));
+            response.on('error', reject);
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+};
 
-            sendEvent({ type: 'result', sectionId: id, data: parsedResponse });
-
-        } catch (error) {
-            console.error(`Error processing section ${section.id}:`, error);
-            sendEvent({ type: 'error', sectionId: section.id, message: error.message });
-        }
-    };
-
-    try {
-        const sections = await readSettings();
-        await Promise.all(sections.map(section => processSection(section)));
-    } catch (e) {
-        sendEvent({ type: 'error', sectionId: 'global', message: "Failed to read settings file." });
-    } finally {
-        sendEvent({ type: 'done' });
-        res.end();
+app.get('/proxy', async (req, res) => {
+    const target = req.query.url;
+    if (!target) {
+        return res.status(400).json({ error: 'Missing ?url= parameter' });
     }
-});
 
-// Proxy endpoint: POST /api/groq-chat
-// Accepts { model, messages, temperature, search_settings } and returns
-// the Groq chat completion. Keeps the API key on the server.
-app.post('/api/groq-chat', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+
     try {
-        if (!groqApiKey) return res.status(500).json({ error: 'GROQ API key not configured on server.' });
-
-        const { model = 'groq/compound', messages, temperature = 0.1, search_settings } = req.body;
-        if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: 'messages array is required' });
-
-        const completion = await groq.chat.completions.create({ model, messages, temperature, search_settings });
-        res.json(completion);
+        const body = await proxyFetch(target);
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(body);
     } catch (err) {
-        console.error('Error in /api/groq-chat:', err?.response?.data || err.message || err);
-        res.status(500).json({ error: err.message || 'Groq request failed' });
+        res.status(502).json({ error: err.message });
     }
 });
+
+// ===============================================
+// === NEWSHUNT SERVER-SIDE PERSISTENCE ==========
+// ===============================================
+
+const NEWSHUNT_DATA_PATH = path.join(__dirname, 'newshunt_data.json');
+
+const readNewshuntData = async () => {
+    try {
+        if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
+            return JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
+        }
+    } catch (e) {
+        console.error('Error reading newshunt data:', e);
+    }
+    return { articles: {}, feeds: [], settings: {} };
+};
+
+const writeNewshuntData = async (data) => {
+    await fsPromises.writeFile(NEWSHUNT_DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
+};
+
+// GET /api/newshunt/ai-config — provide API keys from environment variables
+app.get('/api/newshunt/ai-config', (req, res) => {
+    const config = {};
+    if (process.env.GROQ_API_KEY) config.groq = process.env.GROQ_API_KEY;
+    if (process.env.OPENROUTER_API_KEY) config.openrouter = process.env.OPENROUTER_API_KEY;
+    if (process.env.GEMINI_API_KEY) config.gemini = process.env.GEMINI_API_KEY;
+    res.json(config);
+});
+
+// GET /api/newshunt/sync — pull all synced state
+app.get('/api/newshunt/sync', async (req, res) => {
+    try {
+        const data = await readNewshuntData();
+        res.json(data);
+    } catch (error) {
+        console.error('Error in GET /api/newshunt/sync:', error);
+        res.status(500).json({ error: 'Failed to read sync data' });
+    }
+});
+
+// POST /api/newshunt/sync — push full sync (merge)
+app.post('/api/newshunt/sync', async (req, res) => {
+    try {
+        const { articles: clientArticles, feeds: clientFeeds, settings: clientSettings } = req.body;
+        const serverData = await readNewshuntData();
+
+        // Merge articles: read is a one-way latch (once read, stays read).
+        // Stars use last-writer-wins via ratedAt timestamp.
+        if (clientArticles && typeof clientArticles === 'object') {
+            for (const [guid, clientState] of Object.entries(clientArticles)) {
+                const serverState = serverData.articles[guid];
+                if (!serverState) {
+                    serverData.articles[guid] = clientState;
+                } else {
+                    if (clientState.isRead) {
+                        serverState.isRead = true;
+                        serverState.readAt = clientState.readAt || serverState.readAt;
+                    }
+                    if (clientState.ratedAt && (!serverState.ratedAt || clientState.ratedAt > serverState.ratedAt)) {
+                        serverState.stars = clientState.stars;
+                        serverState.ratingReason = clientState.ratingReason;
+                        serverState.ratedAt = clientState.ratedAt;
+                    }
+                }
+            }
+        }
+
+        // Feeds: replace with client list
+        if (Array.isArray(clientFeeds)) {
+            serverData.feeds = clientFeeds;
+        }
+
+        // Settings: merge (client wins for each key)
+        if (clientSettings && typeof clientSettings === 'object') {
+            serverData.settings = { ...serverData.settings, ...clientSettings };
+        }
+
+        await writeNewshuntData(serverData);
+        res.json(serverData);
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/sync:', error);
+        res.status(500).json({ error: 'Failed to save sync data' });
+    }
+});
+
+// POST /api/newshunt/settings — save individual settings to server
+app.post('/api/newshunt/settings', async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ error: 'key is required' });
+
+        const data = await readNewshuntData();
+        data.settings[key] = value;
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/settings:', error);
+        res.status(500).json({ error: 'Failed to save setting' });
+    }
+});
+
+// POST /api/newshunt/mark-read — quick single-article mark-read
+app.post('/api/newshunt/mark-read', async (req, res) => {
+    try {
+        const { guid } = req.body;
+        if (!guid) return res.status(400).json({ error: 'guid is required' });
+
+        const data = await readNewshuntData();
+        if (!data.articles[guid]) {
+            data.articles[guid] = { isRead: true, readAt: Date.now() };
+        } else {
+            data.articles[guid].isRead = true;
+            data.articles[guid].readAt = data.articles[guid].readAt || Date.now();
+        }
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/mark-read:', error);
+        res.status(500).json({ error: 'Failed to mark article read' });
+    }
+});
+
+// POST /api/newshunt/feeds — save feed subscriptions
+app.post('/api/newshunt/feeds', async (req, res) => {
+    try {
+        const { feeds } = req.body;
+        if (!Array.isArray(feeds)) return res.status(400).json({ error: 'feeds array is required' });
+
+        const data = await readNewshuntData();
+        data.feeds = feeds;
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/feeds:', error);
+        res.status(500).json({ error: 'Failed to save feeds' });
+    }
+});
+
 
 // ===============================================
 // === YOUTUBE DOWNLOADER API (LOCAL ytdlp) ======

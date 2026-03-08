@@ -16,13 +16,31 @@
 ## âœ¨ What this project is
 
 **Render Dashboard App** is a single Node.js web application that acts like a mini â€œapp storeâ€ for personal tools.
+<div align="center">
+
+# ðŸš€ Render Dashboard App
+
+### A beautiful all-in-one personal productivity dashboard
+
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](#)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)](#)
+[![Frontend](https://img.shields.io/badge/Frontend-HTML%20%7C%20CSS%20%7C%20Vanilla%20JS-ff69b4)](#)
+[![Status](https://img.shields.io/badge/Status-Active-success)](#)
+
+</div>
+
+---
+
+## âœ¨ What this project is
+
+**Render Dashboard App** is a single Node.js web application that acts like a mini â€œapp storeâ€ for personal tools.
 
 You open one dashboard and launch multiple built-in utilities:
 
 - â˜ï¸ **File Hub** (upload, organize, move, preview files)
 - ðŸ—žï¸ **e-Paper Digest** (daily newspaper links with logo cards)
 - ðŸŽ¬ **YT Downloader** (local `yt-dlp` + `ffmpeg` downloader with video library)
-- ðŸ¤– **News Agent** (AI-powered topic summaries using Groq)
+- 📰 **NewsHunt** (AI-powered smart news reader with RSS feeds)
 - ðŸ“ **Quick Notes** (browser-local notes)
 - ðŸ“ˆðŸ§  Additional static utility pages (learning/health/event pages)
 
@@ -35,7 +53,7 @@ You open one dashboard and launch multiple built-in utilities:
 | `apps/filehub` | File explorer with upload, folder/file actions, drag/drop move | âœ… Yes |
 | `apps/epaper` | Fetches latest newspaper links from configured sources | âœ… Yes |
 | `apps/ytdownloader` | Fetches video info, downloads locally, stores and plays videos | Yes |
-| `apps/newsagent` | Manage news sections + stream AI summaries | âœ… Yes |
+| `apps/newshunt` | AI-powered smart news reader with RSS, categorization & chat | ✅ Yes (proxy) |
 | `apps/quicknotes` | Save quick notes to `localStorage` | âŒ No |
 | `apps/learn-investing` | Static course/tracker style page | âŒ No |
 | `apps/vestibular-migraine` | Static rehab tracker UI | âŒ No |
@@ -51,12 +69,12 @@ You open one dashboard and launch multiple built-in utilities:
 
 - serves all static files from repo root
 - serves `/uploads`, `/assets`, and `/public`
-- exposes APIs for File Hub, e-Paper, News Agent, and YT Downloader
+- exposes APIs for File Hub, e-Paper, NewsHunt (CORS proxy), and YT Downloader
 
 ### 2) Data and storage
 
 - `uploads/` â†’ File Hub filesystem storage
-- `news_settings.json` â†’ News Agent section config
+- NewsHunt stores feed config in browser IndexedDB (no server-side config file)
 - `public/videos/` -> downloaded videos + thumbnails/info sidecar files
 
 ### 3) Local YouTube download flow
@@ -87,14 +105,15 @@ You open one dashboard and launch multiple built-in utilities:
 
 - `GET /api/newspapers`
 
-### News Agent
+### NewsHunt
 
-- `GET /api/news-sections`
-- `POST /api/news-sections`
-- `PUT /api/news-sections/:id`
-- `DELETE /api/news-sections/:id`
-- `GET /api/summarize-all` (Server-Sent Events stream)
-- `POST /api/groq-chat` (server-side proxy for Groq)
+- `GET /proxy?url=...` (fetches external RSS feeds server-side to bypass CORS)
+- `GET /api/newshunt/ai-config` (provides API keys from server env vars)
+- `GET /api/newshunt/sync` (pull synced article state, feeds, settings)
+- `POST /api/newshunt/sync` (push & merge article state, feeds, settings)
+- `POST /api/newshunt/settings` (save individual setting to server)
+- `POST /api/newshunt/mark-read` (quick mark single article as read)
+- `POST /api/newshunt/feeds` (save feed subscriptions)
 
 ### YT Downloader
 
@@ -110,11 +129,7 @@ You open one dashboard and launch multiple built-in utilities:
 
 ---
 
-## âš™ï¸ Environment variables
-
-### Required for News Agent
-
-- `GROQ_API_KEY` *(or `REDACTED_GROQ_API_KEY`)*
+## ⚙️ Environment variables
 
 ### Required runtime dependencies for YT Downloader
 
@@ -168,39 +183,6 @@ This repo includes `render.yaml` and simple npm scripts for Render.
   - `yt-dlp` not on PATH. Set `YTDLP_PATH` or verify Python module fallback.
 - Error: ffmpeg missing
   - Strict mode is enabled; downloads are blocked. Set `FFMPEG_PATH` to a valid binary if needed.
-
----
-
-## ðŸ“ Project structure
-
-```text
-.
-â”œâ”€â”€ server.js
-â”œâ”€â”€ index.html
-â”œâ”€â”€ style.css
-â”œâ”€â”€ apps/
-â”‚   â”œâ”€â”€ filehub/
-â”‚   â”œâ”€â”€ epaper/
-â”‚   â”œâ”€â”€ ytdownloader/
-â”‚   â”œâ”€â”€ newsagent/
-â”‚   â”œâ”€â”€ quicknotes/
-â”‚   â”œâ”€â”€ learn-investing/
-â”‚   â”œâ”€â”€ vestibular-migraine/
-â”‚   â””â”€â”€ siat/
-â”œâ”€â”€ assets/
-â”œâ”€â”€ public/
-â”‚   â”œâ”€â”€ videos/
-â”‚   â”œâ”€â”€ videos.json
-â”‚   â””â”€â”€ videos/videos.json
-â”œâ”€â”€ scripts/
-â”‚   â””â”€â”€ download_video.py
-â”œâ”€â”€ news_settings.json
-â”œâ”€â”€ package.json
-â””â”€â”€ requirements.txt
-```
-
----
-
 ## ðŸ“ Notes
 
 - This is a **single-repo multi-tool personal project** (not microservices).
