@@ -670,6 +670,53 @@ app.get('/api/newshunt/ai-config', (req, res) => {
     res.json(config);
 });
 
+// POST /api/newshunt/sideload — Completely replace server data with an imported JSON file
+app.post('/api/newshunt/sideload', async (req, res) => {
+    try {
+        const payload = req.body;
+        // Basic validation: ensure it looks like a backup object
+        if (!payload || typeof payload !== 'object' || (!payload.settings && !payload.feeds && !payload.articles)) {
+            return res.status(400).json({ error: 'Invalid backup file format' });
+        }
+
+        // The file structure from our export matches what the server wants, 
+        // with the exception that our export's articles is an array instead of a guid map.
+        // We will normalize it here just in case.
+        const serverData = { settings: {}, feeds: [], articles: {} };
+
+        if (payload.settings && typeof payload.settings === 'object') {
+            serverData.settings = payload.settings;
+        }
+
+        if (Array.isArray(payload.feeds)) {
+            serverData.feeds = payload.feeds;
+        }
+
+        if (Array.isArray(payload.articles)) {
+            for (const article of payload.articles) {
+                if (article.guid) {
+                    serverData.articles[article.guid] = article;
+                }
+            }
+        } else if (payload.articles && typeof payload.articles === 'object') {
+            // In case it's already a map
+            serverData.articles = payload.articles;
+        }
+
+        await writeNewshuntData(serverData);
+        res.json({
+            ok: true, message: 'Server data replaced successfully', counts: {
+                settings: Object.keys(serverData.settings).length,
+                feeds: serverData.feeds.length,
+                articles: Object.keys(serverData.articles).length
+            }
+        });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/sideload:', error);
+        res.status(500).json({ error: 'Failed to process sideload payload' });
+    }
+});
+
 // GET /api/newshunt/sync — pull all synced state
 app.get('/api/newshunt/sync', async (req, res) => {
     try {

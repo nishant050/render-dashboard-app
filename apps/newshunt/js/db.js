@@ -364,82 +364,89 @@ class NewsHuntDB {
   }
 
   /**
-   * Pull state from server and merge into local IndexedDB.
-   * Server is the SOURCE OF TRUTH for all settings.
+   * Pull state from server and load into local IndexedDB.
+   * For true Zero-Config deployment, the SERVER is the absolute SOURCE OF TRUTH.
+   * This completely overrides local settings and feeds.
+   * Articles are merged (keeping whichever state is more advanced).
    */
   async syncFromServer() {
     try {
       const response = await fetch('/api/newshunt/sync');
-      if (!response.ok) return;
+      if (!response.ok) return false;
       const serverData = await response.json();
 
-      // Merge article state
-      if (serverData.articles && typeof serverData.articles === 'object') {
-        const localArticles = await this.getAllArticles();
-        const localMap = new Map(localArticles.map(a => [a.guid, a]));
-
-        for (const [guid, serverState] of Object.entries(serverData.articles)) {
-          const local = localMap.get(guid);
-          if (local) {
-            let changed = false;
-            if (serverState.isRead && !local.isRead) {
-              local.isRead = true;
-              local.readAt = serverState.readAt || Date.now();
-              changed = true;
-            }
-            if (serverState.ratedAt && (!local.ratedAt || serverState.ratedAt > local.ratedAt)) {
-              local.stars = serverState.stars;
-              local.ratingReason = serverState.ratingReason;
-              local.ratedAt = serverState.ratedAt;
-              changed = true;
-            }
-            if (changed) {
-              const store = this._tx('articles', 'readwrite');
-              await this._request(store, 'put', local);
-            }
-          }
-        }
-      }
-
-      // Merge feeds (server → local, add missing ones)
-      if (Array.isArray(serverData.feeds) && serverData.feeds.length > 0) {
-        const localFeeds = await this.getAllFeeds();
-        const localUrls = new Set(localFeeds.map(f => f.url));
-        for (const feed of serverData.feeds) {
-          if (!localUrls.has(feed.url)) {
-            await this.addFeed(feed.url, feed.name || '');
-          }
-        }
-      }
-
-      // Settings: server OVERRIDES local (server is source of truth)
+      // 1. Settings: Server completely overwrites local
       if (serverData.settings && typeof serverData.settings === 'object') {
         for (const [key, value] of Object.entries(serverData.settings)) {
           await this.setSetting(key, value);
         }
       }
 
-      console.log('[Sync] Pulled state from server');
+      // 2. Feeds: Server completely overwrites local
+      if (Array.isArray(serverData.feeds)) {
+        // Clear existing feeds (safely)
+        const localFeeds = await this.getAllFeeds();
+        for (const f of localFeeds) {
+          await this.removeFeed(f.url);
+        }
+        // Insert server feeds
+        for (const feed of serverData.feeds) {
+          await this.addFeed(feed.url, feed.name || '');
+        }
+      }
+
+      // 3. Articles: Inject full article objects from server, merge states
+      if (serverData.articles && typeof serverData.articles === 'object') {
+        for (const [guid, serverArticle] of Object.entries(serverData.articles)) {
+          const localArticle = await this.getArticle(guid);
+
+          if (!localArticle) {
+            // New article from server — strictly inject it
+            // Ensure mandatory fields exist just in case
+            serverArticle.guid = serverArticle.guid || guid;
+            serverArticle.dateAdded = serverArticle.dateAdded || new Date().toISOString();
+            await this.addArticle(serverArticle);
+          } else {
+            // Merge states: server read vs local read
+            let changed = false;
+            if (serverArticle.isRead && !localArticle.isRead) {
+              localArticle.isRead = true;
+              localArticle.readAt = serverArticle.readAt || Date.now();
+              changed = true;
+            }
+            if (serverArticle.ratedAt && (!localArticle.ratedAt || serverArticle.ratedAt > localArticle.ratedAt)) {
+              localArticle.stars = serverArticle.stars;
+              localArticle.ratingReason = serverArticle.ratingReason;
+              localArticle.ratedAt = serverArticle.ratedAt;
+              changed = true;
+            }
+            if (changed) {
+              await this.addArticle(localArticle);
+            }
+          }
+        }
+      }
+
+      console.log('[Sync] Pulled complete state from server (Zero-Config Bootstrap)');
+      return true;
     } catch (error) {
       console.warn('[Sync] Failed to pull from server (offline?):', error.message);
+      return false;
     }
   }
 
   /**
    * Push local article state, feeds, and ALL settings to server.
+   * Since the server now holds full article objects, we push the actual articles.
    */
   async syncToServer() {
     try {
       const articles = await this.getAllArticles();
       const articleMap = {};
+
+      // We push the FULL article object to the server now, so every device has access to it
       for (const a of articles) {
-        articleMap[a.guid] = {
-          isRead: !!a.isRead,
-          readAt: a.readAt || null,
-          stars: a.stars ?? null,
-          ratingReason: a.ratingReason || null,
-          ratedAt: a.ratedAt || null
-        };
+        articleMap[a.guid] = a;
       }
 
       const feeds = await this.getAllFeeds();
@@ -451,7 +458,7 @@ class NewsHuntDB {
         body: JSON.stringify({ articles: articleMap, feeds, settings: allSettings })
       });
 
-      console.log('[Sync] Pushed state to server');
+      console.log('[Sync] Pushed complete state to server');
     } catch (error) {
       console.warn('[Sync] Failed to push to server (offline?):', error.message);
     }
