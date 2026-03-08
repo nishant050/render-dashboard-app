@@ -201,6 +201,12 @@ Use blockquotes with 📌 emoji:
 ## Context & Analysis
 Brief analysis of why this matters and what it means for the reader.`;
 
+    // Append user's custom prompt if set
+    const customPrompt = prefs.customPrompt || '';
+    if (customPrompt) {
+      prompt += `\n\n## CUSTOM INSTRUCTIONS FROM USER\n${customPrompt}`;
+    }
+
     if (showCharts) {
       prompt += `
 

@@ -5,6 +5,7 @@
 const App = {
     currentView: 'feed',
     currentFilter: '5',
+    searchQuery: '',
     isRefreshing: false,
 
     // Initialize the application
@@ -110,7 +111,19 @@ const App = {
 
         // Filter by star rating
         let filtered = deduped;
-        if (this.currentFilter === 'uncategorized') {
+
+        // Apply search filter FIRST if there's a query
+        if (this.searchQuery) {
+            const q = this.searchQuery.toLowerCase();
+            filtered = filtered.filter(a => {
+                const title = (a.title || '').toLowerCase();
+                const desc = (a.description || '').toLowerCase();
+                const source = (a.feedTitle || '').toLowerCase();
+                const reason = (a.ratingReason || '').toLowerCase();
+                const topics = (a.topics || []).join(' ').toLowerCase();
+                return title.includes(q) || desc.includes(q) || source.includes(q) || reason.includes(q) || topics.includes(q);
+            });
+        } else if (this.currentFilter === 'uncategorized') {
             filtered = deduped.filter(a => !a.stars);
         } else if (this.currentFilter !== 'all') {
             const starVal = parseInt(this.currentFilter);
@@ -163,6 +176,16 @@ const App = {
         <div>
           <h1 class="section-header__title">Your Feed</h1>
           <p class="section-header__subtitle">${articles.length} articles to read</p>
+        </div>
+      </div>
+      <div class="feed-search">
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="feed-search-input" 
+            placeholder="Search articles by title, topic, source..." 
+            value="${Utils.escapeHtml(this.searchQuery)}" 
+            oninput="App.onSearchInput(this.value)">
+          ${this.searchQuery ? '<button class="search-clear" onclick="App.clearSearch()">✕</button>' : ''}
         </div>
       </div>
       <div class="stats-bar">
@@ -524,6 +547,28 @@ const App = {
         modal.appendChild(grid);
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
+    },
+
+    // Search handler (debounced)
+    _searchTimer: null,
+    onSearchInput(value) {
+        clearTimeout(this._searchTimer);
+        this._searchTimer = setTimeout(() => {
+            this.searchQuery = value.trim();
+            this.renderFeedView().then(() => {
+                // Re-focus the input and restore cursor position
+                const input = document.getElementById('feed-search-input');
+                if (input) {
+                    input.focus();
+                    input.selectionStart = input.selectionEnd = input.value.length;
+                }
+            });
+        }, 250);
+    },
+
+    clearSearch() {
+        this.searchQuery = '';
+        this.renderFeedView();
     },
 
     // Toggle mobile sidebar

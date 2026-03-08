@@ -616,6 +616,13 @@ const Settings = {
         </div>
       </div>
 
+      <div class="input-group" style="margin-top: var(--space-4)">
+        <label class="input-group__label">✍️ Custom AI Prompt (Optional)</label>
+        <p class="input-group__hint" style="color: var(--color-text-secondary); font-size: 0.85rem; margin-bottom: var(--space-2)">Add your own instructions for how the AI should rewrite articles. This is appended to the default prompt.</p>
+        <textarea class="input" id="reader-custom-prompt" rows="4" 
+          placeholder="e.g. Always explain concepts with real-world analogies. Focus on practical implications. Write in a conversational tone.">${Utils.escapeHtml(readerPrefs.customPrompt || '')}</textarea>
+      </div>
+
       <div class="settings-action-bar" style="margin-top: var(--space-6)">
         <button class="btn btn--primary btn--lg" onclick="Settings.saveReaderPrefs()">💾 Save Reader Preferences</button>
       </div>
@@ -640,7 +647,8 @@ const Settings = {
       language: document.getElementById('reader-language').value,
       autoExplain: document.getElementById('reader-auto-explain').checked,
       showCharts: document.getElementById('reader-show-charts').checked,
-      keyFacts: document.getElementById('reader-key-facts').checked
+      keyFacts: document.getElementById('reader-key-facts').checked,
+      customPrompt: document.getElementById('reader-custom-prompt')?.value?.trim() || ''
     };
     await db.setSetting('reader_prefs', prefs);
     db.syncSetting('reader_prefs', prefs);
