@@ -49,6 +49,23 @@ const quickNoteSchema = new mongoose.Schema({
 });
 const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
+const learnInvestingSchema = new mongoose.Schema({
+    profiles: { type: mongoose.Schema.Types.Mixed, default: {} },
+    currentProfileId: { type: String, default: null }
+}, { timestamps: true });
+const LearnInvestingState = mongoose.model('LearnInvestingState', learnInvestingSchema);
+
+const fileHubEntrySchema = new mongoose.Schema({
+    path: { type: String, required: true, unique: true },
+    parentPath: { type: String, default: '' },
+    name: { type: String, required: true },
+    isDirectory: { type: Boolean, default: false },
+    mimeType: { type: String, default: 'application/octet-stream' },
+    size: { type: Number, default: 0 },
+    content: { type: Buffer, default: null }
+}, { timestamps: true });
+const FileHubEntry = mongoose.model('FileHubEntry', fileHubEntrySchema);
+
 // Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
 // Default to user-provided key if not set, will fall back to manual links
 const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac053e55d17fb2bacb64a543d';
@@ -74,18 +91,126 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
 }
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        const subfolder = req.body.path || '';
-        const fullPath = path.join(uploadsDir, subfolder);
-        fs.mkdirSync(fullPath, { recursive: true });
-        cb(null, fullPath);
-    },
-    filename: function (req, file, cb) {
-        cb(null, file.originalname);
+const upload = multer({ storage: multer.memoryStorage() });
+
+const normalizeFileHubPath = (input = '') => String(input || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .join('/');
+
+const joinFileHubPath = (...parts) => normalizeFileHubPath(parts.filter(Boolean).join('/'));
+
+const getFileHubParentPath = (filePath = '') => {
+    const normalizedPath = normalizeFileHubPath(filePath);
+    if (!normalizedPath) return '';
+    const segments = normalizedPath.split('/');
+    segments.pop();
+    return segments.join('/');
+};
+
+const escapeRegExp = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const fileHubPathRegex = (basePath = '') => {
+    const normalizedPath = normalizeFileHubPath(basePath);
+    return normalizedPath
+        ? new RegExp(`^${escapeRegExp(normalizedPath)}(?:/|$)`)
+        : /.*/;
+};
+
+const FILE_HUB_MIME_TYPES = {
+    '.txt': 'text/plain; charset=utf-8',
+    '.md': 'text/markdown; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.xml': 'application/xml; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.pdf': 'application/pdf',
+    '.zip': 'application/zip',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.ogg': 'video/ogg',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav'
+};
+
+const getFileHubMimeType = (filename, fallback = 'application/octet-stream') => {
+    const extension = path.extname(filename || '').toLowerCase();
+    return FILE_HUB_MIME_TYPES[extension] || fallback;
+};
+
+const ensureFileHubFolderExists = async (folderPath = '') => {
+    const normalizedPath = normalizeFileHubPath(folderPath);
+    if (!normalizedPath) return;
+
+    const segments = normalizedPath.split('/');
+    let currentPath = '';
+
+    for (const segment of segments) {
+        currentPath = joinFileHubPath(currentPath, segment);
+        await FileHubEntry.findOneAndUpdate(
+            { path: currentPath },
+            {
+                $setOnInsert: {
+                    path: currentPath,
+                    parentPath: getFileHubParentPath(currentPath),
+                    name: segment,
+                    isDirectory: true,
+                    mimeType: 'inode/directory',
+                    size: 0,
+                    content: null
+                }
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
     }
-});
-const upload = multer({ storage: storage });
+};
+
+const saveFileHubFile = async ({ filePath, name, buffer, mimeType }) => {
+    const normalizedPath = normalizeFileHubPath(filePath);
+    await ensureFileHubFolderExists(getFileHubParentPath(normalizedPath));
+
+    return FileHubEntry.findOneAndUpdate(
+        { path: normalizedPath },
+        {
+            $set: {
+                path: normalizedPath,
+                parentPath: getFileHubParentPath(normalizedPath),
+                name,
+                isDirectory: false,
+                mimeType: mimeType || getFileHubMimeType(name),
+                size: buffer.length,
+                content: buffer
+            }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+};
+
+const renameFileHubEntryTree = async (sourcePath, targetPath, targetName) => {
+    const normalizedSourcePath = normalizeFileHubPath(sourcePath);
+    const normalizedTargetPath = normalizeFileHubPath(targetPath);
+    const entries = await FileHubEntry.find({ path: { $regex: fileHubPathRegex(normalizedSourcePath) } }).sort({ path: 1 });
+
+    for (const entry of entries) {
+        const suffix = entry.path.slice(normalizedSourcePath.length);
+        entry.path = `${normalizedTargetPath}${suffix}`;
+        entry.parentPath = getFileHubParentPath(entry.path);
+        entry.name = entry.path.split('/').pop();
+        if (entry.path === normalizedTargetPath) {
+            entry.name = targetName;
+        }
+        await entry.save();
+    }
+};
 
 
 // --- Newspaper Scraper Setup ---
@@ -114,16 +239,15 @@ let manualNewspaperLinks = {};
 // 1. LIST contents of a directory
 app.get('/api/files', async (req, res) => {
     try {
-        const directoryPath = req.query.path ? path.join(uploadsDir, req.query.path) : uploadsDir;
-        if (!directoryPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
-        }
-        const items = await fsPromises.readdir(directoryPath, { withFileTypes: true });
-        const files = items.map(item => ({
+        const currentPath = normalizeFileHubPath(req.query.path);
+        const items = await FileHubEntry.find({ parentPath: currentPath })
+            .sort({ isDirectory: -1, name: 1 })
+            .select('name isDirectory');
+
+        res.json(items.map(item => ({
             name: item.name,
-            isDirectory: item.isDirectory(),
-        }));
-        res.json(files);
+            isDirectory: item.isDirectory
+        })));
     } catch (error) {
         console.error('Error listing files:', error);
         res.status(500).send('Server error while listing files.');
@@ -131,11 +255,27 @@ app.get('/api/files', async (req, res) => {
 });
 
 // 2. UPLOAD a file
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).send('No file uploaded.');
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send('No file uploaded.');
+        }
+
+        const currentPath = normalizeFileHubPath(req.body.path);
+        const filePath = joinFileHubPath(currentPath, req.file.originalname);
+
+        await saveFileHubFile({
+            filePath,
+            name: req.file.originalname,
+            buffer: req.file.buffer,
+            mimeType: req.file.mimetype || getFileHubMimeType(req.file.originalname)
+        });
+
+        res.json({ message: `File '${req.file.originalname}' uploaded successfully!` });
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        res.status(500).send('Server error while uploading file.');
     }
-    res.json({ message: `File '${req.file.originalname}' uploaded successfully!` });
 });
 
 // 3. CREATE a new folder
@@ -145,11 +285,16 @@ app.post('/api/folders', async (req, res) => {
         if (!name) {
             return res.status(400).send('Folder name is required.');
         }
-        const newFolderPath = path.join(uploadsDir, currentPath || '', name);
-        if (!newFolderPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
+
+        const normalizedParentPath = normalizeFileHubPath(currentPath);
+        const newFolderPath = joinFileHubPath(normalizedParentPath, name);
+        const existing = await FileHubEntry.findOne({ path: newFolderPath });
+
+        if (existing) {
+            return res.status(409).send('An item with that name already exists.');
         }
-        await fsPromises.mkdir(newFolderPath);
+
+        await ensureFileHubFolderExists(newFolderPath);
         res.status(201).json({ message: `Folder '${name}' created successfully!` });
     } catch (error) {
         console.error('Error creating folder:', error);
@@ -164,16 +309,19 @@ app.delete('/api/delete', async (req, res) => {
         if (!name) {
             return res.status(400).send('Item name is required.');
         }
-        const itemPath = path.join(uploadsDir, currentPath || '', name);
-        if (!itemPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
+
+        const itemPath = joinFileHubPath(currentPath, name);
+        const item = await FileHubEntry.findOne({ path: itemPath });
+        if (!item) {
+            return res.status(404).send('Item not found.');
         }
-        const stats = await fsPromises.stat(itemPath);
-        if (stats.isDirectory()) {
-            await fsPromises.rm(itemPath, { recursive: true, force: true });
+
+        if (item.isDirectory) {
+            await FileHubEntry.deleteMany({ path: { $regex: fileHubPathRegex(itemPath) } });
         } else {
-            await fsPromises.unlink(itemPath);
+            await FileHubEntry.deleteOne({ path: itemPath });
         }
+
         res.json({ message: `Item '${name}' deleted successfully!` });
     } catch (error) {
         console.error('Error deleting item:', error);
@@ -188,12 +336,31 @@ app.put('/api/rename', async (req, res) => {
         if (!oldName || !newName) {
             return res.status(400).send('Old and new names are required.');
         }
-        const oldPath = path.join(uploadsDir, currentPath || '', oldName);
-        const newPath = path.join(uploadsDir, currentPath || '', newName);
-        if (!oldPath.startsWith(uploadsDir) || !newPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
+
+        const normalizedParentPath = normalizeFileHubPath(currentPath);
+        const oldPath = joinFileHubPath(normalizedParentPath, oldName);
+        const newPath = joinFileHubPath(normalizedParentPath, newName);
+        const existing = await FileHubEntry.findOne({ path: oldPath });
+
+        if (!existing) {
+            return res.status(404).send('Item not found.');
         }
-        await fsPromises.rename(oldPath, newPath);
+
+        const conflict = await FileHubEntry.findOne({ path: newPath });
+        if (conflict) {
+            return res.status(409).send('An item with that name already exists.');
+        }
+
+        if (existing.isDirectory) {
+            await renameFileHubEntryTree(oldPath, newPath, newName);
+        } else {
+            existing.path = newPath;
+            existing.parentPath = normalizedParentPath;
+            existing.name = newName;
+            existing.mimeType = getFileHubMimeType(newName, existing.mimeType);
+            await existing.save();
+        }
+
         res.json({ message: `Renamed '${oldName}' to '${newName}' successfully!` });
     } catch (error) {
         console.error('Error renaming item:', error);
@@ -208,12 +375,17 @@ app.post('/api/text-file', async (req, res) => {
         if (!filename) {
             return res.status(400).send('Filename is required.');
         }
+
         const finalFilename = filename.endsWith('.txt') ? filename : `${filename}.txt`;
-        const newFilePath = path.join(uploadsDir, currentPath || '', finalFilename);
-        if (!newFilePath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
-        }
-        await fsPromises.writeFile(newFilePath, content || '');
+        const newFilePath = joinFileHubPath(currentPath, finalFilename);
+
+        await saveFileHubFile({
+            filePath: newFilePath,
+            name: finalFilename,
+            buffer: Buffer.from(content || '', 'utf-8'),
+            mimeType: 'text/plain; charset=utf-8'
+        });
+
         res.status(201).json({ message: `File '${finalFilename}' created successfully!` });
     } catch (error) {
         console.error('Error creating text file:', error);
@@ -228,13 +400,35 @@ app.put('/api/move', async (req, res) => {
         if (!sourcePath || !targetPath) {
             return res.status(400).send('Source and target paths are required.');
         }
-        const fullSourcePath = path.join(uploadsDir, sourcePath);
-        const fullTargetPath = path.join(uploadsDir, targetPath);
-        if (!fullSourcePath.startsWith(uploadsDir) || !fullTargetPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
+
+        const normalizedSourcePath = normalizeFileHubPath(sourcePath);
+        const normalizedTargetPath = normalizeFileHubPath(targetPath);
+        const item = await FileHubEntry.findOne({ path: normalizedSourcePath });
+
+        if (!item) {
+            return res.status(404).send('Source item not found.');
         }
-        await fsPromises.mkdir(path.dirname(fullTargetPath), { recursive: true });
-        await fsPromises.rename(fullSourcePath, fullTargetPath);
+
+        if (item.isDirectory && (normalizedTargetPath === normalizedSourcePath || normalizedTargetPath.startsWith(`${normalizedSourcePath}/`))) {
+            return res.status(400).send('Cannot move a folder into itself.');
+        }
+
+        const conflict = await FileHubEntry.findOne({ path: normalizedTargetPath });
+        if (conflict) {
+            return res.status(409).send('Target item already exists.');
+        }
+
+        await ensureFileHubFolderExists(getFileHubParentPath(normalizedTargetPath));
+
+        if (item.isDirectory) {
+            await renameFileHubEntryTree(normalizedSourcePath, normalizedTargetPath, path.basename(normalizedTargetPath));
+        } else {
+            item.path = normalizedTargetPath;
+            item.parentPath = getFileHubParentPath(normalizedTargetPath);
+            item.name = path.basename(normalizedTargetPath);
+            await item.save();
+        }
+
         res.json({ message: `Moved '${sourcePath}' to '${targetPath}' successfully!` });
     } catch (error) {
         console.error('Error moving item:', error);
@@ -245,16 +439,7 @@ app.put('/api/move', async (req, res) => {
 // 8. CLEAR ALL files and folders
 app.delete('/api/clear-all', async (req, res) => {
     try {
-        const entries = await fsPromises.readdir(uploadsDir);
-        for (const entry of entries) {
-            const entryPath = path.join(uploadsDir, entry);
-            const stats = await fsPromises.stat(entryPath);
-            if (stats.isDirectory()) {
-                await fsPromises.rm(entryPath, { recursive: true, force: true });
-            } else {
-                await fsPromises.unlink(entryPath);
-            }
-        }
+        await FileHubEntry.deleteMany({});
         res.json({ message: 'All files and folders have been cleared.' });
     } catch (error) {
         console.error('Error clearing storage:', error);
@@ -263,28 +448,13 @@ app.delete('/api/clear-all', async (req, res) => {
 });
 
 // 9. GET storage info
-const getDirectorySize = async (dirPath) => {
-    let totalSize = 0;
-    try {
-        const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
-        for (const entry of entries) {
-            const entryPath = path.join(dirPath, entry.name);
-            if (entry.isDirectory()) {
-                totalSize += await getDirectorySize(entryPath);
-            } else {
-                const stats = await fsPromises.stat(entryPath);
-                totalSize += stats.size;
-            }
-        }
-    } catch (error) {
-        console.error('Error calculating directory size:', error);
-    }
-    return totalSize;
-};
-
 app.get('/api/storage-info', async (req, res) => {
     try {
-        const used = await getDirectorySize(uploadsDir);
+        const result = await FileHubEntry.aggregate([
+            { $match: { isDirectory: false } },
+            { $group: { _id: null, used: { $sum: '$size' } } }
+        ]);
+        const used = result[0]?.used || 0;
         res.json({ used });
     } catch (error) {
         console.error('Error getting storage info:', error);
@@ -292,34 +462,81 @@ app.get('/api/storage-info', async (req, res) => {
     }
 });
 
-// 10. DOWNLOAD folder as ZIP
-const addFolderToZip = (zip, folderPath, basePath = '') => {
-    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
-    for (const entry of entries) {
-        const entryPath = path.join(folderPath, entry.name);
-        const zipPath = basePath ? path.join(basePath, entry.name) : entry.name;
-        if (entry.isDirectory()) {
-            addFolderToZip(zip, entryPath, zipPath);
-        } else {
-            zip.addLocalFile(entryPath, basePath);
-        }
-    }
+// 10. FILE CONTENT AND ZIP DOWNLOAD
+const sendFileHubEntryContent = (entry, res) => {
+    const content = entry.content || Buffer.alloc(0);
+    res.set('Content-Type', entry.mimeType || getFileHubMimeType(entry.name));
+    res.set('Content-Length', entry.size || content.length);
+    res.set('Cache-Control', 'no-store');
+    res.send(content);
 };
+
+app.head('/api/file-content', async (req, res) => {
+    try {
+        const filePath = normalizeFileHubPath(req.query.path);
+        const entry = await FileHubEntry.findOne({ path: filePath, isDirectory: false });
+
+        if (!entry) {
+            return res.status(404).send('File not found.');
+        }
+
+        res.set('Content-Type', entry.mimeType || getFileHubMimeType(entry.name));
+        res.set('Content-Length', entry.size || 0);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).end();
+    } catch (error) {
+        console.error('Error fetching file metadata:', error);
+        res.status(500).send('Server error while fetching file metadata.');
+    }
+});
+
+app.get('/api/file-content', async (req, res) => {
+    try {
+        const filePath = normalizeFileHubPath(req.query.path);
+        const entry = await FileHubEntry.findOne({ path: filePath, isDirectory: false });
+
+        if (!entry) {
+            return res.status(404).send('File not found.');
+        }
+
+        sendFileHubEntryContent(entry, res);
+    } catch (error) {
+        console.error('Error fetching file content:', error);
+        res.status(500).send('Server error while fetching file content.');
+    }
+});
 
 app.get('/api/download-zip', async (req, res) => {
     try {
-        const currentPath = req.query.path || '';
-        const folderPath = path.join(uploadsDir, currentPath);
-
-        if (!folderPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
-        }
-
+        const currentPath = normalizeFileHubPath(req.query.path);
         const zip = new AdmZip();
         const folderName = currentPath.split('/').pop() || 'root';
 
-        // Add all files and folders to ZIP
-        addFolderToZip(zip, folderPath);
+        let files;
+        if (!currentPath) {
+            files = await FileHubEntry.find({ isDirectory: false }).sort({ path: 1 });
+        } else {
+            const selectedEntry = await FileHubEntry.findOne({ path: currentPath });
+            if (!selectedEntry) {
+                return res.status(404).send('Folder not found.');
+            }
+
+            if (selectedEntry.isDirectory) {
+                files = await FileHubEntry.find({
+                    isDirectory: false,
+                    path: { $regex: fileHubPathRegex(currentPath) }
+                }).sort({ path: 1 });
+            } else {
+                files = [selectedEntry];
+            }
+        }
+
+        files.forEach(file => {
+            const relativePath = currentPath && file.path.startsWith(`${currentPath}/`)
+                ? file.path.slice(currentPath.length + 1)
+                : file.name;
+            zip.addFile(relativePath || file.name, file.content || Buffer.alloc(0));
+        });
 
         const zipBuffer = zip.toBuffer();
 
@@ -346,24 +563,88 @@ app.post('/api/extract-zip', async (req, res) => {
             return res.status(400).send('Only ZIP files can be extracted.');
         }
 
-        const zipPath = path.join(uploadsDir, currentPath || '', name);
-        const extractPath = path.join(uploadsDir, currentPath || '', name.replace('.zip', ''));
+        const zipPath = joinFileHubPath(currentPath, name);
+        const extractPath = joinFileHubPath(currentPath, name.replace(/\.zip$/i, ''));
+        const zipEntry = await FileHubEntry.findOne({ path: zipPath, isDirectory: false });
 
-        if (!zipPath.startsWith(uploadsDir) || !extractPath.startsWith(uploadsDir)) {
-            return res.status(403).send('Forbidden');
+        if (!zipEntry) {
+            return res.status(404).send('ZIP file not found.');
         }
 
-        // Create extraction directory
-        await fsPromises.mkdir(extractPath, { recursive: true });
+        await ensureFileHubFolderExists(extractPath);
 
-        // Extract ZIP
-        const zip = new AdmZip(zipPath);
-        zip.extractAllTo(extractPath, true);
+        const zip = new AdmZip(zipEntry.content);
+        for (const entry of zip.getEntries()) {
+            const entryPath = normalizeFileHubPath(entry.entryName);
+            if (!entryPath) continue;
+
+            const targetPath = joinFileHubPath(extractPath, entryPath);
+            if (entry.isDirectory) {
+                await ensureFileHubFolderExists(targetPath);
+                continue;
+            }
+
+            await saveFileHubFile({
+                filePath: targetPath,
+                name: path.basename(targetPath),
+                buffer: entry.getData(),
+                mimeType: getFileHubMimeType(targetPath)
+            });
+        }
 
         res.json({ message: `ZIP file extracted successfully to '${path.basename(extractPath)}'!` });
     } catch (error) {
         console.error('Error extracting ZIP:', error);
         res.status(500).json({ error: 'Failed to extract ZIP file' });
+    }
+});
+
+// 12. LEARN INVESTING STATE
+const normalizeLearnInvestingState = (state = {}) => ({
+    profiles: isPlainObject(state.profiles) ? state.profiles : {},
+    currentProfileId: typeof state.currentProfileId === 'string' && state.currentProfileId.trim()
+        ? state.currentProfileId.trim()
+        : null
+});
+
+const readLearnInvestingState = async () => {
+    const data = await LearnInvestingState.findOne();
+    if (!data) return { profiles: {}, currentProfileId: null };
+    return normalizeLearnInvestingState(typeof data.toObject === 'function' ? data.toObject() : data);
+};
+
+const writeLearnInvestingState = async (state) => {
+    const normalized = normalizeLearnInvestingState(state);
+    const existing = await LearnInvestingState.findOne();
+
+    if (existing) {
+        existing.profiles = normalized.profiles;
+        existing.currentProfileId = normalized.currentProfileId;
+        existing.markModified('profiles');
+        await existing.save();
+        return existing;
+    }
+
+    return LearnInvestingState.create(normalized);
+};
+
+app.get('/api/learn-investing/state', async (req, res) => {
+    try {
+        const state = await readLearnInvestingState();
+        res.json(state);
+    } catch (error) {
+        console.error('Error reading learn-investing state:', error);
+        res.status(500).json({ error: 'Failed to read learn-investing state' });
+    }
+});
+
+app.post('/api/learn-investing/state', async (req, res) => {
+    try {
+        const saved = await writeLearnInvestingState(req.body || {});
+        res.json(normalizeLearnInvestingState(typeof saved.toObject === 'function' ? saved.toObject() : saved));
+    } catch (error) {
+        console.error('Error saving learn-investing state:', error);
+        res.status(500).json({ error: 'Failed to save learn-investing state' });
     }
 });
 

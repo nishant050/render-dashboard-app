@@ -139,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const pathJoin = (...parts) => parts.filter(p => p).join('/');
+    const getFileUrl = (filename) => `/api/file-content?path=${encodeURIComponent(pathJoin(currentPath, filename))}`;
 
     // --- API Helper ---
     const apiCall = async (endpoint, method = 'GET', body = null) => {
@@ -226,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const ext = filename.split('.').pop().toLowerCase();
-        const filePath = `/uploads/${pathJoin(currentPath, filename)}`;
+        const filePath = getFileUrl(filename);
         
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
             return `<img src="${filePath}" alt="${filename}" loading="lazy" draggable="false">`;
@@ -309,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Fetch File Size ---
     const fetchFileSize = async (filename, itemEl) => {
         try {
-            const filePath = `/uploads/${pathJoin(currentPath, filename)}`;
+            const filePath = getFileUrl(filename);
             const response = await fetch(filePath, { method: 'HEAD' });
             const size = response.headers.get('content-length');
             const sizeEl = itemEl.querySelector('.size');
@@ -644,7 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
             linkBtn.innerHTML = '<i class="fas fa-link"></i> Copy Direct Link';
             linkBtn.onclick = () => {
                 menu.remove();
-                const fileUrl = `${window.location.origin}/uploads/${pathJoin(currentPath, item.name)}`;
+                const fileUrl = `${window.location.origin}${getFileUrl(item.name)}`;
                 navigator.clipboard.writeText(fileUrl).then(() => {
                     showNotification('Direct link copied to clipboard!');
                 }).catch(err => {
@@ -657,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download';
             downloadBtn.onclick = () => {
                 menu.remove();
-                const fileUrl = `/uploads/${pathJoin(currentPath, item.name)}`;
+                const fileUrl = getFileUrl(item.name);
                 const a = document.createElement('a');
                 a.href = fileUrl;
                 a.download = item.name;
@@ -731,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- File Preview ---
     const showPreview = async (filename) => {
         const fileExt = filename.split('.').pop().toLowerCase();
-        const filePath = `/uploads/${pathJoin(currentPath, filename)}`;
+        const filePath = getFileUrl(filename);
         previewBody.innerHTML = '';
         
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {

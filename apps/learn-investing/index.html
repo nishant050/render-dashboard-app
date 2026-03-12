@@ -148,7 +148,7 @@
             <div class="px-6 pb-6">
                 <div class="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
                     <i class="fas fa-info-circle text-slate-400 mt-0.5"></i>
-                    <p class="text-xs text-slate-500">Your progress is saved locally on this device. Each profile tracks progress separately.</p>
+                    <p class="text-xs text-slate-500">Your progress is saved to MongoDB so the same profiles and course progress are available across your devices.</p>
                 </div>
             </div>
         </div>
@@ -501,20 +501,68 @@
             return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
         }
 
-        // Load all profiles from localStorage
-        function loadProfiles() {
-            const saved = localStorage.getItem('stockMarketCourseProfiles');
-            if (saved) {
-                profiles = JSON.parse(saved);
+        async function courseApi(method = 'GET', body = null) {
+            const options = { method };
+            if (body) {
+                options.headers = { 'Content-Type': 'application/json' };
+                options.body = JSON.stringify(body);
             }
-            currentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile');
+
+            const response = await fetch('/api/learn-investing/state', options);
+            if (!response.ok) {
+                throw new Error('Failed to sync learn-investing state');
+            }
+
+            return response.json();
         }
 
-        // Save all profiles to localStorage
-        function saveProfiles() {
+        // Load all profiles from MongoDB, with localStorage migration as fallback
+        async function loadProfiles() {
+            const saved = localStorage.getItem('stockMarketCourseProfiles');
+            const localProfiles = saved ? JSON.parse(saved) : {};
+            const localCurrentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile');
+
+            try {
+                const remoteState = await courseApi();
+                const remoteProfiles = remoteState?.profiles || {};
+                const remoteCurrentProfileId = remoteState?.currentProfileId || null;
+                const remoteEmpty = Object.keys(remoteProfiles).length === 0 && !remoteCurrentProfileId;
+
+                if (remoteEmpty && Object.keys(localProfiles).length > 0) {
+                    profiles = localProfiles;
+                    currentProfileId = localCurrentProfileId;
+                    await saveProfiles();
+                    return;
+                }
+
+                profiles = remoteProfiles;
+                currentProfileId = remoteCurrentProfileId;
+                localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
+                if (currentProfileId) {
+                    localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
+                } else {
+                    localStorage.removeItem('stockMarketCourseCurrentProfile');
+                }
+            } catch (error) {
+                console.warn('Falling back to local storage for learn-investing:', error.message);
+                profiles = localProfiles;
+                currentProfileId = localCurrentProfileId;
+            }
+        }
+
+        // Save all profiles to MongoDB and keep a local cache
+        async function saveProfiles() {
             localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
             if (currentProfileId) {
                 localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
+            } else {
+                localStorage.removeItem('stockMarketCourseCurrentProfile');
+            }
+
+            try {
+                await courseApi('POST', { profiles, currentProfileId });
+            } catch (error) {
+                console.warn('Failed to sync learn-investing state:', error.message);
             }
         }
 
@@ -522,7 +570,7 @@
         function saveState() {
             if (!currentProfileId) return;
             profiles[currentProfileId].progress = state;
-            saveProfiles();
+            void saveProfiles();
         }
 
         // Load current user's state
@@ -536,7 +584,7 @@
         }
 
         // Create new profile
-        function createProfile() {
+        async function createProfile() {
             const nameInput = document.getElementById('newProfileName');
             const name = nameInput.value.trim();
             const errorEl = document.getElementById('profileError');
@@ -562,7 +610,7 @@
             };
 
             currentProfileId = profileId;
-            saveProfiles();
+            await saveProfiles();
             loadCurrentUserState();
             
             hideProfileModal();
@@ -574,9 +622,9 @@
         }
 
         // Select existing profile
-        function selectProfile(profileId) {
+        async function selectProfile(profileId) {
             currentProfileId = profileId;
-            saveProfiles();
+            await saveProfiles();
             loadCurrentUserState();
             
             hideProfileModal();
@@ -590,18 +638,17 @@
         }
 
         // Delete profile
-        function deleteProfile(profileId, event) {
+        async function deleteProfile(profileId, event) {
             event.stopPropagation();
             const profile = profiles[profileId];
             
             if (confirm(`Delete profile "${profile.name}"? All progress will be lost.`)) {
                 delete profiles[profileId];
-                saveProfiles();
-                
+
                 if (currentProfileId === profileId) {
                     currentProfileId = null;
-                    localStorage.removeItem('stockMarketCourseCurrentProfile');
                 }
+                await saveProfiles();
                 
                 renderProfilesList();
                 renderSwitcherProfilesList();
@@ -1082,8 +1129,8 @@
         }
 
         // Main initialization
-        function init() {
-            loadProfiles();
+        async function init() {
+            await loadProfiles();
 
             // Check if user was previously logged in
             if (currentProfileId && profiles[currentProfileId]) {
@@ -1106,7 +1153,9 @@
         }
 
         // Run on load
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+        });
 
         // Close modals on escape key
         document.addEventListener('keydown', (e) => {
