@@ -123,7 +123,7 @@ Respond ONLY with a valid JSON array. Each element:
             }
 
             // Sync star ratings to server
-            db.syncToServer();
+            await db.syncToServer();
 
             return ratings;
         } catch (error) {
@@ -282,6 +282,7 @@ Rules:
             if (b < batches.length - 1) await Utils.sleep(1000);
         }
 
+        await db.syncToServer();
         return { grouped: totalGrouped, tagged: totalTagged };
     }
 };

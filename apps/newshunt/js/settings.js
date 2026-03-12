@@ -237,6 +237,7 @@ const Settings = {
 
   async removeAPIKey(provider) {
     await db.setSetting(`api_key_${provider}`, null);
+    await db.syncSetting(`api_key_${provider}`, null);
     Components.showToast('API key removed', 'success');
     await this._renderPage('api');
   },
@@ -745,6 +746,7 @@ const Settings = {
         action: async () => {
           const articles = await db.getReadArticles();
           for (const a of articles) { a.isRead = false; a.readAt = null; await db.addArticle(a); }
+          await db.syncToServer();
           Components.showToast('Read history cleared', 'success');
         }
       }
@@ -752,7 +754,7 @@ const Settings = {
   },
 
   async clearArticleCache() {
-    // Clearing the article_content store
+    await db.clearArticleContent();
     Components.showToast('AI content cache cleared', 'success');
   },
 
@@ -764,7 +766,11 @@ const Settings = {
       { label: 'Cancel', class: 'btn--secondary' },
       {
         label: '🗑️ Delete Everything', class: 'btn--danger',
-        action: async () => { indexedDB.deleteDatabase(DB_NAME); window.location.reload(); }
+        action: async () => {
+          await db.clearAllData({ skipSync: true });
+          await db.syncToServer();
+          window.location.reload();
+        }
       }
     ]);
   },
@@ -863,6 +869,7 @@ const Settings = {
               }
             }
 
+            await db.syncToServer();
             Components.showToast('Data imported successfully! Reloading...', 'success');
             setTimeout(() => window.location.reload(), 1500);
           }

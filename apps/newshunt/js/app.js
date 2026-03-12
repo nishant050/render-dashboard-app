@@ -339,7 +339,7 @@ const App = {
             await this.renderFeedView();
 
             // Push state to server for cross-device sync
-            db.syncToServer();
+            await db.syncToServer();
 
         } catch (error) {
             Components.showToast(`Error refreshing feeds: ${error.message}`, 'error');
@@ -416,7 +416,7 @@ const App = {
         try {
             await db.updateArticleStars(guid, 1, 'Manually flagged as irrelevant by user.');
             // Sync to server
-            db.syncToServer();
+            await db.syncToServer();
             Components.showToast('Article flagged as irrelevant (Moved to 1-star)', 'info');
             if (this.currentView === 'feed') {
                 this.renderFeedView();

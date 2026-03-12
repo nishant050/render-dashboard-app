@@ -35,9 +35,9 @@ const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressS
 
 // NewsHunt
 const newsHuntSchema = new mongoose.Schema({
-    settings: { type: Object, default: {} },
-    feeds: { type: Array, default: [] },
-    articles: { type: Map, of: Object, default: {} }
+    settings: { type: mongoose.Schema.Types.Mixed, default: {} },
+    feeds: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    articles: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
 
@@ -58,7 +58,7 @@ const PORT = process.env.PORT || 3000;
 
 
 // Middleware to parse JSON bodies
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // --- Static File Serving ---
 // Serve the main front-end, apps, and uploads
@@ -704,28 +704,126 @@ app.get('/proxy', async (req, res) => {
 
 const NEWSHUNT_DATA_PATH = path.join(__dirname, 'newshunt_data.json');
 
+const NEWSHUNT_DEFAULT_STATE = Object.freeze({
+    settings: {},
+    feeds: [],
+    articles: {}
+});
+
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const toPlainValue = (value) => {
+    if (!value) return value;
+    if (typeof value.toObject === 'function') {
+        return value.toObject({ flattenMaps: true });
+    }
+    if (value instanceof Map) {
+        return Object.fromEntries(value.entries());
+    }
+    return value;
+};
+
+const normalizeNewshuntSettings = (settings) => {
+    const plainSettings = toPlainValue(settings);
+    return isPlainObject(plainSettings) ? { ...plainSettings } : {};
+};
+
+const normalizeNewshuntFeeds = (feeds) => {
+    if (!Array.isArray(feeds)) return [];
+
+    return feeds
+        .filter(feed => isPlainObject(feed) && typeof feed.url === 'string' && feed.url.trim())
+        .map(feed => ({
+            ...feed,
+            url: feed.url.trim(),
+            name: typeof feed.name === 'string' ? feed.name : ''
+        }));
+};
+
+const normalizeNewshuntArticles = (articles) => {
+    const plainArticles = toPlainValue(articles);
+    const articleMap = Array.isArray(plainArticles)
+        ? Object.fromEntries(
+            plainArticles
+                .filter(article => isPlainObject(article) && typeof article.guid === 'string' && article.guid.trim())
+                .map(article => [article.guid.trim(), article])
+        )
+        : (isPlainObject(plainArticles) ? plainArticles : {});
+
+    const normalized = {};
+
+    for (const [guid, article] of Object.entries(articleMap)) {
+        if (!isPlainObject(article)) continue;
+
+        const normalizedGuid = typeof article.guid === 'string' && article.guid.trim()
+            ? article.guid.trim()
+            : String(guid || '').trim();
+
+        if (!normalizedGuid) continue;
+
+        normalized[normalizedGuid] = {
+            ...article,
+            guid: normalizedGuid
+        };
+    }
+
+    return normalized;
+};
+
+const normalizeNewshuntData = (data = {}) => {
+    const plainData = toPlainValue(data) || {};
+
+    return {
+        settings: normalizeNewshuntSettings(plainData.settings),
+        feeds: normalizeNewshuntFeeds(plainData.feeds),
+        articles: normalizeNewshuntArticles(plainData.articles)
+    };
+};
+
+const ensureNewshuntDocument = async () => {
+    let data = await NewsHuntData.findOne();
+
+    if (!data) {
+        console.log('Seeding NewsHunt data from JSON...');
+        let seedData = NEWSHUNT_DEFAULT_STATE;
+
+        if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
+            const jsonData = JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
+            seedData = normalizeNewshuntData(jsonData);
+        }
+
+        data = await NewsHuntData.create(seedData);
+    }
+
+    return data;
+};
+
 const readNewshuntData = async () => {
     try {
-        let data = await NewsHuntData.findOne();
-        if (!data) {
-            // Seed from file if exists
-            console.log('Seeding NewsHunt data from JSON...');
-            if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
-                const jsonData = JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
-                data = await NewsHuntData.create(jsonData);
-            } else {
-                data = await NewsHuntData.create({ articles: {}, feeds: [], settings: {} });
-            }
-        }
-        return data;
+        const data = await ensureNewshuntDocument();
+        return normalizeNewshuntData(data);
     } catch (e) {
         console.error('Error reading newshunt data:', e);
-        return { articles: new Map(), feeds: [], settings: {} };
+        throw e;
     }
 };
 
 const writeNewshuntData = async (data) => {
-    await data.save();
+    const normalized = normalizeNewshuntData(data);
+    const existing = await NewsHuntData.findOne();
+
+    if (existing) {
+        existing.settings = normalized.settings;
+        existing.feeds = normalized.feeds;
+        existing.articles = normalized.articles;
+        existing.markModified('settings');
+        existing.markModified('feeds');
+        existing.markModified('articles');
+        await existing.save();
+        return existing;
+    }
+
+    return NewsHuntData.create(normalized);
 };
 
 // GET /api/newshunt/ai-config — provide API keys from environment variables
@@ -770,12 +868,13 @@ app.post('/api/newshunt/sideload', async (req, res) => {
             serverData.articles = payload.articles;
         }
 
-        await writeNewshuntData(serverData);
+        const savedData = await writeNewshuntData(serverData);
+        const normalized = normalizeNewshuntData(savedData);
         res.json({
             ok: true, message: 'Server data replaced successfully', counts: {
-                settings: Object.keys(serverData.settings).length,
-                feeds: serverData.feeds.length,
-                articles: Object.keys(serverData.articles).length
+                settings: Object.keys(normalized.settings).length,
+                feeds: normalized.feeds.length,
+                articles: Object.keys(normalized.articles).length
             }
         });
     } catch (error) {
@@ -801,40 +900,20 @@ app.post('/api/newshunt/sync', async (req, res) => {
         const { articles: clientArticles, feeds: clientFeeds, settings: clientSettings } = req.body;
         const serverData = await readNewshuntData();
 
-        // Merge articles: read is a one-way latch (once read, stays read).
-        // Stars use last-writer-wins via ratedAt timestamp.
-        if (clientArticles && typeof clientArticles === 'object') {
-            for (const [guid, clientState] of Object.entries(clientArticles)) {
-                const serverState = serverData.articles.get(guid);
-                if (!serverState) {
-                    serverData.articles.set(guid, clientState);
-                } else {
-                    if (clientState.isRead) {
-                        serverState.isRead = true;
-                        serverState.readAt = clientState.readAt || serverState.readAt;
-                    }
-                    if (clientState.ratedAt && (!serverState.ratedAt || clientState.ratedAt > serverState.ratedAt)) {
-                        serverState.stars = clientState.stars;
-                        serverState.ratingReason = clientState.ratingReason;
-                        serverState.ratedAt = clientState.ratedAt;
-                    }
-                    serverData.articles.set(guid, serverState);
-                }
-            }
+        if (clientSettings !== undefined) {
+            serverData.settings = normalizeNewshuntSettings(clientSettings);
         }
 
-        // Feeds: replace with client list
-        if (Array.isArray(clientFeeds)) {
-            serverData.feeds = clientFeeds;
+        if (clientFeeds !== undefined) {
+            serverData.feeds = normalizeNewshuntFeeds(clientFeeds);
         }
 
-        // Settings: merge (client wins for each key)
-        if (clientSettings && typeof clientSettings === 'object') {
-            serverData.settings = { ...serverData.settings, ...clientSettings };
+        if (clientArticles !== undefined) {
+            serverData.articles = normalizeNewshuntArticles(clientArticles);
         }
 
-        await writeNewshuntData(serverData);
-        res.json(serverData);
+        const savedData = await writeNewshuntData(serverData);
+        res.json(normalizeNewshuntData(savedData));
     } catch (error) {
         console.error('Error in POST /api/newshunt/sync:', error);
         res.status(500).json({ error: 'Failed to save sync data' });
@@ -849,7 +928,6 @@ app.post('/api/newshunt/settings', async (req, res) => {
 
         const data = await readNewshuntData();
         data.settings[key] = value;
-        data.markModified('settings');
         await writeNewshuntData(data);
         res.json({ ok: true });
     } catch (error) {
@@ -865,15 +943,14 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
         if (!guid) return res.status(400).json({ error: 'guid is required' });
 
         const data = await readNewshuntData();
-        const article = data.articles.get(guid);
+        const article = data.articles[guid];
         if (!article) {
-            data.articles.set(guid, { isRead: true, readAt: Date.now() });
+            data.articles[guid] = { guid, isRead: true, readAt: Date.now() };
         } else {
             article.isRead = true;
             article.readAt = article.readAt || Date.now();
-            data.articles.set(guid, article);
+            data.articles[guid] = article;
         }
-        data.markModified('articles');
         await writeNewshuntData(data);
         res.json({ ok: true });
     } catch (error) {
@@ -883,6 +960,19 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
 });
 
 // POST /api/newshunt/feeds — save feed subscriptions
+app.post('/api/newshunt/feeds', async (req, res) => {
+    try {
+        const { feeds } = req.body;
+        const data = await readNewshuntData();
+        data.feeds = normalizeNewshuntFeeds(feeds);
+        await writeNewshuntData(data);
+        res.json({ ok: true, count: data.feeds.length });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/feeds:', error);
+        res.status(500).json({ error: 'Failed to save feeds' });
+    }
+});
+
 // --- APIs (Quick Notes with MongoDB) ---
 
 app.get('/api/quicknotes', async (req, res) => {

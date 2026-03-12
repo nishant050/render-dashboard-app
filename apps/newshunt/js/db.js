@@ -1,13 +1,18 @@
 // ============================================
-// NewsHunt — IndexedDB Data Layer
+// NewsHunt - IndexedDB Data Layer
 // ============================================
 
 const DB_NAME = 'newshunt_db';
 const DB_VERSION = 1;
+const SERVER_SYNC_DEBOUNCE_MS = 500;
 
 class NewsHuntDB {
   constructor() {
     this.db = null;
+    this.isApplyingServerState = false;
+    this.syncTimer = null;
+    this.syncInFlight = null;
+    this.pendingSync = false;
   }
 
   async init() {
@@ -17,12 +22,10 @@ class NewsHuntDB {
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
 
-        // Feeds store
         if (!db.objectStoreNames.contains('feeds')) {
           db.createObjectStore('feeds', { keyPath: 'url' });
         }
 
-        // Articles store
         if (!db.objectStoreNames.contains('articles')) {
           const articleStore = db.createObjectStore('articles', { keyPath: 'guid' });
           articleStore.createIndex('feedUrl', 'feedUrl', { unique: false });
@@ -31,18 +34,15 @@ class NewsHuntDB {
           articleStore.createIndex('dateAdded', 'dateAdded', { unique: false });
         }
 
-        // Settings store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
 
-        // Chat history store
         if (!db.objectStoreNames.contains('chat_history')) {
           const chatStore = db.createObjectStore('chat_history', { keyPath: 'id', autoIncrement: true });
           chatStore.createIndex('articleGuid', 'articleGuid', { unique: false });
         }
 
-        // AI-rewritten content cache
         if (!db.objectStoreNames.contains('article_content')) {
           db.createObjectStore('article_content', { keyPath: 'guid' });
         }
@@ -73,17 +73,72 @@ class NewsHuntDB {
     });
   }
 
+  _queueServerSync(delay = SERVER_SYNC_DEBOUNCE_MS) {
+    if (this.isApplyingServerState) return;
+
+    this.pendingSync = true;
+    if (this.syncTimer) clearTimeout(this.syncTimer);
+
+    this.syncTimer = setTimeout(() => {
+      this.syncTimer = null;
+      this.syncToServer();
+    }, delay);
+  }
+
+  async _replaceStore(storeName, records) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+
+      store.clear();
+      records.forEach(record => store.put(record));
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error(`Failed to replace ${storeName}`));
+    });
+  }
+
+  async _clearStore(storeName) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error(`Failed to clear ${storeName}`));
+    });
+  }
+
+  async _buildSyncPayload() {
+    const articles = await this.getAllArticles();
+    const feeds = await this.getAllFeeds();
+    const settings = await this.getAllSettings();
+    const articleMap = {};
+
+    articles.forEach(article => {
+      if (article?.guid) {
+        articleMap[article.guid] = article;
+      }
+    });
+
+    return { articles: articleMap, feeds, settings };
+  }
+
   // ============================================
   // Feeds
   // ============================================
-  async addFeed(url, name = '') {
+  async addFeed(url, name = '', options = {}) {
     const store = this._tx('feeds', 'readwrite');
-    return this._request(store, 'put', { url, name, addedAt: Date.now() });
+    const result = await this._request(store, 'put', { url, name, addedAt: Date.now() });
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
-  async removeFeed(url) {
+  async removeFeed(url, options = {}) {
     const store = this._tx('feeds', 'readwrite');
-    return this._request(store, 'delete', url);
+    const result = await this._request(store, 'delete', url);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
   async getAllFeeds() {
@@ -94,18 +149,26 @@ class NewsHuntDB {
   // ============================================
   // Articles
   // ============================================
-  async addArticle(article) {
+  async addArticle(article, options = {}) {
     const store = this._tx('articles', 'readwrite');
-    return this._request(store, 'put', article);
+    const result = await this._request(store, 'put', article);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
-  async addArticles(articles) {
+  async addArticles(articles, options = {}) {
+    if (!Array.isArray(articles) || articles.length === 0) return;
+
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('articles', 'readwrite');
       const store = tx.objectStore('articles');
-      articles.forEach(a => store.put(a));
-      tx.oncomplete = () => resolve();
+      articles.forEach(article => store.put(article));
+      tx.oncomplete = () => {
+        if (!options.skipSync) this._queueServerSync();
+        resolve();
+      };
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Failed to add articles'));
     });
   }
 
@@ -121,102 +184,127 @@ class NewsHuntDB {
 
   async getUnreadArticles() {
     const articles = await this.getAllArticles();
-    return articles.filter(a => !a.isRead);
+    return articles.filter(article => !article.isRead);
   }
 
   async getReadArticles() {
     const articles = await this.getAllArticles();
-    return articles.filter(a => a.isRead);
+    return articles.filter(article => article.isRead);
   }
 
   async getArticlesByStars(stars) {
     const articles = await this.getAllArticles();
-    return articles.filter(a => a.stars === stars && !a.isRead);
+    return articles.filter(article => article.stars === stars && !article.isRead);
   }
 
   async getUncategorizedArticles() {
     const articles = await this.getAllArticles();
-    return articles.filter(a => a.stars === undefined || a.stars === null);
+    return articles.filter(article => article.stars === undefined || article.stars === null);
   }
 
-  async markRead(guid) {
+  async markRead(guid, options = {}) {
     const article = await this.getArticle(guid);
-    if (article) {
-      article.isRead = true;
-      article.readAt = Date.now();
-      const store = this._tx('articles', 'readwrite');
-      return this._request(store, 'put', article);
-    }
+    if (!article) return null;
+
+    article.isRead = true;
+    article.readAt = Date.now();
+    const store = this._tx('articles', 'readwrite');
+    const result = await this._request(store, 'put', article);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
-  async updateArticleStars(guid, stars, reason) {
+  async updateArticleStars(guid, stars, reason, options = {}) {
     const article = await this.getArticle(guid);
-    if (article) {
-      article.stars = stars;
-      article.ratingReason = reason;
-      article.ratedAt = Date.now();
-      const store = this._tx('articles', 'readwrite');
-      return this._request(store, 'put', article);
-    }
+    if (!article) return null;
+
+    article.stars = stars;
+    article.ratingReason = reason;
+    article.ratedAt = Date.now();
+    const store = this._tx('articles', 'readwrite');
+    const result = await this._request(store, 'put', article);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
-  async resetAllRatings() {
+  async resetAllRatings(options = {}) {
     const articles = await this.getAllArticles();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('articles', 'readwrite');
       const store = tx.objectStore('articles');
-      articles.forEach(a => {
-        a.stars = null;
-        a.ratingReason = null;
-        a.ratedAt = null;
-        store.put(a);
+
+      articles.forEach(article => {
+        article.stars = null;
+        article.ratingReason = null;
+        article.ratedAt = null;
+        store.put(article);
       });
-      tx.oncomplete = () => resolve();
+
+      tx.oncomplete = () => {
+        if (!options.skipSync) this._queueServerSync();
+        resolve();
+      };
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Failed to reset ratings'));
     });
   }
 
-  async deleteArticlesByFeed(feedUrl) {
+  async deleteArticlesByFeed(feedUrl, options = {}) {
     const articles = await this.getAllArticles();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('articles', 'readwrite');
       const store = tx.objectStore('articles');
-      articles.filter(a => a.feedUrl === feedUrl).forEach(a => store.delete(a.guid));
-      tx.oncomplete = () => resolve();
+
+      articles
+        .filter(article => article.feedUrl === feedUrl)
+        .forEach(article => store.delete(article.guid));
+
+      tx.oncomplete = () => {
+        if (!options.skipSync) this._queueServerSync();
+        resolve();
+      };
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Failed to delete feed articles'));
     });
   }
 
-  // Auto-purge articles older than maxAgeDays
-  async purgeOldArticles(maxAgeDays = 3) {
+  async purgeOldArticles(maxAgeDays = 3, options = {}) {
     const articles = await this.getAllArticles();
     const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
-    const old = articles.filter(a => {
-      const date = new Date(a.pubDate || a.dateAdded || 0).getTime();
-      return date < cutoff;
+    const oldArticles = articles.filter(article => {
+      const articleDate = new Date(article.pubDate || article.dateAdded || 0).getTime();
+      return articleDate < cutoff;
     });
 
-    if (old.length === 0) return 0;
+    if (oldArticles.length === 0) return 0;
 
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['articles', 'article_content'], 'readwrite');
       const articleStore = tx.objectStore('articles');
       const contentStore = tx.objectStore('article_content');
-      old.forEach(a => {
-        articleStore.delete(a.guid);
-        contentStore.delete(a.guid);
+
+      oldArticles.forEach(article => {
+        articleStore.delete(article.guid);
+        contentStore.delete(article.guid);
       });
-      tx.oncomplete = () => resolve(old.length);
+
+      tx.oncomplete = () => {
+        if (!options.skipSync) this._queueServerSync();
+        resolve(oldArticles.length);
+      };
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Failed to purge old articles'));
     });
   }
 
   // ============================================
   // Settings
   // ============================================
-  async setSetting(key, value) {
+  async setSetting(key, value, options = {}) {
     const store = this._tx('settings', 'readwrite');
-    return this._request(store, 'put', { key, value });
+    const result = await this._request(store, 'put', { key, value });
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
   async getSetting(key) {
@@ -229,7 +317,9 @@ class NewsHuntDB {
     const store = this._tx('settings');
     const items = await this._request(store, 'getAll');
     const settings = {};
-    items.forEach(item => { settings[item.key] = item.value; });
+    items.forEach(item => {
+      settings[item.key] = item.value;
+    });
     return settings;
   }
 
@@ -266,95 +356,117 @@ class NewsHuntDB {
     return result ? result.content : null;
   }
 
-  // ============================================
-  // Article Grouping & Topics
-  // ============================================
-  async updateArticleGroup(guid, groupId, isPrimary, groupLabel, relatedCount) {
-    const article = await this.getArticle(guid);
-    if (article) {
-      article.groupId = groupId;
-      article.isGroupPrimary = isPrimary;
-      article.groupLabel = groupLabel;
-      article.relatedCount = relatedCount || 0;
-      const store = this._tx('articles', 'readwrite');
-      return this._request(store, 'put', article);
-    }
+  async clearArticleContent() {
+    await this._clearStore('article_content');
   }
 
-  async updateArticleTopics(guid, topics) {
+  // ============================================
+  // Article Grouping and Topics
+  // ============================================
+  async updateArticleGroup(guid, groupId, isPrimary, groupLabel, relatedCount, options = {}) {
     const article = await this.getArticle(guid);
-    if (article) {
-      article.topics = topics;
-      const store = this._tx('articles', 'readwrite');
-      return this._request(store, 'put', article);
-    }
+    if (!article) return null;
+
+    article.groupId = groupId;
+    article.isGroupPrimary = isPrimary;
+    article.groupLabel = groupLabel;
+    article.relatedCount = relatedCount || 0;
+
+    const store = this._tx('articles', 'readwrite');
+    const result = await this._request(store, 'put', article);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
+  }
+
+  async updateArticleTopics(guid, topics, options = {}) {
+    const article = await this.getArticle(guid);
+    if (!article) return null;
+
+    article.topics = topics;
+
+    const store = this._tx('articles', 'readwrite');
+    const result = await this._request(store, 'put', article);
+    if (!options.skipSync) this._queueServerSync();
+    return result;
   }
 
   async getAllTopics() {
     const articles = await this.getAllArticles();
     const topicMap = {};
-    articles.forEach(a => {
-      if (a.topics && a.topics.length > 0) {
-        a.topics.forEach(t => {
-          if (!topicMap[t]) topicMap[t] = { name: t, count: 0, articles: [] };
-          topicMap[t].count++;
-          topicMap[t].articles.push(a);
-        });
-      }
+
+    articles.forEach(article => {
+      if (!article.topics || article.topics.length === 0) return;
+
+      article.topics.forEach(topic => {
+        if (!topicMap[topic]) topicMap[topic] = { name: topic, count: 0, articles: [] };
+        topicMap[topic].count++;
+        topicMap[topic].articles.push(article);
+      });
     });
+
     return Object.values(topicMap).sort((a, b) => b.count - a.count);
   }
 
   async getArticlesByTopic(topicName) {
     const articles = await this.getAllArticles();
-    return articles.filter(a => a.topics && a.topics.includes(topicName));
+    return articles.filter(article => article.topics && article.topics.includes(topicName));
   }
 
   async getGroupedArticles(groupId) {
     const articles = await this.getAllArticles();
-    return articles.filter(a => a.groupId === groupId && !a.isGroupPrimary);
+    return articles.filter(article => article.groupId === groupId && !article.isGroupPrimary);
+  }
+
+  async clearAllData(options = {}) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['feeds', 'articles', 'settings', 'chat_history', 'article_content'], 'readwrite');
+      ['feeds', 'articles', 'settings', 'chat_history', 'article_content'].forEach(storeName => {
+        tx.objectStore(storeName).clear();
+      });
+
+      tx.oncomplete = () => {
+        if (!options.skipSync) this._queueServerSync();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Failed to clear local data'));
+    });
   }
 
   // ============================================
   // Server Sync
   // ============================================
-
-  /**
-   * Load API keys from server environment variables (Render secrets).
-   * These are set once on Render and available on every device.
-   */
   async loadEnvApiKeys() {
     try {
       const response = await fetch('/api/newshunt/ai-config');
       if (!response.ok) return;
       const envKeys = await response.json();
 
-      // Store env keys locally so AI module can use them
       if (envKeys.groq) {
-        await this.setSetting('api_key_groq', envKeys.groq);
-        // Set as active if no provider configured yet
+        await this.setSetting('api_key_groq', envKeys.groq, { skipSync: true });
         const currentProvider = await this.getSetting('ai_provider');
         if (!currentProvider) {
-          await this.setSetting('ai_provider', 'groq');
-          await this.setSetting('ai_api_key', envKeys.groq);
-        }
-      }
-      if (envKeys.openrouter) {
-        await this.setSetting('api_key_openrouter', envKeys.openrouter);
-      }
-      if (envKeys.gemini) {
-        await this.setSetting('api_key_gemini', envKeys.gemini);
-        const currentProvider = await this.getSetting('ai_provider');
-        if (!currentProvider) {
-          await this.setSetting('ai_provider', 'gemini');
-          await this.setSetting('ai_api_key', envKeys.gemini);
+          await this.setSetting('ai_provider', 'groq', { skipSync: true });
+          await this.setSetting('ai_api_key', envKeys.groq, { skipSync: true });
         }
       }
 
-      // Make sure the active provider's key is set
+      if (envKeys.openrouter) {
+        await this.setSetting('api_key_openrouter', envKeys.openrouter, { skipSync: true });
+      }
+
+      if (envKeys.gemini) {
+        await this.setSetting('api_key_gemini', envKeys.gemini, { skipSync: true });
+        const currentProvider = await this.getSetting('ai_provider');
+        if (!currentProvider) {
+          await this.setSetting('ai_provider', 'gemini', { skipSync: true });
+          await this.setSetting('ai_api_key', envKeys.gemini, { skipSync: true });
+        }
+      }
+
       const provider = await this.getSetting('ai_provider');
       if (provider && envKeys[provider]) {
-        await this.setSetting('ai_api_key', envKeys[provider]);
+        await this.setSetting('ai_api_key', envKeys[provider], { skipSync: true });
       }
 
       console.log('[Sync] Loaded API keys from server env vars');
@@ -363,147 +475,114 @@ class NewsHuntDB {
     }
   }
 
-  /**
-   * Pull state from server and load into local IndexedDB.
-   * For true Zero-Config deployment, the SERVER is the absolute SOURCE OF TRUTH.
-   * This completely overrides local settings and feeds.
-   * Articles are merged (keeping whichever state is more advanced).
-   */
   async syncFromServer() {
     try {
       const response = await fetch('/api/newshunt/sync');
       if (!response.ok) return false;
+
       const serverData = await response.json();
+      const settings = serverData.settings && typeof serverData.settings === 'object'
+        ? Object.entries(serverData.settings).map(([key, value]) => ({ key, value }))
+        : [];
+      const feeds = Array.isArray(serverData.feeds) ? serverData.feeds : [];
+      const articles = serverData.articles && typeof serverData.articles === 'object'
+        ? Object.entries(serverData.articles).map(([guid, article]) => ({
+          ...article,
+          guid: article.guid || guid,
+          dateAdded: article.dateAdded || new Date().toISOString()
+        }))
+        : [];
 
-      // 1. Settings: Server completely overwrites local
-      if (serverData.settings && typeof serverData.settings === 'object') {
-        for (const [key, value] of Object.entries(serverData.settings)) {
-          await this.setSetting(key, value);
-        }
-      }
+      this.isApplyingServerState = true;
+      await this._replaceStore('settings', settings);
+      await this._replaceStore('feeds', feeds);
+      await this._replaceStore('articles', articles);
 
-      // 2. Feeds: Server completely overwrites local
-      if (Array.isArray(serverData.feeds)) {
-        // Clear existing feeds (safely)
-        const localFeeds = await this.getAllFeeds();
-        for (const f of localFeeds) {
-          await this.removeFeed(f.url);
-        }
-        // Insert server feeds
-        for (const feed of serverData.feeds) {
-          await this.addFeed(feed.url, feed.name || '');
-        }
-      }
-
-      // 3. Articles: Inject full article objects from server, merge states
-      if (serverData.articles && typeof serverData.articles === 'object') {
-        for (const [guid, serverArticle] of Object.entries(serverData.articles)) {
-          const localArticle = await this.getArticle(guid);
-
-          if (!localArticle) {
-            // New article from server — strictly inject it
-            // Ensure mandatory fields exist just in case
-            serverArticle.guid = serverArticle.guid || guid;
-            serverArticle.dateAdded = serverArticle.dateAdded || new Date().toISOString();
-            await this.addArticle(serverArticle);
-          } else {
-            // Merge states: server read vs local read
-            let changed = false;
-            if (serverArticle.isRead && !localArticle.isRead) {
-              localArticle.isRead = true;
-              localArticle.readAt = serverArticle.readAt || Date.now();
-              changed = true;
-            }
-            if (serverArticle.ratedAt && (!localArticle.ratedAt || serverArticle.ratedAt > localArticle.ratedAt)) {
-              localArticle.stars = serverArticle.stars;
-              localArticle.ratingReason = serverArticle.ratingReason;
-              localArticle.ratedAt = serverArticle.ratedAt;
-              changed = true;
-            }
-            if (changed) {
-              await this.addArticle(localArticle);
-            }
-          }
-        }
-      }
-
-      console.log('[Sync] Pulled complete state from server (Zero-Config Bootstrap)');
+      console.log('[Sync] Pulled complete state from server');
       return true;
     } catch (error) {
       console.warn('[Sync] Failed to pull from server (offline?):', error.message);
       return false;
+    } finally {
+      this.isApplyingServerState = false;
     }
   }
 
-  /**
-   * Push local article state, feeds, and ALL settings to server.
-   * Since the server now holds full article objects, we push the actual articles.
-   */
   async syncToServer() {
-    try {
-      const articles = await this.getAllArticles();
-      const articleMap = {};
+    if (this.isApplyingServerState) return false;
 
-      // We push the FULL article object to the server now, so every device has access to it
-      for (const a of articles) {
-        articleMap[a.guid] = a;
+    if (this.syncTimer) {
+      clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+    }
+
+    if (this.syncInFlight) {
+      this.pendingSync = true;
+      return this.syncInFlight;
+    }
+
+    this.pendingSync = false;
+
+    const syncJob = (async () => {
+      const payload = await this._buildSyncPayload();
+      const response = await fetch('/api/newshunt/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`);
       }
 
-      const feeds = await this.getAllFeeds();
-      const allSettings = await this.getAllSettings();
-
-      await fetch('/api/newshunt/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articles: articleMap, feeds, settings: allSettings })
-      });
-
       console.log('[Sync] Pushed complete state to server');
+      return true;
+    })();
+
+    this.syncInFlight = syncJob;
+
+    try {
+      return await syncJob;
     } catch (error) {
       console.warn('[Sync] Failed to push to server (offline?):', error.message);
+      this.pendingSync = true;
+      if (!this.syncTimer) this._queueServerSync(5000);
+      return false;
+    } finally {
+      this.syncInFlight = null;
+      if (this.pendingSync && !this.syncTimer && !this.isApplyingServerState) {
+        this._queueServerSync();
+      }
     }
   }
 
-  /**
-   * Push a single setting to the server immediately.
-   */
   async syncSetting(key, value) {
-    fetch('/api/newshunt/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value })
-    }).catch(err => console.warn('[Sync] Setting sync failed:', err.message));
-  }
-
-  /**
-   * Mark read locally AND fire a quick server call.
-   */
-  async markReadAndSync(guid) {
-    await this.markRead(guid);
-    fetch('/api/newshunt/mark-read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ guid })
-    }).catch(err => console.warn('[Sync] mark-read failed:', err.message));
-  }
-
-  /**
-   * Save feed list to server.
-   */
-  async syncFeeds() {
     try {
-      const feeds = await this.getAllFeeds();
-      await fetch('/api/newshunt/feeds', {
+      const response = await fetch('/api/newshunt/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ feeds })
+        body: JSON.stringify({ key, value })
       });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`);
+      }
     } catch (error) {
-      console.warn('[Sync] Failed to sync feeds:', error.message);
+      console.warn('[Sync] Setting sync failed:', error.message);
+      this._queueServerSync();
     }
+  }
+
+  async markReadAndSync(guid) {
+    await this.markRead(guid, { skipSync: true });
+    this.syncToServer();
+    return true;
+  }
+
+  async syncFeeds() {
+    return this.syncToServer();
   }
 }
 
 // Global instance
 const db = new NewsHuntDB();
-
