@@ -1,27 +1,32 @@
-const STORAGE_KEY = 'quicknotes_v1';
-
-function saveNotes(notes) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+async function saveNotes(notes) {
+    // This is no longer used for bulk saving in the new API
+    // but we keep the signature if needed for migration
 }
 
-function loadNotes() {
+async function loadNotes() {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY) || '[]';
-        return JSON.parse(raw);
+        const response = await fetch('/api/quicknotes');
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
     } catch (e) {
+        console.error('Failed to load notes:', e);
         return [];
     }
 }
 
-function renderNotes() {
+async function renderNotes() {
     const list = document.getElementById('notes-list');
+    list.innerHTML = '<div class="note-card">Loading notes...</div>';
+    
+    const notes = await loadNotes();
     list.innerHTML = '';
-    const notes = loadNotes().slice().reverse();
+    
     if (!notes.length) {
         list.innerHTML = '<div class="note-card">No notes yet — write something!</div>';
         return;
     }
-    notes.forEach((n, idx) => {
+    
+    notes.forEach((n) => {
         const el = document.createElement('div');
         el.className = 'note-card';
         const meta = document.createElement('div');
@@ -41,7 +46,7 @@ function renderNotes() {
         actions.style.marginTop = '0.5rem';
         const del = document.createElement('button');
         del.textContent = 'Delete';
-        del.onclick = () => deleteNote(notes.length - 1 - idx);
+        del.onclick = () => deleteNote(n._id);
         actions.appendChild(del);
 
         el.appendChild(meta);
@@ -51,25 +56,37 @@ function renderNotes() {
     });
 }
 
-function addNote(title, content) {
-    const notes = loadNotes();
-    notes.push({ title, content, createdAt: Date.now() });
-    saveNotes(notes);
-    renderNotes();
+async function addNote(title, content) {
+    try {
+        await fetch('/api/quicknotes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, content })
+        });
+        await renderNotes();
+    } catch (e) {
+        alert('Failed to add note');
+    }
 }
 
-function deleteNote(index) {
-    const notes = loadNotes();
-    if (index < 0 || index >= notes.length) return;
-    notes.splice(index, 1);
-    saveNotes(notes);
-    renderNotes();
+async function deleteNote(id) {
+    if (!id) return;
+    try {
+        await fetch(`/api/quicknotes/${id}`, { method: 'DELETE' });
+        await renderNotes();
+    } catch (e) {
+        alert('Failed to delete note');
+    }
 }
 
-function clearAll() {
+async function clearAll() {
     if (!confirm('Clear all notes?')) return;
-    saveNotes([]);
-    renderNotes();
+    try {
+        await fetch('/api/quicknotes', { method: 'DELETE' });
+        await renderNotes();
+    } catch (e) {
+        alert('Failed to clear notes');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -77,11 +94,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const newBtn = document.getElementById('new-note-btn');
     const clearBtn = document.getElementById('clear-all-btn');
 
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
         const title = document.getElementById('note-title').value.trim();
         const content = document.getElementById('note-content').value.trim();
         if (!content) return alert('Please enter some content for the note.');
-        addNote(title, content);
+        
+        saveBtn.disabled = true;
+        await addNote(title, content);
+        saveBtn.disabled = false;
+        
         document.getElementById('note-content').value = '';
         document.getElementById('note-title').value = '';
     });

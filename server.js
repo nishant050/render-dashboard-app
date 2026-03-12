@@ -10,6 +10,44 @@ const https = require('https');
 const { spawn } = require('child_process');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
+const mongoose = require('mongoose');
+
+// --- MongoDB Configuration ---
+const MONGO_URI = 'mongodb+srv://admin:admin123@diet-plan.42f6xm7.mongodb.net/render-dashboard?appName=render-dashboard';
+mongoose.connect(MONGO_URI)
+    .then(() => console.log('Connected to MongoDB (render-dashboard)'))
+    .catch(err => console.error('MongoDB connection error:', err));
+
+// --- Schemas & Models ---
+
+// Chemistry Schedule
+const chemistryScheduleSchema = new mongoose.Schema({
+    id: Number,
+    dates: String,
+    topics: String
+});
+const ChemistrySchedule = mongoose.model('ChemistrySchedule', chemistryScheduleSchema);
+
+const chemistryProgressSchema = new mongoose.Schema({
+    data: Object // Map of id -> status
+}, { timestamps: true });
+const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressSchema);
+
+// NewsHunt
+const newsHuntSchema = new mongoose.Schema({
+    settings: { type: Object, default: {} },
+    feeds: { type: Array, default: [] },
+    articles: { type: Map, of: Object, default: {} }
+}, { timestamps: true });
+const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
+
+// QuickNotes
+const quickNoteSchema = new mongoose.Schema({
+    title: String,
+    content: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
 // Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
 // Default to user-provided key if not set, will fall back to manual links
@@ -545,12 +583,16 @@ const defaultChemistrySchedule = [
 
 app.get('/api/chemistry/schedule', async (req, res) => {
     try {
-        let schedule = defaultChemistrySchedule;
-        if (fs.existsSync(chemistrySchedulePath)) {
-            schedule = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
-        } else {
-            // Seed it
-            await fsPromises.writeFile(chemistrySchedulePath, JSON.stringify(defaultChemistrySchedule, null, 2), 'utf-8');
+        let schedule = await ChemistrySchedule.find().sort({ id: 1 });
+        if (schedule.length === 0) {
+            // Seed from file if exists, or use default
+            console.log('Seeding Chemistry Schedule from JSON...');
+            let initialData = defaultChemistrySchedule;
+            if (fs.existsSync(chemistrySchedulePath)) {
+                initialData = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
+            }
+            await ChemistrySchedule.insertMany(initialData);
+            schedule = await ChemistrySchedule.find().sort({ id: 1 });
         }
         res.json(schedule);
     } catch (error) {
@@ -563,7 +605,11 @@ app.post('/api/chemistry/schedule', async (req, res) => {
     try {
         const schedule = req.body;
         if (!Array.isArray(schedule)) return res.status(400).json({ error: 'Schedule must be an array' });
-        await fsPromises.writeFile(chemistrySchedulePath, JSON.stringify(schedule, null, 2), 'utf-8');
+        
+        // Replace all
+        await ChemistrySchedule.deleteMany({});
+        await ChemistrySchedule.insertMany(schedule);
+        
         res.json({ message: 'Schedule updated successfully' });
     } catch (error) {
         console.error('Error saving chemistry schedule:', error);
@@ -573,11 +619,16 @@ app.post('/api/chemistry/schedule', async (req, res) => {
 
 app.get('/api/chemistry/progress', async (req, res) => {
     try {
-        let progress = {};
-        if (fs.existsSync(chemistryProgressPath)) {
-            progress = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
+        let progressDoc = await ChemistryProgress.findOne().sort({ createdAt: -1 });
+        if (!progressDoc) {
+             if (fs.existsSync(chemistryProgressPath)) {
+                const data = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
+                progressDoc = await ChemistryProgress.create({ data });
+            } else {
+                progressDoc = { data: {} };
+            }
         }
-        res.json(progress);
+        res.json(progressDoc.data || {});
     } catch (error) {
         console.error('Error reading chemistry progress:', error);
         res.status(500).json({ error: 'Failed to load progress' });
@@ -586,8 +637,15 @@ app.get('/api/chemistry/progress', async (req, res) => {
 
 app.post('/api/chemistry/progress', async (req, res) => {
     try {
-        const progress = req.body;
-        await fsPromises.writeFile(chemistryProgressPath, JSON.stringify(progress, null, 2), 'utf-8');
+        const progressData = req.body;
+        // Update or create the latest progress doc
+        const lastDoc = await ChemistryProgress.findOne().sort({ createdAt: -1 });
+        if (lastDoc) {
+            lastDoc.data = progressData;
+            await lastDoc.save();
+        } else {
+            await ChemistryProgress.create({ data: progressData });
+        }
         res.json({ message: 'Progress updated successfully' });
     } catch (error) {
         console.error('Error saving chemistry progress:', error);
@@ -648,17 +706,26 @@ const NEWSHUNT_DATA_PATH = path.join(__dirname, 'newshunt_data.json');
 
 const readNewshuntData = async () => {
     try {
-        if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
-            return JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
+        let data = await NewsHuntData.findOne();
+        if (!data) {
+            // Seed from file if exists
+            console.log('Seeding NewsHunt data from JSON...');
+            if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
+                const jsonData = JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
+                data = await NewsHuntData.create(jsonData);
+            } else {
+                data = await NewsHuntData.create({ articles: {}, feeds: [], settings: {} });
+            }
         }
+        return data;
     } catch (e) {
         console.error('Error reading newshunt data:', e);
+        return { articles: new Map(), feeds: [], settings: {} };
     }
-    return { articles: {}, feeds: [], settings: {} };
 };
 
 const writeNewshuntData = async (data) => {
-    await fsPromises.writeFile(NEWSHUNT_DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    await data.save();
 };
 
 // GET /api/newshunt/ai-config — provide API keys from environment variables
@@ -738,9 +805,9 @@ app.post('/api/newshunt/sync', async (req, res) => {
         // Stars use last-writer-wins via ratedAt timestamp.
         if (clientArticles && typeof clientArticles === 'object') {
             for (const [guid, clientState] of Object.entries(clientArticles)) {
-                const serverState = serverData.articles[guid];
+                const serverState = serverData.articles.get(guid);
                 if (!serverState) {
-                    serverData.articles[guid] = clientState;
+                    serverData.articles.set(guid, clientState);
                 } else {
                     if (clientState.isRead) {
                         serverState.isRead = true;
@@ -751,6 +818,7 @@ app.post('/api/newshunt/sync', async (req, res) => {
                         serverState.ratingReason = clientState.ratingReason;
                         serverState.ratedAt = clientState.ratedAt;
                     }
+                    serverData.articles.set(guid, serverState);
                 }
             }
         }
@@ -781,6 +849,7 @@ app.post('/api/newshunt/settings', async (req, res) => {
 
         const data = await readNewshuntData();
         data.settings[key] = value;
+        data.markModified('settings');
         await writeNewshuntData(data);
         res.json({ ok: true });
     } catch (error) {
@@ -796,12 +865,15 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
         if (!guid) return res.status(400).json({ error: 'guid is required' });
 
         const data = await readNewshuntData();
-        if (!data.articles[guid]) {
-            data.articles[guid] = { isRead: true, readAt: Date.now() };
+        const article = data.articles.get(guid);
+        if (!article) {
+            data.articles.set(guid, { isRead: true, readAt: Date.now() });
         } else {
-            data.articles[guid].isRead = true;
-            data.articles[guid].readAt = data.articles[guid].readAt || Date.now();
+            article.isRead = true;
+            article.readAt = article.readAt || Date.now();
+            data.articles.set(guid, article);
         }
+        data.markModified('articles');
         await writeNewshuntData(data);
         res.json({ ok: true });
     } catch (error) {
@@ -811,18 +883,42 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
 });
 
 // POST /api/newshunt/feeds — save feed subscriptions
-app.post('/api/newshunt/feeds', async (req, res) => {
-    try {
-        const { feeds } = req.body;
-        if (!Array.isArray(feeds)) return res.status(400).json({ error: 'feeds array is required' });
+// --- APIs (Quick Notes with MongoDB) ---
 
-        const data = await readNewshuntData();
-        data.feeds = feeds;
-        await writeNewshuntData(data);
+app.get('/api/quicknotes', async (req, res) => {
+    try {
+        const notes = await QuickNote.find().sort({ createdAt: -1 });
+        res.json(notes);
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to load notes' });
+    }
+});
+
+app.post('/api/quicknotes', async (req, res) => {
+    try {
+        const { title, content } = req.body;
+        const note = await QuickNote.create({ title, content });
+        res.status(201).json(note);
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to create note' });
+    }
+});
+
+app.delete('/api/quicknotes/:id', async (req, res) => {
+    try {
+        await QuickNote.findByIdAndDelete(req.params.id);
         res.json({ ok: true });
-    } catch (error) {
-        console.error('Error in POST /api/newshunt/feeds:', error);
-        res.status(500).json({ error: 'Failed to save feeds' });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to delete note' });
+    }
+});
+
+app.delete('/api/quicknotes', async (req, res) => {
+    try {
+        await QuickNote.deleteMany({});
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to clear notes' });
     }
 });
 
