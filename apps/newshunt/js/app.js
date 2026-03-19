@@ -6,6 +6,7 @@ const App = {
     currentView: 'feed',
     currentFilter: '5',
     searchQuery: '',
+    topicSearchQuery: '',
     isRefreshing: false,
 
     // Initialize the application
@@ -341,6 +342,12 @@ const App = {
             // Push state to server for cross-device sync
             await db.syncToServer();
 
+            // Auto-categorize new articles silently
+            const configured = await AI.isConfigured();
+            if (configured && newArticles.length > 0) {
+                await this.categorizeNew(true);
+            }
+
         } catch (error) {
             Components.showToast(`Error refreshing feeds: ${error.message}`, 'error');
         } finally {
@@ -354,21 +361,23 @@ const App = {
     },
 
     // Categorize uncategorized articles
-    async categorizeNew() {
+    async categorizeNew(isAuto = false) {
         const configured = await AI.isConfigured();
         if (!configured) {
-            Components.showToast('Please configure AI settings first', 'warning');
-            this.navigate('settings');
+            if (!isAuto) {
+                Components.showToast('Please configure AI settings first', 'warning');
+                this.navigate('settings');
+            }
             return;
         }
 
         const uncategorized = await db.getUncategorizedArticles();
         if (uncategorized.length === 0) {
-            Components.showToast('All articles are already categorized!', 'info');
+            if (!isAuto) Components.showToast('All articles are already categorized!', 'info');
             return;
         }
 
-        Components.showToast(`Categorizing ${uncategorized.length} articles...`, 'info');
+        if (!isAuto) Components.showToast(`Categorizing ${uncategorized.length} articles...`, 'info');
 
         try {
             // PASS 1: Star ratings
@@ -391,8 +400,16 @@ const App = {
             Components.showToast(`Done! Grouped ${groupResult.grouped} duplicates, tagged ${groupResult.tagged} articles`, 'success');
             await this.renderFeedView();
 
+            // PASS 3: Merge similar/duplicate topics globally
+            if (!isAuto) Components.showToast('Merging redundant topics...', 'info');
+            const topicMergeResult = await Categorizer.groupSimilarTopics();
+            if (topicMergeResult && topicMergeResult.merged > 0) {
+                if (!isAuto) Components.showToast(`Merged ${topicMergeResult.merged} topics.`, 'success');
+                if (this.currentView === 'topics') await this.renderTopicsView();
+            }
+
         } catch (error) {
-            Components.showToast(`Categorization error: ${error.message}`, 'error');
+            if (!isAuto) Components.showToast(`Categorization error: ${error.message}`, 'error');
         }
     },
 
@@ -466,37 +483,81 @@ const App = {
             return;
         }
 
-        // Topic cloud
-        const cloud = document.createElement('div');
-        cloud.className = 'topics-cloud';
-        topics.forEach(topic => {
-            const chip = document.createElement('button');
-            chip.className = 'topic-chip' + (this.topicFilter === topic.name ? ' topic-chip--active' : '');
-            chip.innerHTML = `<span class="topic-chip__name">${topic.name}</span><span class="topic-chip__count">${topic.count}</span>`;
-            chip.onclick = () => this.filterByTopic(topic.name);
-            cloud.appendChild(chip);
-        });
+        // Add Search bar and Group Topics button
+        const controlsDiv = document.createElement('div');
+        controlsDiv.className = 'feed-search';
+        controlsDiv.style.marginBottom = 'var(--space-4)';
+        controlsDiv.innerHTML = `
+          <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
+            <div class="search-input-wrapper" style="flex: 1; min-width: 250px;">
+              <span class="search-icon">🔍</span>
+              <input type="text" class="search-input" id="topic-search-input" 
+                placeholder="Search topics..." 
+                value="${Utils.escapeHtml(this.topicSearchQuery)}" 
+                oninput="App.onTopicSearchInput(this.value)">
+              ${this.topicSearchQuery ? '<button class="search-clear" onclick="App.clearTopicSearch()">✕</button>' : ''}
+            </div>
+            <button class="btn btn--secondary" onclick="App.groupTopicsAI()">🤖 Group Similar Topics</button>
+          </div>
+        `;
+        view.appendChild(controlsDiv);
 
-        // Reset button
-        if (this.topicFilter) {
-            const resetBtn = document.createElement('button');
-            resetBtn.className = 'topic-chip topic-chip--reset';
-            resetBtn.textContent = '✕ Clear filter';
-            resetBtn.onclick = () => { this.topicFilter = null; this.renderTopicsView(); };
-            cloud.prepend(resetBtn);
+        let filteredTopics = topics;
+        if (this.topicSearchQuery) {
+            const q = this.topicSearchQuery.toLowerCase();
+            filteredTopics = topics.filter(t => t.name.toLowerCase().includes(q));
         }
 
-        view.appendChild(cloud);
+        if (filteredTopics.length === 0) {
+            view.appendChild(Components.createEmptyState('🔍', 'No Topics Match', 'No topics match your search query'));
+        } else {
+            // Topic cloud
+            const cloud = document.createElement('div');
+            cloud.className = 'topics-cloud';
+            filteredTopics.forEach(topic => {
+                const chip = document.createElement('button');
+                chip.className = 'topic-chip' + (this.topicFilter === topic.name ? ' topic-chip--active' : '');
+                chip.innerHTML = `<span class="topic-chip__name">${topic.name}</span><span class="topic-chip__count">${topic.count}</span>`;
+                chip.onclick = () => this.filterByTopic(topic.name);
+                cloud.appendChild(chip);
+            });
+
+            // Reset button
+            if (this.topicFilter) {
+                const resetBtn = document.createElement('button');
+                resetBtn.className = 'topic-chip topic-chip--reset';
+                resetBtn.textContent = '✕ Clear selection';
+                resetBtn.onclick = () => { this.topicFilter = null; this.renderTopicsView(); };
+                cloud.prepend(resetBtn);
+            }
+
+            view.appendChild(cloud);
+        }
 
         // Show filtered articles if a topic is selected
         if (this.topicFilter) {
             const articles = await db.getArticlesByTopic(this.topicFilter);
             articles.sort((a, b) => (b.stars || 0) - (a.stars || 0));
 
+            const headingWrapper = document.createElement('div');
+            headingWrapper.style.display = 'flex';
+            headingWrapper.style.justifyContent = 'space-between';
+            headingWrapper.style.alignItems = 'center';
+            headingWrapper.style.margin = 'var(--space-6) 0 var(--space-4) 0';
+
             const heading = document.createElement('h2');
             heading.className = 'topics-filter-heading';
+            heading.style.margin = '0';
             heading.textContent = `${this.topicFilter} — ${articles.length} articles`;
-            view.appendChild(heading);
+            
+            const summarizeBtn = document.createElement('button');
+            summarizeBtn.className = 'btn btn--primary';
+            summarizeBtn.innerHTML = '✨ Read AI Summary';
+            summarizeBtn.onclick = () => this.summarizeTopic(this.topicFilter, articles);
+
+            headingWrapper.appendChild(heading);
+            headingWrapper.appendChild(summarizeBtn);
+            view.appendChild(headingWrapper);
 
             const grid = document.createElement('div');
             grid.className = 'article-grid';
@@ -574,6 +635,201 @@ const App = {
     // Toggle mobile sidebar
     toggleSidebar() {
         document.querySelector('.sidebar')?.classList.toggle('sidebar--open');
+    },
+
+    // Topic Search Handlers
+    _topicSearchTimer: null,
+    onTopicSearchInput(value) {
+        clearTimeout(this._topicSearchTimer);
+        this._topicSearchTimer = setTimeout(() => {
+            this.topicSearchQuery = value.trim();
+            this.renderTopicsView().then(() => {
+                const input = document.getElementById('topic-search-input');
+                if (input) {
+                    input.focus();
+                    input.selectionStart = input.selectionEnd = input.value.length;
+                }
+            });
+        }, 250);
+    },
+
+    clearTopicSearch() {
+        this.topicSearchQuery = '';
+        this.renderTopicsView();
+    },
+
+    // Group Similar Topics (Manual trigger)
+    async groupTopicsAI() {
+        Components.showToast('Analyzing and merging redundant topics...', 'info');
+        const res = await Categorizer.groupSimilarTopics();
+        if (res && res.merged > 0) {
+            Components.showToast(`Merged ${res.merged} topics out of ${res.totalProcessed} checked.`, 'success');
+            await this.renderTopicsView();
+        } else {
+            Components.showToast('No redundant topics found to merge.', 'info');
+        }
+    },
+
+    // Summarize a specific topic
+    async summarizeTopic(topicName, articles) {
+        if (!articles || articles.length === 0) return;
+        const configured = await AI.isConfigured();
+        if (!configured) {
+            Components.showToast('Please configure AI settings first', 'warning');
+            return;
+        }
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-content';
+        modal.style.maxWidth = '800px';
+        modal.innerHTML = `
+          <div class="modal-header">
+            <h2>✨ AI Summary: ${topicName}</h2>
+            <button class="btn btn--ghost" onclick="this.closest('.modal-overlay').remove()">✕</button>
+          </div>
+          <div class="reader-content__body" id="topic-summary-content" style="min-height: 200px">
+            <p><span class="spinner" style="display:inline-block; border-color: var(--color-primary); border-top-color: transparent"></span> Generating summary of ${articles.length} articles...</p>
+          </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const contentEl = document.getElementById('topic-summary-content');
+
+        try {
+            // Prepare summary prompt
+            const articlesText = articles.map(a => `- ${a.title}
+  ${Utils.truncate(a.description || '', 200)}`).join('
+
+');
+            const prompt = `You are a professional news analyst. Create a single, cohesive, comprehensive summary of the following articles about the topic "${topicName}". 
+            
+Structure your summary with:
+1. A bold introductory overview.
+2. The key developments and facts.
+3. Different perspectives (if present).
+4. Conclusion / Impact.
+
+Format using Markdown. Do not hallucinate information not present in the excerpts.
+
+ARTICLES:
+${articlesText}`;
+
+            await AI.callStreaming(
+                [
+                    { role: 'system', content: 'You are a news summarization assistant.' },
+                    { role: 'user', content: prompt }
+                ],
+                (chunk, fullContent) => {
+                    contentEl.innerHTML = marked.parse(fullContent);
+                },
+                { temperature: 0.3, max_tokens: 2000 }
+            );
+        } catch (error) {
+            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;
+        }
+    },
+
+    // Topic Search Handlers
+    _topicSearchTimer: null,
+    onTopicSearchInput(value) {
+        clearTimeout(this._topicSearchTimer);
+        this._topicSearchTimer = setTimeout(() => {
+            this.topicSearchQuery = value.trim();
+            this.renderTopicsView().then(() => {
+                const input = document.getElementById('topic-search-input');
+                if (input) {
+                    input.focus();
+                    input.selectionStart = input.selectionEnd = input.value.length;
+                }
+            });
+        }, 250);
+    },
+
+    clearTopicSearch() {
+        this.topicSearchQuery = '';
+        this.renderTopicsView();
+    },
+
+    // Group Similar Topics (Manual trigger)
+    async groupTopicsAI() {
+        Components.showToast('Analyzing and merging redundant topics...', 'info');
+        const res = await Categorizer.groupSimilarTopics();
+        if (res && res.merged > 0) {
+            Components.showToast(`Merged ${res.merged} topics out of ${res.totalProcessed} checked.`, 'success');
+            await this.renderTopicsView();
+        } else {
+            Components.showToast('No redundant topics found to merge.', 'info');
+        }
+    },
+
+    // Summarize a specific topic
+    async summarizeTopic(topicName, articles) {
+        if (!articles || articles.length === 0) return;
+        const configured = await AI.isConfigured();
+        if (!configured) {
+            Components.showToast('Please configure AI settings first', 'warning');
+            return;
+        }
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-content';
+        modal.style.maxWidth = '800px';
+        modal.innerHTML = `
+          <div class="modal-header">
+            <h2>✨ AI Summary: ${topicName}</h2>
+            <button class="btn btn--ghost" onclick="this.closest('.modal-overlay').remove()">✕</button>
+          </div>
+          <div class="reader-content__body" id="topic-summary-content" style="min-height: 200px">
+            <p><span class="spinner" style="display:inline-block; border-color: var(--color-primary); border-top-color: transparent"></span> Generating summary of ${articles.length} articles...</p>
+          </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const contentEl = document.getElementById('topic-summary-content');
+
+        try {
+            // Prepare summary prompt
+            const articlesText = articles.map(a => `- ${a.title}\n  ${Utils.truncate(a.description || '', 200)}`).join('\n\n');
+            const prompt = `You are a professional news analyst. Create a single, cohesive, comprehensive summary of the following articles about the topic "${topicName}". 
+            
+Structure your summary with:
+1. A bold introductory overview.
+2. The key developments and facts.
+3. Different perspectives (if present).
+4. Conclusion / Impact.
+
+Format using Markdown. Do not hallucinate information not present in the excerpts.
+
+ARTICLES:
+${articlesText}`;
+
+            await AI.callStreaming(
+                [
+                    { role: 'system', content: 'You are a news summarization assistant.' },
+                    { role: 'user', content: prompt }
+                ],
+                (chunk, fullContent) => {
+                    contentEl.innerHTML = marked.parse(fullContent);
+                },
+                { temperature: 0.3, max_tokens: 2000 }
+            );
+        } catch (error) {
+            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;
+        }
     }
 };
 
