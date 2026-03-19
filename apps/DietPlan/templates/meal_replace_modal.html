@@ -1,0 +1,16 @@
+<div class="replace-modal">
+    <h3 style="margin-top: 0;">Replace: {{ meal.dish_name }}</h3>
+    <p>Why do you want to change this meal? (We'll remember this for future plans!)</p>
+    
+    <form hx-post="/dietplan/meal/replace/suggest/{{ str(meal['_id']) }}" hx-target="#replace-suggestions" hx-indicator="#replace-spinner">
+        <textarea name="reason" rows="3" class="input-field" placeholder="E.g. I am allergic to peanuts, I don't like broccoli, etc." required style="width: 100%; margin-top: 0.5rem;"></textarea>
+        <button type="submit" class="btn btn-primary" style="margin-top: 1rem; width: 100%;">Find Alternatives 🤖</button>
+    </form>
+    
+    <div id="replace-spinner" class="htmx-indicator" style="margin-top: 1rem; text-align: center;">
+        <div class="spinner" style="margin: 0 auto;"></div>
+        <p style="margin-top: 0.5rem; color: var(--text-muted);">Consulting AI Nutritionist...</p>
+    </div>
+
+    <div id="replace-suggestions" style="margin-top: 1.5rem;"></div>
+</div>

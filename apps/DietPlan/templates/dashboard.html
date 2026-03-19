@@ -64,6 +64,14 @@
         </div>
     </div>
 
+    <!-- WHO Nutrition Analysis -->
+    <div class="who-analysis glass-card" style="margin-top: 1rem;" hx-get="/dietplan/profile/nutrition/today?view_date={{ selected_date.isoformat() }}" hx-trigger="revealed">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Analyzing WHO nutritional alignment based on your medical profile...</p>
+        </div>
+    </div>
+
     <!-- Meal Sections -->
     {% for meal_type in meal_type_order %}
     {% set section = meals[meal_type] %}
@@ -96,6 +104,13 @@
                         <span class="macro fat">F: {{ meal.fat_g }}g</span>
                     </div>
                 </div>
+                <!-- Replace Action -->
+                <button class="btn btn-sm btn-ghost" style="width: 100%; border-top-left-radius: 0; border-top-right-radius: 0; background-color: rgba(255,255,255,0.05);" 
+                    hx-get="/dietplan/meal/replace/{{ meal.id }}" 
+                    hx-target="#dish-modal-body" 
+                    onclick="openDishModal()">
+                    🔄 Replace Meal
+                </button>
             </div>
             {% endfor %}
         </div>

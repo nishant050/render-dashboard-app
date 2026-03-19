@@ -189,6 +189,15 @@
                 <div class="planner-day-meta">
                     <span>{{ day.meal_count }} meals</span>
                     <span>{{ day.total_calories }} kcal</span>
+                    {% if filters.assignee_filter and filters.assignee_filter not in ['all', 'everyone'] %}
+                    <button type="button"
+                            class="btn btn-sm btn-ghost"
+                            hx-get="/dietplan/admin/analyze_day?profile_id={{ filters.assignee_filter }}&date={{ day.iso }}"
+                            hx-target="#analysis-{{ day.iso }}"
+                            hx-swap="innerHTML">
+                        Analyze Day
+                    </button>
+                    {% endif %}
                     <button type="button"
                             class="btn btn-sm btn-secondary"
                             data-plan-date="{{ day.iso }}"
@@ -198,6 +207,8 @@
                     </button>
                 </div>
             </header>
+            
+            <div id="analysis-{{ day.iso }}"></div>
 
             {% if day.meals %}
             <div class="planner-meal-list">

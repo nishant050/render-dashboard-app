@@ -352,12 +352,26 @@ async def home(request: Request):
 
 
 @app.post("/profile/new", response_class=HTMLResponse)
-async def create_profile(request: Request, name: str = Form(...)):
+async def create_profile(
+    request: Request, 
+    name: str = Form(...),
+    age: int = Form(None),
+    height: float = Form(None),
+    weight: float = Form(None),
+    disease: str = Form(None),
+    treatment: str = Form(None)
+):
     db = await get_db()
     
     fp = request.cookies.get("device_fp", "")
     res = await db.profiles.insert_one({
         "name": name.strip(),
+        "age": age,
+        "height_cm": height,
+        "weight_kg": weight,
+        "current_disease": disease.strip() if disease else "",
+        "treatment_status": treatment.strip() if treatment else "",
+        "permanent_preferences": [],
         "device_fingerprint": fp,
         "created_at": datetime.utcnow()
     })
@@ -583,6 +597,94 @@ async def toggle_meal(request: Request, meal_plan_id: str):
     return HTMLResponse(f"""<span class="check-icon">{icon}</span>""")
 
 
+@app.get("/meal/replace/{meal_plan_id}", response_class=HTMLResponse)
+async def get_replace_modal(request: Request, meal_plan_id: str):
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return ""
+    db = await get_db()
+    meal = await db.meal_plans.find_one({"_id": ObjectId(meal_plan_id)})
+    if not meal:
+        return ""
+        
+    return templates.TemplateResponse("meal_replace_modal.html", {
+        "request": request,
+        "meal": meal,
+        "str": str
+    })
+
+@app.post("/meal/replace/suggest/{meal_plan_id}", response_class=HTMLResponse)
+async def suggest_replace_meal(request: Request, meal_plan_id: str, reason: str = Form(...)):
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return ""
+        
+    db = await get_db()
+    profile = await db.profiles.find_one({"_id": ObjectId(profile_id)})
+    meal = await db.meal_plans.find_one({"_id": ObjectId(meal_plan_id)})
+    
+    if not profile or not meal:
+        return ""
+        
+    if reason and reason.strip():
+        from ai_service import classify_preference
+        classification = await classify_preference(reason, meal.get("dish_name", ""))
+        
+        if classification.get("is_permanent", False):
+            clean_reason = classification.get("cleaned_preference", reason.strip())
+            await db.profiles.update_one(
+                {"_id": ObjectId(profile_id)},
+                {"$addToSet": {"permanent_preferences": clean_reason}}
+            )
+            profile = await db.profiles.find_one({"_id": ObjectId(profile_id)})
+        
+    from ai_service import suggest_meal_alternatives
+    import json
+    
+    alts = await suggest_meal_alternatives(profile, meal, reason)
+    if not alts:
+        return HTMLResponse("<p class='error'>Failed to generate alternatives. Please try again.</p>")
+        
+    alt_json_list = [json.dumps(a) for a in alts]
+    
+    return templates.TemplateResponse("meal_alternatives.html", {
+        "request": request,
+        "alternatives": alts,
+        "alt_json_list": alt_json_list,
+        "meal_id": meal_plan_id,
+        "str": str
+    })
+
+@app.post("/meal/replace/confirm/{meal_plan_id}", response_class=HTMLResponse)
+async def confirm_replace_meal(request: Request, meal_plan_id: str, alt_json: str = Form(...)):
+    import json
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return ""
+        
+    db = await get_db()
+    alt_data = json.loads(alt_json)
+    
+    await db.meal_plans.update_one(
+        {"_id": ObjectId(meal_plan_id)},
+        {"$set": {
+            "dish_name": alt_data.get("dish_name", "Unknown AI Dish"),
+            "description": alt_data.get("description", ""),
+            "calories": alt_data.get("calories", 0),
+            "protein_g": alt_data.get("protein_g", 0),
+            "carbs_g": alt_data.get("carbs_g", 0),
+            "fat_g": alt_data.get("fat_g", 0),
+            "fiber_g": alt_data.get("fiber_g", 0),
+        }}
+    )
+    
+    await log_activity(profile_id, "meal_replaced", f"Replaced with: {alt_data.get('dish_name')}", request)
+    
+    # Reload dashboard completely
+    response = HTMLResponse("<script>window.location.reload();</script>")
+    return response
+
+
 @app.get("/dish/info/{meal_plan_id}", response_class=HTMLResponse)
 async def dish_info(request: Request, meal_plan_id: str):
     profile_id = request.cookies.get("profile_id")
@@ -685,6 +787,40 @@ async def history(request: Request, week_offset: int = 0):
         "current_offset": week_offset,
         "today": today,
     })
+
+
+@app.get("/profile/nutrition/today", response_class=HTMLResponse)
+async def get_nutrition_analysis(request: Request, view_date: str = Query(None)):
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return ""
+    
+    db = await get_db()
+    profile = await db.profiles.find_one({"_id": ObjectId(profile_id)})
+    if not profile:
+        return ""
+
+    if not view_date:
+        view_date = date.today().isoformat()
+        
+    meals = await db.meal_plans.find({
+        "plan_date": view_date,
+        "$or": [{"profile_id": None}, {"profile_id": profile_id}]
+    }).to_list(length=None)
+    
+    macros = {
+        "calories": sum(int(float(m.get("calories", 0))) for m in meals),
+        "protein": sum(float(m.get("protein_g", 0)) for m in meals),
+        "carbs": sum(float(m.get("carbs_g", 0)) for m in meals),
+        "fat": sum(float(m.get("fat_g", 0)) for m in meals),
+        "fiber": sum(float(m.get("fiber_g", 0)) for m in meals)
+    }
+    
+    meals_list = [f"{m.get('dish_name')} ({m.get('meal_type')})" for m in meals if m.get("dish_name")]
+    
+    from ai_service import evaluate_nutrition
+    html_report = await evaluate_nutrition(profile, macros, meals_list)
+    return HTMLResponse(html_report)
 
 
 @app.get("/profile/switch")
@@ -1030,13 +1166,33 @@ async def save_meal(
         )
         return templates.TemplateResponse("admin_meals_board.html", context, status_code=422)
 
+    flash_text = ""
+    
+    if payload["profile_id"]:
+        profile = await db.profiles.find_one({"_id": ObjectId(payload["profile_id"])})
+        if profile:
+            from ai_service import screen_admin_meal
+            screening = await screen_admin_meal(profile, payload)
+            if not screening.get("is_safe", True):
+                fixed = screening.get("auto_fixed_meal", {})
+                if fixed:
+                    old_name = payload["dish_name"]
+                    payload["dish_name"] = fixed.get("dish_name", payload["dish_name"])
+                    payload["description"] = fixed.get("description", payload["description"])
+                    payload["calories"] = parse_int(fixed.get("calories", payload["calories"]))
+                    payload["protein_g"] = parse_float(fixed.get("protein_g", payload["protein_g"]))
+                    payload["carbs_g"] = parse_float(fixed.get("carbs_g", payload["carbs_g"]))
+                    payload["fat_g"] = parse_float(fixed.get("fat_g", payload["fat_g"]))
+                    payload["fiber_g"] = parse_float(fixed.get("fiber_g", payload["fiber_g"]))
+                    flash_text = f"⚠️ AI Auto-Fixed '{old_name}' to '{payload['dish_name']}' ({screening.get('reason', 'Conflict detected')}). "
+
     if meal_id:
         try:
             await db.meal_plans.update_one(
                 {"_id": ObjectId(meal_id)},
                 {"$set": payload},
             )
-            flash_text = f"Updated {payload['dish_name']}."
+            flash_text += f"Updated {payload['dish_name']}."
         except Exception:
             context = await build_admin_meals_context(
                 request,
@@ -1053,7 +1209,7 @@ async def save_meal(
             **payload,
             "created_at": datetime.utcnow(),
         })
-        flash_text = f"Added {payload['dish_name']}."
+        flash_text += f"Added {payload['dish_name']}."
 
     context = await build_admin_meals_context(
         request,

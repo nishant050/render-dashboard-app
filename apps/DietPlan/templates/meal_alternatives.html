@@ -1,0 +1,21 @@
+<div class="suggestions-list">
+    <h4 style="margin-bottom: 1rem;">Suggested Alternatives</h4>
+    {% for alt in alternatives %}
+    <div class="meal-card glass-card" style="margin-bottom: 1rem; padding: 1rem;">
+        <h5 style="margin: 0 0 0.5rem 0;">{{ alt.dish_name }}</h5>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">{{ alt.description }}</p>
+        <div class="meal-card-bottom" style="padding: 0;">
+            <span class="meal-cal" style="font-size: 0.8rem;">{{ alt.calories }} kcal</span>
+            <div class="meal-macros" style="font-size: 0.8rem; gap: 0.2rem;">
+                <span class="macro protein">P: {{ alt.protein_g }}g</span>
+                <span class="macro carbs">C: {{ alt.carbs_g }}g</span>
+                <span class="macro fat">F: {{ alt.fat_g }}g</span>
+            </div>
+        </div>
+        <form hx-post="/dietplan/meal/replace/confirm/{{ str(meal_id) }}" style="margin-top: 0.8rem;">
+            <input type="hidden" name="alt_json" value="{{ alt_json_list[loop.index0] }}">
+            <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;" onclick="closeDishModal()">Select This Meal</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
