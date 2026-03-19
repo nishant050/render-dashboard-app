@@ -87,6 +87,7 @@ const Settings = {
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
               <option value="gemini">Google Gemini</option>
+              <option value="mistral">Mistral</option>
             </select>
           </div>
           <div class="input-group">
@@ -116,12 +117,13 @@ const Settings = {
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
               <option value="gemini">Google Gemini</option>
+              <option value="mistral">Mistral</option>
             </select>
           </div>
           <div class="input-group">
             <label class="input-group__label">Model Name</label>
             <input type="text" class="input" id="model-name" placeholder="e.g., llama-3.3-70b-versatile">
-            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Gemini: gemini-3.1-flash-lite-preview</span>
+            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
           </div>
           <div class="input-group">
             <label class="input-group__label">Display Label (optional)</label>
@@ -152,8 +154,9 @@ const Settings = {
     const groqKey = settings.api_key_groq;
     const openrouterKey = settings.api_key_openrouter;
     const geminiKey = settings.api_key_gemini;
+    const mistralKey = settings.api_key_mistral;
 
-    if (!groqKey && !openrouterKey && !geminiKey) {
+    if (!groqKey && !openrouterKey && !geminiKey && !mistralKey) {
       return '<p class="text-muted">No API keys saved yet.</p>';
     }
 
@@ -186,6 +189,16 @@ const Settings = {
             <span class="api-key-item__masked">••••••••${geminiKey.slice(-6)}</span>
           </div>
           <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('gemini')">🗑️</button>
+        </div>`;
+    }
+    if (mistralKey) {
+      html += `
+        <div class="api-key-item">
+          <div class="api-key-item__info">
+            <span class="api-key-item__provider">Mistral</span>
+            <span class="api-key-item__masked">••••••••${mistralKey.slice(-6)}</span>
+          </div>
+          <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('mistral')">🗑️</button>
         </div>`;
     }
     return html;
@@ -230,6 +243,7 @@ const Settings = {
     let providerName = 'Groq';
     if (provider === 'openrouter') providerName = 'OpenRouter';
     if (provider === 'gemini') providerName = 'Google Gemini';
+    if (provider === 'mistral') providerName = 'Mistral';
 
     Components.showToast(`${providerName} API key saved!`, 'success');
     await this._renderPage('api');

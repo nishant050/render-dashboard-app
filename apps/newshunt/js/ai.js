@@ -19,6 +19,11 @@ const AI = {
             // Base URL will be constructed dynamically with the model name and API key
             baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
             defaultModel: 'gemini-3.1-flash-lite-preview'
+        },
+        mistral: {
+            name: 'Mistral',
+            baseUrl: 'https://api.mistral.ai/v1/chat/completions',
+            defaultModel: 'mistral-small-2603'
         }
     },
 
@@ -184,6 +189,39 @@ const AI = {
     },
 
     // ==========================================
+    // MISTRAL SPECIFIC HELPERS
+    // ==========================================
+    _formatMistralMessages(messages) {
+        return messages.map(msg => {
+            if (msg.role === 'system') {
+                return {
+                    role: 'system',
+                    content: [
+                        {
+                            type: 'text',
+                            text: '# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:'
+                        },
+                        {
+                            type: 'thinking',
+                            thinking: [
+                                {
+                                    type: 'text',
+                                    text: 'Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.'
+                                }
+                            ]
+                        },
+                        {
+                            type: 'text',
+                            text: msg.content
+                        }
+                    ]
+                };
+            }
+            return msg;
+        });
+    },
+
+    // ==========================================
     // MAIN CALL METHODS
     // ==========================================
 
@@ -207,9 +245,14 @@ const AI = {
             headers['X-Title'] = 'NewsHunt';
         }
 
+        let formattedMessages = messages;
+        if (config.provider === 'mistral') {
+            formattedMessages = this._formatMistralMessages(messages);
+        }
+
         const body = {
             model: config.model,
-            messages,
+            messages: formattedMessages,
             temperature: options.temperature ?? 0.3,
             max_tokens: options.max_tokens ?? 4096,
             ...(options.response_format && { response_format: options.response_format })
@@ -249,9 +292,14 @@ const AI = {
             headers['X-Title'] = 'NewsHunt';
         }
 
+        let formattedMessages = messages;
+        if (config.provider === 'mistral') {
+            formattedMessages = this._formatMistralMessages(messages);
+        }
+
         const body = {
             model: config.model,
-            messages,
+            messages: formattedMessages,
             temperature: options.temperature ?? 0.5,
             max_tokens: options.max_tokens ?? 8192,
             stream: true

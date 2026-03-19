@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 
 // --- MongoDB Configuration ---
 const MONGO_URI = 'mongodb+srv://admin:admin123@diet-plan.42f6xm7.mongodb.net/render-dashboard?appName=render-dashboard';
@@ -76,6 +77,23 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '25mb' }));
+
+// --- DietPlan Proxy & Process Setup ---
+const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
+const dietPlanProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'main:app', '--port', '8005', '--host', '127.0.0.1', '--root-path', '/dietplan'], {
+    cwd: path.join(__dirname, 'apps', 'DietPlan'),
+    env: process.env
+});
+dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
+dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
+
+app.use('/dietplan', createProxyMiddleware({
+    target: 'http://127.0.0.1:8005',
+    changeOrigin: true,
+    pathRewrite: {
+        '^/dietplan': ''
+    }
+}));
 
 // --- Static File Serving ---
 // Serve the main front-end, apps, and uploads
