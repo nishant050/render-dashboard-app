@@ -102,8 +102,17 @@
                                 <td><strong>{{ p.name }}</strong></td>
                                 <td>{{ p.created_at }}</td>
                                 <td>
-                                    <a href="/dietplan/admin/activity?profile_filter={{ p.id }}"
-                                        class="btn btn-sm btn-secondary">View Activity</a>
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-start;">
+                                        <a href="/dietplan/admin/activity?profile_filter={{ p.id }}"
+                                            class="btn btn-sm btn-secondary">View Activity</a>
+                                        <button class="btn btn-sm btn-danger" 
+                                            hx-delete="/dietplan/admin/user/{{ p.id }}" 
+                                            hx-confirm="Are you sure you want to permanently delete {{ p.name }} and ALL their planned meals, activity logs, and history?" 
+                                            hx-target="closest tr" 
+                                            hx-swap="outerHTML">
+                                            Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}

@@ -763,6 +763,22 @@ async def admin_dashboard(request: Request):
     })
 
 
+@app.delete("/admin/user/{profile_id}")
+async def admin_delete_user(request: Request, profile_id: str):
+    if not get_admin_session(request):
+        return Response(status_code=401)
+        
+    db = await get_db()
+    
+    await db.profiles.delete_one({"_id": ObjectId(profile_id)})
+    await db.meal_checks.delete_many({"profile_id": profile_id})
+    await db.activity_logs.delete_many({"profile_id": profile_id})
+    await db.device_profile_map.delete_many({"profile_id": profile_id})
+    await db.meal_plans.delete_many({"profile_id": profile_id})
+    
+    return Response(status_code=200)
+
+
 @app.get("/admin/template/download")
 async def download_template(request: Request):
     if not get_admin_session(request):
