@@ -180,28 +180,78 @@ Planned totals:
 
 Return only HTML using this structure:
 <div class='ai-nutrition'>
-  <h3>WHO Nutrition Analysis</h3>
-  <p class='ai-assess'>Short assessment.</p>
-  <div class='nutrition-bars'>
-    <div><label>Calories</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Protein</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Carbs</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Fat</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Fiber</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Sugar</label><progress value='x' max='100'></progress><span>x%</span></div>
-    <div><label>Sodium</label><progress value='x' max='100'></progress><span>x%</span></div>
+  <div class='ai-nutrition-top'>
+    <div>
+      <p class='ai-kicker'>Today's nutrition snapshot</p>
+      <h3>WHO Nutrition Analysis</h3>
+    </div>
+    <button type='button' class='btn btn-ghost btn-sm ai-depth-toggle' onclick='toggleAiNutritionDetails(this)'>In Depth</button>
   </div>
-  <ul class='ai-recs'>
-    <li>2-3 specific tips.</li>
-  </ul>
+  <p class='ai-summary'>One short summary sentence only.</p>
+  <div class='nutrition-bars'>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Calories</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x kcal vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Protein</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x g vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Carbs</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x g vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Fat</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x g vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Fiber</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x g vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Sugar</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x g vs target</p>
+    </div>
+    <div class='nutrition-metric'>
+      <div class='nutrition-metric-head'><label>Sodium</label><span>x%</span></div>
+      <progress value='x' max='100'></progress>
+      <p>x mg vs target</p>
+    </div>
+  </div>
+  <div class='vitamin-grid'>
+    <div class='vitamin-chip'><span>Vitamin A</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Vitamin C</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Vitamin D</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Vitamin B12</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Folate</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Iron</span><strong>x%</strong></div>
+    <div class='vitamin-chip'><span>Calcium</span><strong>x%</strong></div>
+  </div>
+  <div class='ai-depth-panel hidden'>
+    <p class='ai-assess'>2-3 sentence explanation focused on accuracy, deficits, and excesses.</p>
+    <ul class='ai-recs'>
+      <li>2-4 practical adjustments.</li>
+    </ul>
+  </div>
 </div>
 
 After the HTML, include one JSON array wrapped in these exact markers:
 <!--JSON_START-->
-[{{"dish_name":"Example Dish","meal_type":"lunch","calories":320,"protein_g":18,"carbs_g":26,"fat_g":12,"fiber_g":7,"reason":"Short reason"}}]
+[{{"dish_name":"Example Dish","meal_type":"lunch","calories":320,"protein_g":18,"carbs_g":26,"fat_g":12,"fiber_g":7,"reason":"Short reason","is_vegetarian":true,"alternative_to":"Current lunch"}}]
 <!--JSON_END-->
 
-Keep the meal suggestions realistic and easy to add.
+Rules for recommendations:
+- Every recommendation must be vegetarian.
+- Suggestions should be easy to cook or easy to source.
+- Prefer alternatives that directly fix the biggest nutrient gaps.
+- Keep the top summary visually compact and save the explanation for the hidden detail panel.
 """.strip()
 
 
@@ -363,6 +413,8 @@ def normalize_meal_candidate(item: dict) -> dict | None:
         "fat_g": round(parse_float(item.get("fat_g", 0.0)), 1),
         "fiber_g": round(parse_float(item.get("fiber_g", 0.0)), 1),
         "reason": str(item.get("reason", "")).strip(),
+        "is_vegetarian": bool(item.get("is_vegetarian", True)),
+        "alternative_to": str(item.get("alternative_to", "")).strip(),
     }
 
 
@@ -409,19 +461,35 @@ def build_quick_add_html(actionable_meals: list[dict], plan_date: str | None) ->
         date_input = ""
         if plan_date:
             date_input = f"<input type='hidden' name='plan_date' value='{escape(plan_date)}'>"
+        badges = ["<span class='ai-rec-badge ai-rec-badge-veg'>Vegetarian</span>"]
+        if meal.get("alternative_to"):
+            badges.append(f"<span class='ai-rec-badge'>Alt for {escape(meal['alternative_to'])}</span>")
+        reason_html = ""
+        if meal.get("reason"):
+            reason_html = f"<p class='ai-rec-reason'>{escape(meal['reason'])}</p>"
         forms.append(
-            "<form class='quick-add-form' hx-post='/dietplan/meal/quick_add' "
+            "<form class='quick-add-form ai-rec-card' hx-post='/dietplan/meal/quick_add' "
             "hx-target='#quick-add-msg' hx-swap='innerHTML'>"
             f"<input type='hidden' name='meal_json' value='{meal_json}'>"
             f"{date_input}"
-            f"<button type='submit' class='btn btn-sm btn-primary'>+ {escape(meal['dish_name'])}</button>"
+            "<div class='ai-rec-card-top'>"
+            f"<div><h4>{escape(meal['dish_name'])}</h4>{reason_html}</div>"
+            f"<div class='ai-rec-badges'>{''.join(badges)}</div>"
+            "</div>"
+            "<div class='ai-rec-macros'>"
+            f"<span>{meal['calories']} kcal</span>"
+            f"<span>P {meal['protein_g']}g</span>"
+            f"<span>C {meal['carbs_g']}g</span>"
+            f"<span>F {meal['fat_g']}g</span>"
+            "</div>"
+            "<button type='submit' class='btn btn-sm btn-primary'>Add to today's plan</button>"
             "</form>"
         )
 
     joined_forms = "".join(forms)
     return (
         "<div class='ai-quick-add'>"
-        "<p class='ai-quick-add-title'>Click to add to this day's plan:</p>"
+        "<p class='ai-quick-add-title'>Vegetarian recommendations you can add right now</p>"
         f"<div class='ai-quick-add-actions'>{joined_forms}</div>"
         "<div id='quick-add-msg'></div>"
         "</div>"
@@ -443,20 +511,37 @@ def build_nutrition_fallback_html(macros: dict, meals_list: list[str]) -> str:
     meal_items = "".join(f"<li>{escape(item)}</li>" for item in meals_list[:5]) or "<li>No meals planned yet.</li>"
     return f"""
 <div class='ai-nutrition'>
-  <h3 style="margin-top:0;">WHO Nutrition Analysis</h3>
-  <p class='ai-assess'>AI recommendations are temporarily unavailable, but your current plan totals are still shown below.</p>
-  <div class='nutrition-bars' style='display:grid; gap:0.5rem; margin-bottom:1rem;'>
-    <div><label>Calories</label><span>{escape(str(macros['calories']))} kcal</span></div>
-    <div><label>Protein</label><span>{escape(str(round(macros['protein'], 1)))} g</span></div>
-    <div><label>Carbs</label><span>{escape(str(round(macros['carbs'], 1)))} g</span></div>
-    <div><label>Fat</label><span>{escape(str(round(macros['fat'], 1)))} g</span></div>
-    <div><label>Fiber</label><span>{escape(str(round(macros['fiber'], 1)))} g</span></div>
+  <div class='ai-nutrition-top'>
+    <div>
+      <p class='ai-kicker'>Today's nutrition snapshot</p>
+      <h3>WHO Nutrition Analysis</h3>
+    </div>
+    <button type='button' class='btn btn-ghost btn-sm ai-depth-toggle' onclick='toggleAiNutritionDetails(this)'>In Depth</button>
   </div>
-  <ul class='ai-recs'>
-    <li>Review meal balance manually and try the AI analysis again later.</li>
-    <li>Focus on protein, fiber, and hydration if you need a simple fallback rule.</li>
-  </ul>
-  <div class='ai-meal-fallback'><strong>Meals today</strong><ul>{meal_items}</ul></div>
+  <p class='ai-summary'>Live AI guidance is unavailable, so this view is showing a clean summary of today's tracked nutrition only.</p>
+  <div class='nutrition-bars'>
+    <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Calories</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(macros['calories']))} kcal logged</p></div>
+    <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Protein</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(round(macros['protein'], 1)))} g logged</p></div>
+    <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Carbs</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(round(macros['carbs'], 1)))} g logged</p></div>
+    <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Fat</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(round(macros['fat'], 1)))} g logged</p></div>
+    <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Fiber</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(round(macros['fiber'], 1)))} g logged</p></div>
+  </div>
+  <div class='vitamin-grid'>
+    <div class='vitamin-chip'><span>Vitamin A</span><strong>AI needed</strong></div>
+    <div class='vitamin-chip'><span>Vitamin C</span><strong>AI needed</strong></div>
+    <div class='vitamin-chip'><span>Vitamin D</span><strong>AI needed</strong></div>
+    <div class='vitamin-chip'><span>Vitamin B12</span><strong>AI needed</strong></div>
+    <div class='vitamin-chip'><span>Iron</span><strong>AI needed</strong></div>
+    <div class='vitamin-chip'><span>Calcium</span><strong>AI needed</strong></div>
+  </div>
+  <div class='ai-depth-panel hidden'>
+    <p class='ai-assess'>Review meal balance manually and try the AI analysis again later.</p>
+    <ul class='ai-recs'>
+      <li>Focus on protein, fiber, and hydration as a simple fallback rule.</li>
+      <li>Consider adding a vegetarian protein source and leafy vegetables if the day looks light.</li>
+    </ul>
+    <div class='ai-meal-fallback'><strong>Meals today</strong><ul>{meal_items}</ul></div>
+  </div>
 </div>
 """.strip()
 

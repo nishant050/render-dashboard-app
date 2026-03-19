@@ -300,6 +300,138 @@ select.input-field {
 }
 
 /* ──────────── WHO Quick Add Buttons ──────────── */
+.ai-nutrition {
+    display: grid;
+    gap: 1rem;
+}
+
+.ai-nutrition-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.ai-kicker {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.ai-nutrition h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+}
+
+.ai-summary {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.nutrition-bars {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.nutrition-metric {
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--border-subtle);
+}
+
+.nutrition-metric-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.45rem;
+    font-weight: 700;
+}
+
+.nutrition-metric-head label {
+    color: var(--text-primary);
+}
+
+.nutrition-metric-head span,
+.nutrition-metric p {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.nutrition-metric progress {
+    width: 100%;
+    height: 0.6rem;
+    border: none;
+    border-radius: 999px;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.nutrition-metric progress::-webkit-progress-bar {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+}
+
+.nutrition-metric progress::-webkit-progress-value {
+    background: var(--gradient-primary);
+    border-radius: 999px;
+}
+
+.nutrition-metric progress::-moz-progress-bar {
+    background: var(--gradient-primary);
+    border-radius: 999px;
+}
+
+.vitamin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.vitamin-chip {
+    padding: 0.8rem 0.9rem;
+    border-radius: var(--radius-md);
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+}
+
+.vitamin-chip span {
+    color: var(--text-secondary);
+}
+
+.vitamin-chip strong {
+    color: var(--accent-green-light);
+    font-size: 0.85rem;
+}
+
+.ai-depth-panel {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
+}
+
+.ai-assess {
+    color: var(--text-secondary);
+    margin-bottom: 0.8rem;
+}
+
+.ai-recs {
+    padding-left: 1rem;
+    color: var(--text-primary);
+}
+
 .ai-quick-add {
     animation: fadeIn 0.3s ease-out;
     margin-top: 1rem;
@@ -313,13 +445,72 @@ select.input-field {
 }
 
 .ai-quick-add-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     gap: 0.5rem;
 }
 
 .quick-add-form {
     margin: 0;
+}
+
+.ai-rec-card {
+    padding: 0.95rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.04);
+    display: grid;
+    gap: 0.8rem;
+}
+
+.ai-rec-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.ai-rec-card h4 {
+    margin: 0 0 0.3rem 0;
+    font-size: 0.96rem;
+}
+
+.ai-rec-reason {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.83rem;
+}
+
+.ai-rec-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+}
+
+.ai-rec-badge {
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.ai-rec-badge-veg {
+    background: rgba(16, 185, 129, 0.14);
+    color: var(--accent-green-light);
+}
+
+.ai-rec-macros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.ai-meal-fallback ul {
+    margin-top: 0.5rem;
+    padding-left: 1rem;
 }
 
 @keyframes fadeIn {
@@ -345,6 +536,22 @@ select.input-field {
 
 .meal-replace-textarea {
     padding: 1rem;
+}
+
+@media (max-width: 640px) {
+    .nutrition-bars,
+    .vitamin-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ai-nutrition-top,
+    .ai-rec-card-top {
+        flex-direction: column;
+    }
+
+    .ai-rec-badges {
+        justify-content: flex-start;
+    }
 }
 
 /* ──────────── Alerts ──────────── */

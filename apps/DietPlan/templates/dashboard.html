@@ -181,6 +181,16 @@
         document.body.style.overflow = '';
     }
 
+    function toggleAiNutritionDetails(button) {
+        const card = button.closest('.ai-nutrition');
+        if (!card) return;
+        const panel = card.querySelector('.ai-depth-panel');
+        if (!panel) return;
+        const isHidden = panel.classList.contains('hidden');
+        panel.classList.toggle('hidden', !isHidden);
+        button.textContent = isHidden ? 'Hide Details' : 'In Depth';
+    }
+
     // Update card visual state after toggle
     document.body.addEventListener('htmx:afterSwap', function (event) {
         if (event.detail.target.id && event.detail.target.id.startsWith('check-')) {
