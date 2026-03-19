@@ -109,7 +109,14 @@ def get_admin_session(request: Request):
     return request.cookies.get("admin_session")
 
 
-MEAL_TYPE_ORDER = ['breakfast', 'morning_snack', 'lunch', 'afternoon_snack', 'dinner', 'evening_snack']
+MEAL_TYPE_ORDER = [
+    'morning_snack', 
+    'breakfast', 
+    'afternoon_snack', 
+    'lunch', 
+    'evening_snack', 
+    'dinner'
+]
 MEAL_TYPE_LABELS = {
     'breakfast': '🌅 Breakfast',
     'morning_snack': '🍎 Morning Snack',
