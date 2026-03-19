@@ -704,10 +704,7 @@ const App = {
 
         try {
             // Prepare summary prompt
-            const articlesText = articles.map(a => `- ${a.title}
-  ${Utils.truncate(a.description || '', 200)}`).join('
-
-');
+            const articlesText = articles.map(a => `- ${a.title}\n  ${Utils.truncate(a.description || '', 200)}`).join('\\n\\n');
             const prompt = `You are a professional news analyst. Create a single, cohesive, comprehensive summary of the following articles about the topic "${topicName}". 
             
 Structure your summary with:
