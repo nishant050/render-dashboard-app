@@ -95,6 +95,14 @@ app.use('/dietplan', createProxyMiddleware({
     }
 }));
 
+// --- Finance API Routes ---
+const financeRoutes = require('./apps/finance/server/routes');
+app.use('/api/finance', financeRoutes);
+
+// --- Finance App Static Files ---
+// Serve finance app static files from /finance/ URL
+app.use('/finance', express.static(path.join(__dirname, 'apps', 'finance')));
+
 // --- Static File Serving ---
 // Serve the main front-end, apps, and uploads
 app.use(express.static(path.join(__dirname)));
@@ -904,11 +912,11 @@ app.post('/api/chemistry/schedule', async (req, res) => {
     try {
         const schedule = req.body;
         if (!Array.isArray(schedule)) return res.status(400).json({ error: 'Schedule must be an array' });
-        
+
         // Replace all
         await ChemistrySchedule.deleteMany({});
         await ChemistrySchedule.insertMany(schedule);
-        
+
         res.json({ message: 'Schedule updated successfully' });
     } catch (error) {
         console.error('Error saving chemistry schedule:', error);
@@ -920,7 +928,7 @@ app.get('/api/chemistry/progress', async (req, res) => {
     try {
         let progressDoc = await ChemistryProgress.findOne().sort({ createdAt: -1 });
         if (!progressDoc) {
-             if (fs.existsSync(chemistryProgressPath)) {
+            if (fs.existsSync(chemistryProgressPath)) {
                 const data = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
                 progressDoc = await ChemistryProgress.create({ data });
             } else {

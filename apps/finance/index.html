@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RupeeTracker — Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">💰 RupeeTracker</div>
+        <a href="/finance/" class="nav-link active">📊 Dashboard</a>
+        <a href="/finance/transactions.html" class="nav-link">💸 Transactions</a>
+        <a href="/finance/budget.html" class="nav-link">📋 Budget</a>
+        <a href="/finance/bills.html" class="nav-link">📅 Bills</a>
+        <a href="/finance/goals.html" class="nav-link">🎯 Goals</a>
+        <a href="/finance/calculators.html" class="nav-link">🧮 Calculators</a>
+        <a href="/finance/reports.html" class="nav-link">📈 Reports</a>
+        <a href="/finance/accounts.html" class="nav-link">🏦 Accounts</a>
+        <a href="/finance/settings.html" class="nav-link">⚙️ Settings</a>
+        <a href="/" class="nav-link nav-back">← Back to Dashboard</a>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+        <header class="page-header">
+            <button class="menu-toggle">☰</button>
+            <h1>Dashboard</h1>
+            <div class="month-navigator">
+                <button id="prev-month">◀</button>
+                <span id="current-month">June 2025</span>
+                <button id="next-month">▶</button>
+            </div>
+        </header>
+
+        <div class="page-body">
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button class="btn btn-primary" id="add-income-btn">➕ Add Income</button>
+                <button class="btn btn-danger" id="add-expense-btn">➖ Add Expense</button>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-cards" id="summary-cards">
+                <div class="summary-card">
+                    <div class="summary-card-icon">💰</div>
+                    <div class="summary-card-label">Total Income</div>
+                    <div class="summary-card-value amount-positive" id="total-income">₹0</div>
+                    <div class="summary-card-trend" id="income-trend"></div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card-icon">💸</div>
+                    <div class="summary-card-label">Total Expenses</div>
+                    <div class="summary-card-value amount-negative" id="total-expenses">₹0</div>
+                    <div class="summary-card-trend" id="expenses-trend"></div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card-icon">📊</div>
+                    <div class="summary-card-label">Remaining Budget</div>
+                    <div class="summary-card-value" id="remaining-budget">₹0</div>
+                    <div class="summary-card-trend" id="budget-trend"></div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card-icon">📈</div>
+                    <div class="summary-card-label">Savings Rate</div>
+                    <div class="summary-card-value" id="savings-rate">0%</div>
+                    <div class="summary-card-trend" id="savings-trend"></div>
+                </div>
+            </div>
+
+            <!-- Budget Progress -->
+            <div class="widget" id="budget-widget">
+                <div class="widget-header">
+                    <h3 class="widget-title">Budget Progress</h3>
+                    <a href="/finance/budget.html" class="btn btn-ghost btn-sm">View All</a>
+                </div>
+                <div id="budget-progress-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-title">No Budget Set</div>
+                        <div class="empty-state-text">Set up your monthly budget to track spending</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid-2">
+                <div class="widget">
+                    <div class="widget-header">
+                        <h3 class="widget-title">Spending by Category</h3>
+                    </div>
+                    <div class="mini-chart-container">
+                        <canvas id="category-chart"></canvas>
+                    </div>
+                </div>
+                <div class="widget">
+                    <div class="widget-header">
+                        <h3 class="widget-title">Income vs Expenses (6 Months)</h3>
+                    </div>
+                    <div class="mini-chart-container">
+                        <canvas id="trend-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upcoming Bills -->
+            <div class="widget" id="bills-widget">
+                <div class="widget-header">
+                    <h3 class="widget-title">Upcoming Bills</h3>
+                    <a href="/finance/bills.html" class="btn btn-ghost btn-sm">View All</a>
+                </div>
+                <div id="upcoming-bills-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📅</div>
+                        <div class="empty-state-title">No Upcoming Bills</div>
+                        <div class="empty-state-text">Add recurring bills to track them here</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Transactions -->
+            <div class="widget" id="transactions-widget">
+                <div class="widget-header">
+                    <h3 class="widget-title">Recent Transactions</h3>
+                    <a href="/finance/transactions.html" class="btn btn-ghost btn-sm">View All</a>
+                </div>
+                <div id="recent-transactions-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💸</div>
+                        <div class="empty-state-title">No Transactions Yet</div>
+                        <div class="empty-state-text">Start tracking your income and expenses</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Goals Summary -->
+            <div class="widget" id="goals-widget">
+                <div class="widget-header">
+                    <h3 class="widget-title">Savings Goals</h3>
+                    <a href="/finance/goals.html" class="btn btn-ghost btn-sm">View All</a>
+                </div>
+                <div id="goals-summary-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🎯</div>
+                        <div class="empty-state-title">No Goals Set</div>
+                        <div class="empty-state-text">Create savings goals to track your progress</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL CONTAINER -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="common.js"></script>
+    <script src="dashboard.js"></script>
+
+</body>
+
+</html>

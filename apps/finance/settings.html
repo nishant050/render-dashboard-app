@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RupeeTracker — Settings</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+</head>
+
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">💰 RupeeTracker</div>
+        <a href="/finance/" class="nav-link">📊 Dashboard</a>
+        <a href="/finance/transactions.html" class="nav-link">💸 Transactions</a>
+        <a href="/finance/budget.html" class="nav-link">📋 Budget</a>
+        <a href="/finance/bills.html" class="nav-link">📅 Bills</a>
+        <a href="/finance/goals.html" class="nav-link">🎯 Goals</a>
+        <a href="/finance/calculators.html" class="nav-link">🧮 Calculators</a>
+        <a href="/finance/reports.html" class="nav-link">📈 Reports</a>
+        <a href="/finance/accounts.html" class="nav-link">🏦 Accounts</a>
+        <a href="/finance/settings.html" class="nav-link active">⚙️ Settings</a>
+        <a href="/" class="nav-link nav-back">← Back to Dashboard</a>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+        <header class="page-header">
+            <button class="menu-toggle">☰</button>
+            <h1>Settings</h1>
+        </header>
+
+        <div class="page-body">
+            <div class="settings-form">
+                <!-- Preferences -->
+                <div class="widget mb-lg">
+                    <h3 class="widget-title mb-lg">Preferences</h3>
+                    <div class="form-group">
+                        <label class="form-label">Theme</label>
+                        <div class="flex gap-md">
+                            <label class="flex items-center gap-sm">
+                                <input type="radio" name="theme" value="light" checked>
+                                <span>Light</span>
+                            </label>
+                            <label class="flex items-center gap-sm">
+                                <input type="radio" name="theme" value="dark">
+                                <span>Dark</span>
+                            </label>
+                            <label class="flex items-center gap-sm">
+                                <input type="radio" name="theme" value="system">
+                                <span>System</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Date Format</label>
+                        <select class="form-select" id="date-format">
+                            <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                            <option value="DD MMM YYYY">DD MMM YYYY</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Show Decimals</label>
+                        <div class="flex gap-md">
+                            <label class="flex items-center gap-sm">
+                                <input type="checkbox" id="show-decimals" checked>
+                                <span>Show decimal places in amounts</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Default Payment Method</label>
+                        <select class="form-select" id="default-payment">
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Debit Card">Debit Card</option>
+                            <option value="Net Banking">Net Banking</option>
+                            <option value="Wallet">Wallet</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
+                </div>
+
+                <!-- Data Management -->
+                <div class="widget mb-lg">
+                    <h3 class="widget-title mb-lg">Data Management</h3>
+                    <div class="flex gap-md flex-wrap">
+                        <button class="btn btn-ghost" id="export-json-btn">📥 Export JSON</button>
+                        <button class="btn btn-ghost" id="export-csv-btn">📊 Export CSV</button>
+                        <button class="btn btn-ghost" id="import-btn">📤 Import Data</button>
+                        <input type="file" id="import-file" accept=".json" style="display: none;">
+                    </div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="danger-zone">
+                    <h3 class="danger-zone-title">⚠️ Danger Zone</h3>
+                    <p class="text-secondary mb-md">These actions are irreversible. Please be careful.</p>
+                    <button class="btn btn-danger" id="clear-data-btn">Clear All Data</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL CONTAINER -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="common.js"></script>
+    <script src="settings.js"></script>
+
+</body>
+
+</html>
