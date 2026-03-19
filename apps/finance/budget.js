@@ -4,8 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBudget(currentMonth, currentYear);
 
     // Set Budget button
-    document.getElementById('set-budget-btn').addEventListener('click', () => {
-        openBudgetEditor(currentMonth, currentYear);
+    document.getElementById('set-budget-btn').addEventListener('click', async () => {
+        try {
+            const existingBudget = await api(`/budgets?month=${currentMonth}&year=${currentYear}`);
+            openBudgetEditor(currentMonth, currentYear, existingBudget);
+        } catch (error) {
+            console.error('Error fetching budget:', error);
+            openBudgetEditor(currentMonth, currentYear, null);
+        }
     });
 });
 
@@ -112,7 +118,7 @@ function renderCategoryBudgets(budget, performance) {
 }
 
 function openBudgetEditor(month, year, existingBudget = null) {
-    const categories = EXPENSE_CATEGORIES;
+    const categories = getEnabledCategories('expense');
     let totalAllocated = 0;
 
     const categoryInputs = categories.map(cat => {

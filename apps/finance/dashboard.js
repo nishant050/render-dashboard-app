@@ -19,12 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadDashboard(month, year) {
     try {
-        const [summary, budget, bills, goals, transactions] = await Promise.all([
+        const [summary, budget, bills, goals, transactions, trends] = await Promise.all([
             api(`/transactions/summary?month=${month}&year=${year}`),
             api(`/budgets?month=${month}&year=${year}`),
             api('/bills/upcoming?days=15'),
             api('/goals/summary'),
-            api(`/transactions?month=${month}&year=${year}&limit=8&sort=-date`)
+            api(`/transactions?month=${month}&year=${year}&limit=8&sort=-date`),
+            api('/reports/trends?months=6')
         ]);
 
         renderSummaryCards(summary, budget);
@@ -32,7 +33,7 @@ async function loadDashboard(month, year) {
         renderUpcomingBills(bills);
         renderRecentTransactions(transactions);
         renderGoalsSummary(goals);
-        renderMiniCharts(summary);
+        renderMiniCharts(summary, trends);
     } catch (error) {
         console.error('Error loading dashboard:', error);
     }
@@ -236,7 +237,7 @@ function renderGoalsSummary(goals) {
     container.innerHTML = html;
 }
 
-function renderMiniCharts(summary) {
+function renderMiniCharts(summary, trends) {
     // Category chart
     if (categoryChart) {
         categoryChart.destroy();
@@ -250,35 +251,37 @@ function renderMiniCharts(summary) {
         categoryChart = createDoughnut('category-chart', labels, data, colors);
     }
 
-    // Trend chart (placeholder - would need historical data)
+    // Trend chart - use actual trends data
     if (trendChart) {
         trendChart.destroy();
     }
 
-    const trendLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-    const incomeData = [45000, 48000, 52000, 50000, 55000, summary.totalIncome || 0];
-    const expenseData = [35000, 38000, 42000, 40000, 45000, summary.totalExpenses || 0];
+    if (trends && trends.length > 0) {
+        const trendLabels = trends.map(t => getMonthName(t.month).substring(0, 3));
+        const incomeData = trends.map(t => t.income);
+        const expenseData = trends.map(t => t.expenses);
 
-    trendChart = createBarChart('trend-chart', trendLabels, [
-        {
-            label: 'Income',
-            data: incomeData,
-            backgroundColor: 'rgba(34, 197, 94, 0.5)',
-            borderColor: 'rgba(34, 197, 94, 1)',
-            borderWidth: 1
-        },
-        {
-            label: 'Expenses',
-            data: expenseData,
-            backgroundColor: 'rgba(239, 68, 68, 0.5)',
-            borderColor: 'rgba(239, 68, 68, 1)',
-            borderWidth: 1
-        }
-    ]);
+        trendChart = createBarChart('trend-chart', trendLabels, [
+            {
+                label: 'Income',
+                data: incomeData,
+                backgroundColor: 'rgba(34, 197, 94, 0.5)',
+                borderColor: 'rgba(34, 197, 94, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Expenses',
+                data: expenseData,
+                backgroundColor: 'rgba(239, 68, 68, 0.5)',
+                borderColor: 'rgba(239, 68, 68, 1)',
+                borderWidth: 1
+            }
+        ]);
+    }
 }
 
 function openTransactionForm(type) {
-    const categories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const categories = getEnabledCategories(type);
     const categoryOptions = categories.map(c =>
         `<option value="${c.name}">${c.icon} ${c.name}</option>`
     ).join('');
@@ -356,7 +359,7 @@ function openTransactionForm(type) {
 
             // Update category dropdown
             const categorySelect = document.querySelector('select[name="category"]');
-            const newCategories = newType === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+            const newCategories = getEnabledCategories(newType);
             categorySelect.innerHTML = '<option value="">Select category</option>' +
                 newCategories.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
         });

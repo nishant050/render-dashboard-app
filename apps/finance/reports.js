@@ -441,7 +441,7 @@ async function loadCategoryReport() {
             <div class="form-group">
                 <label class="form-label">Select Category</label>
                 <select class="form-select" id="category-select" style="max-width: 300px;">
-                    ${EXPENSE_CATEGORIES.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('')}
+                    ${getEnabledCategories('expense').map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('')}
                 </select>
             </div>
         </div>
@@ -454,7 +454,8 @@ async function loadCategoryReport() {
         loadCategoryData(e.target.value);
     });
 
-    loadCategoryData(EXPENSE_CATEGORIES[0].name);
+    const enabledExpenseCategories = getEnabledCategories('expense');
+    loadCategoryData(enabledExpenseCategories[0]?.name || 'Other');
 }
 
 async function loadCategoryData(category) {

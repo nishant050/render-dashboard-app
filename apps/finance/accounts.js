@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Load accounts
 async function loadAccounts() {
     try {
-        const accounts = await api('/accounts');
+        const accounts = await api(`/accounts?month=${currentMonth}&year=${currentYear}`);
         renderNetWorth(accounts);
         renderAccountCards(accounts);
     } catch (error) {
@@ -46,8 +46,13 @@ function renderAccountCards(accounts) {
     let html = '<div class="grid grid-2 gap-lg">';
     accounts.forEach(account => {
         const isCreditCard = account.type === 'credit_card';
+        const pendingAmount = account.pendingAmount || 0;
         const balanceClass = isCreditCard ? (account.balance > 0 ? 'amount-negative' : 'amount-positive') : 'amount-positive';
         const typeLabel = account.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+        const pendingBillInfo = isCreditCard && pendingAmount > 0
+            ? `<div class="account-pending">Pending: ${formatCurrency(pendingAmount)}</div>`
+            : '';
 
         html += `
             <div class="account-card">
@@ -56,10 +61,12 @@ function renderAccountCards(accounts) {
                     <div>
                         <div class="account-name">${account.name}</div>
                         <div class="account-type">${typeLabel}</div>
+                        ${pendingBillInfo}
                     </div>
                 </div>
                 <div class="account-balance ${balanceClass}">${formatCurrency(account.balance)}</div>
                 <div class="account-actions">
+                    ${isCreditCard ? `<button class="btn btn-primary btn-sm" onclick="createCreditCardBill('${account._id}', '${account.name}')">Create Bill</button>` : ''}
                     <button class="btn btn-ghost btn-sm" onclick="editAccount('${account._id}')">Edit</button>
                     <button class="btn btn-ghost btn-sm" onclick="deleteAccount('${account._id}')">Delete</button>
                 </div>
@@ -263,5 +270,94 @@ async function openTransferForm() {
         });
     } catch (error) {
         showToast('Error loading accounts', 'error');
+    }
+}
+
+// Create credit card bill
+async function createCreditCardBill(accountId, accountName) {
+    try {
+        const accounts = await api('/accounts');
+        const account = accounts.find(a => a._id === accountId);
+
+        if (!account) {
+            showToast('Account not found', 'error');
+            return;
+        }
+
+        const currentMonth = new Date().getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+
+        const formHTML = `
+            <form id="credit-card-bill-form">
+                <div class="form-group">
+                    <label class="form-label">Bill Name</label>
+                    <input type="text" name="name" class="form-input" placeholder="e.g., HDFC Credit Card Bill"
+                        value="${accountName} Bill" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Amount (₹)</label>
+                    <input type="number" name="amount" class="form-input" placeholder="0.00" step="0.01"
+                        value="${Math.abs(account.balance)}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bill Month</label>
+                    <div class="flex gap-sm">
+                        <select name="month" class="form-select" required>
+                            ${Array.from({ length: 12 }, (_, i) => i + 1).map(m =>
+            `<option value="${m}" ${m === currentMonth ? 'selected' : ''}>${getMonthName(m)}</option>`
+        ).join('')}
+                        </select>
+                        <select name="year" class="form-select" required>
+                            ${Array.from({ length: 3 }, (_, i) => currentYear - 1 + i).map(y =>
+            `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`
+        ).join('')}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Due Day (1-31)</label>
+                    <input type="number" name="dueDay" class="form-input" min="1" max="31"
+                        value="15" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <select name="category" class="form-select" required>
+                        <option value="">Select category</option>
+                        ${getEnabledCategories('expense').map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-textarea" placeholder="Additional notes..."></textarea>
+                </div>
+            </form>
+        `;
+
+        openModal('Create Credit Card Bill', formHTML, async () => {
+            const form = document.getElementById('credit-card-bill-form');
+            const formData = new FormData(form);
+
+            const data = {
+                name: formData.get('name'),
+                amount: parseFloat(formData.get('amount')),
+                month: parseInt(formData.get('month')),
+                year: parseInt(formData.get('year')),
+                dueDay: parseInt(formData.get('dueDay')),
+                category: formData.get('category'),
+                notes: formData.get('notes'),
+                type: 'one-time',
+                isRecurring: false,
+                accountId: accountId
+            };
+
+            if (!validateAmount(data.amount)) return;
+            if (!validateRequired({ name: data.name, category: data.category, dueDay: data.dueDay })) return;
+
+            await api('/bills', { method: 'POST', body: data });
+            showToast('Credit card bill created successfully', 'success');
+            loadAccounts();
+        });
+    } catch (error) {
+        showToast('Error creating credit card bill', 'error');
     }
 }

@@ -98,7 +98,7 @@ function renderBillList(bills) {
                 <div class="bill-header">
                     <div>
                         <div class="bill-name">${icon} ${bill.name}</div>
-                        <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">${bill.category}</div>
+                        <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">${bill.category} • ${bill.type === 'one-time' ? 'One-time' : bill.frequency}</div>
                     </div>
                     <span class="badge ${statusClass}">${statusText}</span>
                 </div>
@@ -164,7 +164,7 @@ function getDaySuffix(day) {
 }
 
 function openBillForm(existingBill = null) {
-    const categoryOptions = EXPENSE_CATEGORIES.map(c =>
+    const categoryOptions = getEnabledCategories('expense').map(c =>
         `<option value="${c.name}" ${existingBill?.category === c.name ? 'selected' : ''}>${c.icon} ${c.name}</option>`
     ).join('');
 
@@ -188,11 +188,18 @@ function openBillForm(existingBill = null) {
                 </select>
             </div>
             <div class="form-group">
+                <label class="form-label">Type</label>
+                <select name="type" class="form-select" id="bill-type-select">
+                    <option value="recurring" ${existingBill?.type === 'recurring' || !existingBill ? 'selected' : ''}>Recurring Bill</option>
+                    <option value="one-time" ${existingBill?.type === 'one-time' ? 'selected' : ''}>One-time Payment</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label class="form-label">Due Day (1-31)</label>
                 <input type="number" name="dueDay" class="form-input" min="1" max="31"
                     value="${existingBill?.dueDay || ''}" required>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="frequency-group">
                 <label class="form-label">Frequency</label>
                 <select name="frequency" class="form-select">
                     <option value="monthly" ${existingBill?.frequency === 'monthly' ? 'selected' : ''}>Monthly</option>
@@ -226,6 +233,7 @@ function openBillForm(existingBill = null) {
             name: formData.get('name'),
             amount: parseFloat(formData.get('amount')),
             category: formData.get('category'),
+            type: formData.get('type'),
             dueDay: parseInt(formData.get('dueDay')),
             frequency: formData.get('frequency'),
             autoPay: formData.get('autoPay') === 'on',
@@ -246,11 +254,24 @@ function openBillForm(existingBill = null) {
 
         loadBills(currentMonth, currentYear);
     });
+
+    // Handle type selector visibility
+    const typeSelect = document.getElementById('bill-type-select');
+    const frequencyGroup = document.getElementById('frequency-group');
+
+    if (typeSelect && frequencyGroup) {
+        typeSelect.addEventListener('change', () => {
+            frequencyGroup.style.display = typeSelect.value === 'recurring' ? 'block' : 'none';
+        });
+
+        // Initial visibility
+        frequencyGroup.style.display = typeSelect.value === 'recurring' ? 'block' : 'none';
+    }
 }
 
 async function editBill(id) {
     try {
-        const bills = await api('/bills');
+        const bills = await api(`/bills?month=${currentMonth}&year=${currentYear}`);
         const bill = bills.find(b => b._id === id);
         if (bill) {
             openBillForm(bill);
@@ -274,7 +295,7 @@ async function deleteBill(id) {
 
 async function payBill(id) {
     try {
-        const bills = await api('/bills');
+        const bills = await api(`/bills?month=${currentMonth}&year=${currentYear}`);
         const bill = bills.find(b => b._id === id);
         if (!bill) return;
 

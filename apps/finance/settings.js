@@ -16,6 +16,10 @@ function setupEventListeners() {
     });
     document.getElementById('import-file').addEventListener('change', importData);
     document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
+
+    // Category management
+    document.getElementById('add-expense-category-btn').addEventListener('click', () => openCategoryForm('expense'));
+    document.getElementById('add-income-category-btn').addEventListener('click', () => openCategoryForm('income'));
 }
 
 // Load settings
@@ -218,3 +222,131 @@ function clearAllData() {
         }
     });
 }
+
+// ===== CATEGORY MANAGEMENT =====
+
+// Load and render categories
+function loadCategories() {
+    const expenseCategories = JSON.parse(localStorage.getItem('financeExpenseCategories')) || EXPENSE_CATEGORIES;
+    const incomeCategories = JSON.parse(localStorage.getItem('financeIncomeCategories')) || INCOME_CATEGORIES;
+
+    renderCategoryList('expense', expenseCategories);
+    renderCategoryList('income', incomeCategories);
+}
+
+// Render category list
+function renderCategoryList(type, categories) {
+    const container = document.getElementById(`${type}-categories-list`);
+    if (!container) return;
+
+    let html = '';
+    categories.forEach((cat, index) => {
+        const isDisabled = cat.disabled;
+        html += `
+            <div class="category-item ${isDisabled ? 'disabled' : ''}" data-index="${index}">
+                <div class="category-info">
+                    <span class="category-icon">${cat.icon}</span>
+                    <span class="category-name">${cat.name}</span>
+                    ${cat.color ? `<span class="category-color" style="background-color: ${cat.color}"></span>` : ''}
+                </div>
+                <div class="category-actions">
+                    <button class="btn btn-ghost btn-xs" onclick="toggleCategory('${type}', ${index})">
+                        ${isDisabled ? '✅ Enable' : '❌ Disable'}
+                    </button>
+                    <button class="btn btn-ghost btn-xs" onclick="editCategory('${type}', ${index})">✏️ Edit</button>
+                    <button class="btn btn-ghost btn-xs" onclick="deleteCategory('${type}', ${index})">🗑️ Delete</button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+// Open category form
+function openCategoryForm(type, existingCategory = null, index = null) {
+    const formHTML = `
+        <form id="category-form">
+            <div class="form-group">
+                <label class="form-label">Category Name</label>
+                <input type="text" name="name" class="form-input" placeholder="e.g., Food, Travel"
+                    value="${existingCategory?.name || ''}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Icon (emoji)</label>
+                <input type="text" name="icon" class="form-input" placeholder="e.g., 🍔, 🚗"
+                    value="${existingCategory?.icon || '📌'}" required>
+            </div>
+            ${type === 'expense' ? `
+            <div class="form-group">
+                <label class="form-label">Color (hex)</label>
+                <input type="color" name="color" class="form-input"
+                    value="${existingCategory?.color || '#94A3B8'}">
+            </div>
+            ` : ''}
+        </form>
+    `;
+
+    openModal(existingCategory ? 'Edit Category' : 'Add Category', formHTML, async () => {
+        const form = document.getElementById('category-form');
+        const formData = new FormData(form);
+
+        const category = {
+            name: formData.get('name'),
+            icon: formData.get('icon'),
+            ...(type === 'expense' && { color: formData.get('color') })
+        };
+
+        if (!validateRequired({ name: category.name, icon: category.icon })) return;
+
+        const categories = JSON.parse(localStorage.getItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`)) ||
+            (type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES);
+
+        if (existingCategory && index !== null) {
+            categories[index] = category;
+        } else {
+            categories.push(category);
+        }
+
+        localStorage.setItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`, JSON.stringify(categories));
+        renderCategoryList(type, categories);
+        showToast('Category saved successfully', 'success');
+    });
+}
+
+// Edit category
+function editCategory(type, index) {
+    const categories = JSON.parse(localStorage.getItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`)) ||
+        (type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES);
+    const category = categories[index];
+    openCategoryForm(type, category, index);
+}
+
+// Toggle category enabled/disabled
+function toggleCategory(type, index) {
+    const categories = JSON.parse(localStorage.getItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`)) ||
+        (type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES);
+
+    categories[index].disabled = !categories[index].disabled;
+    localStorage.setItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`, JSON.stringify(categories));
+    renderCategoryList(type, categories);
+    showToast(`Category ${categories[index].disabled ? 'disabled' : 'enabled'}`, 'success');
+}
+
+// Delete category
+function deleteCategory(type, index) {
+    showConfirm('Are you sure you want to delete this category?', () => {
+        const categories = JSON.parse(localStorage.getItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`)) ||
+            (type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES);
+
+        categories.splice(index, 1);
+        localStorage.setItem(`finance${type.charAt(0).toUpperCase() + type.slice(1)}Categories`, JSON.stringify(categories));
+        renderCategoryList(type, categories);
+        showToast('Category deleted successfully', 'success');
+    });
+}
+
+// Initialize categories on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadCategories();
+});

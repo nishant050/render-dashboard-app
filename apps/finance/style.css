@@ -1433,6 +1433,13 @@ body {
     margin-bottom: var(--space-md);
 }
 
+.account-pending {
+    font-size: var(--font-size-sm);
+    color: var(--color-warning);
+    font-weight: 600;
+    margin-top: var(--space-xs);
+}
+
 .account-actions {
     display: flex;
     gap: var(--space-sm);

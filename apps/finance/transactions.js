@@ -29,7 +29,7 @@ function setupFilters() {
 
     // Category filter
     const categoryFilter = document.getElementById('category-filter');
-    const allCategories = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+    const allCategories = [...getEnabledCategories('income'), ...getEnabledCategories('expense')];
     allCategories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat.name;
@@ -140,7 +140,7 @@ function renderTransactionList(transactions) {
 }
 
 function openTransactionForm(type, existingData = null) {
-    const categories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const categories = getEnabledCategories(type);
     const categoryOptions = categories.map(c =>
         `<option value="${c.name}" ${existingData?.category === c.name ? 'selected' : ''}>${c.icon} ${c.name}</option>`
     ).join('');
@@ -237,7 +237,7 @@ function openTransactionForm(type, existingData = null) {
 
             // Update category dropdown
             const categorySelect = document.querySelector('select[name="category"]');
-            const newCategories = newType === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+            const newCategories = getEnabledCategories(newType);
             categorySelect.innerHTML = '<option value="">Select category</option>' +
                 newCategories.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
         });

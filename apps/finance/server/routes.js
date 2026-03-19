@@ -300,7 +300,18 @@ router.get('/budgets/performance', async (req, res) => {
 // GET /bills - All active bills
 router.get('/bills', async (req, res) => {
     try {
-        const bills = await Bill.find({ isActive: true }).sort({ dueDay: 1 });
+        const { month, year } = req.query;
+        let query = { isActive: true };
+
+        // Filter one-time bills by month and year if provided
+        if (month && year) {
+            query.$or = [
+                { type: 'recurring' },
+                { type: 'one-time', month: parseInt(month), year: parseInt(year) }
+            ];
+        }
+
+        const bills = await Bill.find(query).sort({ dueDay: 1 });
         res.json(bills);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -343,9 +354,17 @@ router.delete('/bills/:id', async (req, res) => {
 router.get('/bills/status', async (req, res) => {
     try {
         const { month, year } = req.query;
-        const bills = await Bill.find({ isActive: true });
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0, 23, 59, 59);
+
+        // Find bills that are either recurring or one-time bills for this month
+        const bills = await Bill.find({
+            isActive: true,
+            $or: [
+                { type: 'recurring' },
+                { type: 'one-time', month: parseInt(month), year: parseInt(year) }
+            ]
+        });
 
         const paidBills = await Transaction.find({
             billId: { $ne: null },
@@ -520,7 +539,43 @@ router.get('/goals/summary', async (req, res) => {
 // GET /accounts - All accounts
 router.get('/accounts', async (req, res) => {
     try {
+        const { month, year } = req.query;
         const accounts = await Account.find().sort({ type: 1, name: 1 });
+
+        // Get pending bills for credit cards if month/year provided
+        if (month && year) {
+            const startDate = new Date(year, month - 1, 1);
+            const endDate = new Date(year, month, 0, 23, 59, 59);
+
+            // Get all one-time bills for credit cards in this month
+            const bills = await Bill.find({
+                accountId: { $in: accounts.filter(a => a.type === 'credit_card').map(a => a._id) },
+                type: 'one-time',
+                month: parseInt(month),
+                year: parseInt(year)
+            });
+
+            // Get paid bills by checking transactions
+            const paidBills = await Transaction.find({
+                billId: { $ne: null },
+                date: { $gte: startDate, $lte: endDate }
+            }).distinct('billId');
+
+            const paidBillIds = new Set(paidBills.map(id => id.toString()));
+
+            // Add pending bills to accounts
+            accounts.forEach(account => {
+                if (account.type === 'credit_card') {
+                    const accountBills = bills.filter(b =>
+                        b.accountId.toString() === account._id.toString() &&
+                        !paidBillIds.has(b._id.toString())
+                    );
+                    account.pendingBills = accountBills;
+                    account.pendingAmount = accountBills.reduce((sum, b) => sum + b.amount, 0);
+                }
+            });
+        }
+
         res.json(accounts);
     } catch (error) {
         res.status(500).json({ error: error.message });

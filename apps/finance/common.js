@@ -236,7 +236,7 @@ function showConfirm(message, onConfirm) {
 }
 
 // ===== CATEGORY CONFIGURATION =====
-const INCOME_CATEGORIES = [
+const DEFAULT_INCOME_CATEGORIES = [
     { name: 'Salary', icon: '💼' },
     { name: 'Freelance', icon: '💻' },
     { name: 'Business', icon: '🏪' },
@@ -247,7 +247,7 @@ const INCOME_CATEGORIES = [
     { name: 'Other', icon: '📌' }
 ];
 
-const EXPENSE_CATEGORIES = [
+const DEFAULT_EXPENSE_CATEGORIES = [
     { name: 'Food & Dining', icon: '🍔', color: '#F97316' },
     { name: 'Groceries', icon: '🛒', color: '#84CC16' },
     { name: 'Transport', icon: '🚗', color: '#3B82F6' },
@@ -267,6 +267,21 @@ const EXPENSE_CATEGORIES = [
     { name: 'Tax', icon: '📋', color: '#78716C' },
     { name: 'Other', icon: '📌', color: '#94A3B8' }
 ];
+
+// Load custom categories from localStorage or use defaults
+const INCOME_CATEGORIES = JSON.parse(localStorage.getItem('financeIncomeCategories')) || DEFAULT_INCOME_CATEGORIES;
+const EXPENSE_CATEGORIES = JSON.parse(localStorage.getItem('financeExpenseCategories')) || DEFAULT_EXPENSE_CATEGORIES;
+
+// Get enabled categories only (filter out disabled ones)
+function getEnabledCategories(type = 'expense') {
+    const categories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    return categories.filter(cat => !cat.disabled);
+}
+
+// Get all categories including disabled ones
+function getAllCategories(type = 'expense') {
+    return type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+}
 
 const PAYMENT_METHODS = [
     'Cash', 'UPI', 'Credit Card', 'Debit Card',
