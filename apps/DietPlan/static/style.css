@@ -264,6 +264,89 @@ select.input-field {
     }
 }
 
+/* ──────────── WHO Loading Pulse ──────────── */
+.who-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2rem;
+}
+
+.pulse-loader {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+        box-shadow: 0 0 20px var(--accent-1);
+    }
+
+    100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+}
+
+/* ──────────── WHO Quick Add Buttons ──────────── */
+.ai-quick-add {
+    animation: fadeIn 0.3s ease-out;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.ai-quick-add-title {
+    margin: 0 0 0.75rem 0;
+    font-weight: 700;
+}
+
+.ai-quick-add-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.quick-add-form {
+    margin: 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ai-quick-add .btn {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.ai-quick-add .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.meal-replace-textarea {
+    padding: 1rem;
+}
+
 /* ──────────── Alerts ──────────── */
 .alert {
     padding: 0.875rem 1rem;
@@ -2550,6 +2633,7 @@ select.input-field {
 .meal-editor-textarea {
     min-height: 110px;
     resize: vertical;
+    padding: 1rem;
 }
 
 .meal-macro-grid {
@@ -2597,6 +2681,7 @@ select.input-field {
 }
 
 @media (max-width: 1024px) {
+
     .planner-stats,
     .meal-macro-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2608,6 +2693,7 @@ select.input-field {
 }
 
 @media (max-width: 768px) {
+
     .planner-hero,
     .planner-toolbar,
     .planner-filter-top,

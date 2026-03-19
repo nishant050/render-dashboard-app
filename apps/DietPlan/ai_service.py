@@ -1,8 +1,12 @@
 """
-AI service helpers for recipe enrichment across supported providers.
+AI service helpers for recipe enrichment and nutrition workflows.
 """
+import json
 import os
+import re
+import time
 from html import escape
+from typing import Any, Callable
 from urllib.parse import quote_plus
 
 import httpx
@@ -15,7 +19,24 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_API_URL_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
 )
-CACHE_VERSION = 2
+CACHE_VERSION = 3
+RETRYABLE_STATUS_CODES = {400, 401, 403, 404, 408, 409, 429, 500, 502, 503, 504}
+MEAL_TYPES = {
+    "breakfast",
+    "morning_snack",
+    "lunch",
+    "afternoon_snack",
+    "dinner",
+    "evening_snack",
+}
+
+
+class RetryableAIError(Exception):
+    """Signals that another configured model should be tried."""
+
+
+class ParseAIError(RetryableAIError):
+    """Signals that a response was received but unusable."""
 
 
 async def get_default_model():
@@ -30,6 +51,50 @@ async def get_all_models():
     db = await get_db()
     cursor = db.ai_models.find({}).sort([("is_default", -1), ("created_at", -1)])
     return await cursor.to_list(length=None)
+
+
+def get_api_key(model: dict) -> str:
+    provider = (model.get("provider") or "").lower()
+    env_map = {
+        "gemini": "GEMINI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "groq": "GROQ_API_KEY",
+    }
+    env_name = env_map.get(provider, f"{provider.upper()}_API_KEY")
+    return (model.get("api_key") or os.environ.get(env_name, "")).strip()
+
+
+def has_configured_key(model: dict) -> bool:
+    return bool(get_api_key(model))
+
+
+async def get_candidate_models() -> list[dict]:
+    default_model = await get_default_model()
+    all_models = await get_all_models()
+    ordered: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_model(model: dict | None):
+        if not model:
+            return
+        provider = (model.get("provider") or "").lower()
+        model_id = (model.get("model_id") or "").strip()
+        if not provider or not model_id or not has_configured_key(model):
+            return
+        key = (provider, model_id)
+        if key in seen:
+            return
+        seen.add(key)
+        ordered.append(model)
+
+    add_model(default_model)
+
+    for provider_name in ("openrouter", "groq"):
+        for model in all_models:
+            if (model.get("provider") or "").lower() == provider_name:
+                add_model(model)
+
+    return ordered
 
 
 async def get_cached_recipe(dish_name: str, model_id: str):
@@ -56,21 +121,19 @@ async def cache_recipe(dish_name: str, model_id: str, recipe_html: str):
     )
 
 
-def build_prompt(dish_name: str, include_youtube: bool = True) -> str:
+def build_recipe_prompt(dish_name: str, include_youtube: bool = True) -> str:
     youtube_line = (
-        "Mention one suitable YouTube tutorial in the video note section if a real link is available."
+        "Add one short video note only if a trustworthy real link is available."
         if include_youtube
-        else "Skip any video references."
+        else "Do not mention videos."
     )
     return f"""
-You are a nutrition expert and chef. Build a concise recipe brief for "{dish_name}".
+Create a short, useful recipe brief for "{dish_name}".
 
-Return only a clean HTML fragment. Do not use markdown. Do not invent external links.
-Use this structure:
-
+Return only a compact HTML fragment with this structure:
 <div class="recipe-ai-block">
   <h3>Recipe overview</h3>
-  <p>Short intro with cuisine/style and serving context.</p>
+  <p>1-2 sentence summary.</p>
   <h4>Nutrition snapshot</h4>
   <ul>
     <li>Calories</li>
@@ -83,31 +146,77 @@ Use this structure:
   <ul>...</ul>
   <h4>Method</h4>
   <ol>...</ol>
-  <h4>Time and prep notes</h4>
-  <p>Prep, cook, and total time.</p>
   <h4>Health notes</h4>
   <ul>...</ul>
-  <h4>Dietary notes</h4>
-  <p>Allergens, substitutions, vegetarian/vegan/gluten notes.</p>
   <h4>Video note</h4>
-  <p>Explain what kind of video tutorial would be useful. {youtube_line}</p>
+  <p>{youtube_line}</p>
 </div>
+
+If you are unsure, keep the answer simple and practical.
 """.strip()
 
 
-def extract_text_from_parts(parts) -> str:
+def build_nutrition_prompt(profile: dict, macros: dict, meals_list: list[str]) -> str:
+    meals_str = "\n".join([f"- {meal}" for meal in meals_list]) if meals_list else "- None assigned yet"
+    return f"""
+Review this patient's meal plan against general WHO-style nutrition guidance.
+
+Patient:
+- Age: {profile.get('age', 'Unknown')}
+- Height: {profile.get('height_cm', 'Unknown')} cm
+- Weight: {profile.get('weight_kg', 'Unknown')} kg
+- Condition: {profile.get('current_disease', 'None')}
+- Treatment: {profile.get('treatment_status', 'None')}
+
+Meals today:
+{meals_str}
+
+Planned totals:
+- Calories: {macros['calories']} kcal
+- Protein: {macros['protein']} g
+- Carbs: {macros['carbs']} g
+- Fat: {macros['fat']} g
+- Fiber: {macros['fiber']} g
+
+Return only HTML using this structure:
+<div class='ai-nutrition'>
+  <h3>WHO Nutrition Analysis</h3>
+  <p class='ai-assess'>Short assessment.</p>
+  <div class='nutrition-bars'>
+    <div><label>Calories</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Protein</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Carbs</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Fat</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Fiber</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Sugar</label><progress value='x' max='100'></progress><span>x%</span></div>
+    <div><label>Sodium</label><progress value='x' max='100'></progress><span>x%</span></div>
+  </div>
+  <ul class='ai-recs'>
+    <li>2-3 specific tips.</li>
+  </ul>
+</div>
+
+After the HTML, include one JSON array wrapped in these exact markers:
+<!--JSON_START-->
+[{{"dish_name":"Example Dish","meal_type":"lunch","calories":320,"protein_g":18,"carbs_g":26,"fat_g":12,"fiber_g":7,"reason":"Short reason"}}]
+<!--JSON_END-->
+
+Keep the meal suggestions realistic and easy to add.
+""".strip()
+
+
+def extract_text_from_parts(parts: list[dict] | None) -> str:
     text_parts = []
     for part in parts or []:
         text = part.get("text")
         if text:
-            text_parts.append(text)
+            text_parts.append(str(text))
     return "\n".join(text_parts).strip()
 
 
-def extract_grounding_links(candidate) -> list[dict]:
+def extract_grounding_links(candidate: dict) -> list[dict]:
     links = []
     seen = set()
-
     metadata = candidate.get("groundingMetadata") or {}
     for chunk in metadata.get("groundingChunks") or []:
         web = chunk.get("web") or {}
@@ -121,17 +230,7 @@ def extract_grounding_links(candidate) -> list[dict]:
             "url": url,
             "is_youtube": "youtube.com" in url or "youtu.be" in url,
         })
-
     return links
-
-
-def ensure_html_fragment(content: str) -> str:
-    stripped = (content or "").strip()
-    if not stripped:
-        return "<p class='error'>No recipe details were returned.</p>"
-    if "<" in stripped and ">" in stripped:
-        return stripped
-    return f"<p>{escape(stripped)}</p>"
 
 
 def build_grounding_panel(dish_name: str, links: list[dict], include_youtube: bool) -> str:
@@ -152,6 +251,7 @@ def build_grounding_panel(dish_name: str, links: list[dict], include_youtube: bo
         f"<li><a href='{escape(link['url'])}' target='_blank' rel='noopener'>{escape(link['title'])}</a></li>"
         for link in recipe_links
     )
+
     youtube_html = ""
     if youtube_link:
         youtube_html = (
@@ -163,423 +263,650 @@ def build_grounding_panel(dish_name: str, links: list[dict], include_youtube: bo
 
     source_html = ""
     if recipe_items:
-        source_html = f"""
-        <div class="recipe-source-block">
-            <h4>Recipe sources</h4>
-            <ul class="recipe-source-list">{recipe_items}</ul>
-        </div>
-        """
+        source_html = (
+            "<div class='recipe-source-block'>"
+            "<h4>Recipe sources</h4>"
+            f"<ul class='recipe-source-list'>{recipe_items}</ul>"
+            "</div>"
+        )
 
     if not source_html and not youtube_html:
         return ""
 
-    return f"""
-    <div class="recipe-grounding-panel">
-        {youtube_html}
-        {source_html}
-    </div>
-    """
+    return f"<div class='recipe-grounding-panel'>{youtube_html}{source_html}</div>"
 
 
-def build_gemini_html(dish_name: str, candidate, include_youtube: bool) -> str:
-    content = extract_text_from_parts((candidate.get("content") or {}).get("parts") or [])
-    recipe_html = ensure_html_fragment(content)
-    grounding_html = build_grounding_panel(
-        dish_name,
-        extract_grounding_links(candidate),
-        include_youtube,
+def ensure_html_fragment(content: str, wrapper_class: str = "ai-fallback-text") -> str:
+    stripped = (content or "").strip()
+    if not stripped:
+        raise ParseAIError("empty response")
+    if "<" in stripped and ">" in stripped:
+        return stripped
+    return f"<div class='{wrapper_class}'><p>{escape(stripped)}</p></div>"
+
+
+def clean_code_fences(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```html"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+def find_json_candidates(text: str) -> list[str]:
+    decoder = json.JSONDecoder()
+    matches: list[str] = []
+    for idx, char in enumerate(text):
+        if char not in "[{":
+            continue
+        try:
+            _, end = decoder.raw_decode(text[idx:])
+            matches.append(text[idx:idx + end])
+        except json.JSONDecodeError:
+            continue
+    return matches
+
+
+def parse_json_payload(raw_text: str, expected_type: str) -> Any:
+    cleaned = clean_code_fences(raw_text)
+    candidates = [cleaned, *find_json_candidates(cleaned)]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if expected_type == "array" and isinstance(parsed, list):
+            return parsed
+        if expected_type == "object" and isinstance(parsed, dict):
+            return parsed
+    raise ParseAIError(f"invalid {expected_type} response")
+
+
+def parse_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_meal_type(value: Any, default: str = "lunch") -> str:
+    meal_type = str(value or default).strip().lower()
+    return meal_type if meal_type in MEAL_TYPES else default
+
+
+def normalize_meal_candidate(item: dict) -> dict | None:
+    dish_name = str(item.get("dish_name", "")).strip()
+    if not dish_name:
+        return None
+    description = str(item.get("description") or item.get("reason") or "").strip()
+    return {
+        "dish_name": dish_name,
+        "description": description,
+        "meal_type": normalize_meal_type(item.get("meal_type")),
+        "calories": parse_int(item.get("calories", 0)),
+        "protein_g": round(parse_float(item.get("protein_g", 0.0)), 1),
+        "carbs_g": round(parse_float(item.get("carbs_g", 0.0)), 1),
+        "fat_g": round(parse_float(item.get("fat_g", 0.0)), 1),
+        "fiber_g": round(parse_float(item.get("fiber_g", 0.0)), 1),
+        "reason": str(item.get("reason", "")).strip(),
+    }
+
+
+def extract_actionable_meals(raw_text: str) -> list[dict]:
+    marker_match = re.search(
+        r"<!--JSON_START-->\s*(.*?)\s*<!--JSON_END-->",
+        raw_text or "",
+        flags=re.DOTALL,
     )
-    return f"{recipe_html}{grounding_html}"
+    payload = marker_match.group(1) if marker_match else raw_text
+    parsed = parse_json_payload(payload, "array")
+    meals = []
+    for item in parsed:
+        if isinstance(item, dict):
+            normalized = normalize_meal_candidate(item)
+            if normalized:
+                meals.append(normalized)
+    return meals[:3]
+
+
+def strip_hidden_json(raw_html: str) -> str:
+    return re.sub(
+        r"<!--JSON_START-->\s*.*?\s*<!--JSON_END-->",
+        "",
+        raw_html or "",
+        flags=re.DOTALL,
+    ).strip()
+
+
+def append_inside_root(html_fragment: str, addition: str) -> str:
+    stripped = html_fragment.strip()
+    if stripped.endswith("</div>"):
+        return re.sub(r"</div>\s*$", f"{addition}</div>", stripped, count=1)
+    return f"{stripped}{addition}"
+
+
+def build_quick_add_html(actionable_meals: list[dict], plan_date: str | None) -> str:
+    if not actionable_meals:
+        return ""
+
+    forms = []
+    for meal in actionable_meals:
+        meal_json = escape(json.dumps(meal), quote=True)
+        date_input = ""
+        if plan_date:
+            date_input = f"<input type='hidden' name='plan_date' value='{escape(plan_date)}'>"
+        forms.append(
+            "<form class='quick-add-form' hx-post='/dietplan/meal/quick_add' "
+            "hx-target='#quick-add-msg' hx-swap='innerHTML'>"
+            f"<input type='hidden' name='meal_json' value='{meal_json}'>"
+            f"{date_input}"
+            f"<button type='submit' class='btn btn-sm btn-primary'>+ {escape(meal['dish_name'])}</button>"
+            "</form>"
+        )
+
+    joined_forms = "".join(forms)
+    return (
+        "<div class='ai-quick-add'>"
+        "<p class='ai-quick-add-title'>Click to add to this day's plan:</p>"
+        f"<div class='ai-quick-add-actions'>{joined_forms}</div>"
+        "<div id='quick-add-msg'></div>"
+        "</div>"
+    )
+
+
+def build_recipe_unavailable_html(dish_name: str) -> str:
+    return (
+        "<div class='recipe-ai-block'>"
+        "<h3>Recipe overview</h3>"
+        f"<p>AI recipe details for {escape(dish_name)} are unavailable right now.</p>"
+        "<h4>What to do next</h4>"
+        "<ul><li>Try again in a moment.</li><li>Use the dish description and macros already shown on the dashboard.</li></ul>"
+        "</div>"
+    )
+
+
+def build_nutrition_fallback_html(macros: dict, meals_list: list[str]) -> str:
+    meal_items = "".join(f"<li>{escape(item)}</li>" for item in meals_list[:5]) or "<li>No meals planned yet.</li>"
+    return f"""
+<div class='ai-nutrition'>
+  <h3 style="margin-top:0;">WHO Nutrition Analysis</h3>
+  <p class='ai-assess'>AI recommendations are temporarily unavailable, but your current plan totals are still shown below.</p>
+  <div class='nutrition-bars' style='display:grid; gap:0.5rem; margin-bottom:1rem;'>
+    <div><label>Calories</label><span>{escape(str(macros['calories']))} kcal</span></div>
+    <div><label>Protein</label><span>{escape(str(round(macros['protein'], 1)))} g</span></div>
+    <div><label>Carbs</label><span>{escape(str(round(macros['carbs'], 1)))} g</span></div>
+    <div><label>Fat</label><span>{escape(str(round(macros['fat'], 1)))} g</span></div>
+    <div><label>Fiber</label><span>{escape(str(round(macros['fiber'], 1)))} g</span></div>
+  </div>
+  <ul class='ai-recs'>
+    <li>Review meal balance manually and try the AI analysis again later.</li>
+    <li>Focus on protein, fiber, and hydration if you need a simple fallback rule.</li>
+  </ul>
+  <div class='ai-meal-fallback'><strong>Meals today</strong><ul>{meal_items}</ul></div>
+</div>
+""".strip()
+
+
+def get_retryable_reason(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.RequestError):
+        return "connection error"
+    return str(exc)
+
+
+def log_attempt(feature_name: str, model: dict, started_at: float, exc: Exception):
+    provider = model.get("provider", "unknown")
+    model_id = model.get("model_id", "unknown")
+    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+    print(
+        f"[AI][{feature_name}] {provider}:{model_id} failed after {elapsed_ms}ms"
+        f" ({get_retryable_reason(exc)})"
+    )
+
+
+def get_endpoint_and_headers(model: dict) -> tuple[str, dict]:
+    provider = model["provider"]
+    api_key = get_api_key(model)
+    headers = {"Content-Type": "application/json"}
+
+    if provider == "groq":
+        headers["Authorization"] = f"Bearer {api_key}"
+        return GROQ_API_URL, headers
+    if provider == "openrouter":
+        headers["Authorization"] = f"Bearer {api_key}"
+        headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
+        headers["X-Title"] = "Diet Plan Dashboard"
+        return OPENROUTER_API_URL, headers
+    if provider == "gemini":
+        headers["x-goog-api-key"] = api_key
+        return GEMINI_API_URL_TEMPLATE.format(model_id=model["model_id"]), headers
+    raise RetryableAIError(f"unsupported provider {provider}")
+
+
+def build_payload(
+    model: dict,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    enable_grounding: bool = False,
+) -> dict:
+    if model["provider"] == "gemini":
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if enable_grounding and bool(model.get("search_grounding", 1)):
+            payload["tools"] = [{"google_search": {}}]
+        return payload
+
+    return {
+        "model": model["model_id"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+
+
+def extract_model_text(model: dict, data: dict) -> str:
+    if model["provider"] == "gemini":
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise ParseAIError("empty candidates")
+        return extract_text_from_parts((candidates[0].get("content") or {}).get("parts") or [])
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise ParseAIError("empty choices")
+    message = choices[0].get("message") or {}
+    content = message.get("content", "")
+    if isinstance(content, list):
+        content = "\n".join(
+            item.get("text", "")
+            for item in content
+            if isinstance(item, dict) and item.get("text")
+        )
+    return str(content or "").strip()
+
+
+async def call_model(
+    feature_name: str,
+    model: dict,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    enable_grounding: bool = False,
+) -> tuple[str, dict]:
+    api_url, headers = get_endpoint_and_headers(model)
+    payload = build_payload(
+        model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        enable_grounding=enable_grounding,
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            response = await client.post(api_url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+        raw_text = extract_model_text(model, data)
+        if not raw_text.strip():
+            raise ParseAIError("empty text")
+        return raw_text, data
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in RETRYABLE_STATUS_CODES or exc.response.status_code >= 400:
+            raise RetryableAIError(get_retryable_reason(exc)) from exc
+        raise
+    except (httpx.TimeoutException, httpx.RequestError) as exc:
+        raise RetryableAIError(get_retryable_reason(exc)) from exc
+
+
+async def run_with_failover(
+    feature_name: str,
+    system_prompt: str,
+    user_prompt: str,
+    parser: Callable[[str, dict], Any],
+    temperature: float = 0.2,
+    max_tokens: int = 1200,
+    enable_grounding: bool = False,
+) -> tuple[Any | None, dict | None]:
+    models = await get_candidate_models()
+    for model in models:
+        started_at = time.perf_counter()
+        try:
+            raw_text, data = await call_model(
+                feature_name=feature_name,
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                enable_grounding=enable_grounding,
+            )
+            parsed = parser(raw_text, data)
+            if parsed is None:
+                raise ParseAIError("parser returned no result")
+            return parsed, model
+        except (RetryableAIError, ParseAIError) as exc:
+            log_attempt(feature_name, model, started_at, exc)
+            continue
+        except Exception as exc:
+            log_attempt(feature_name, model, started_at, exc)
+            continue
+    return None, None
+
+
+def parse_recipe_response(dish_name: str, include_youtube: bool) -> Callable[[str, dict], str]:
+    def parser(raw_text: str, data: dict) -> str:
+        recipe_html = ensure_html_fragment(raw_text, wrapper_class="recipe-ai-block")
+        if include_youtube:
+            candidates = data.get("candidates") or []
+            if candidates:
+                grounding_html = build_grounding_panel(
+                    dish_name,
+                    extract_grounding_links(candidates[0]),
+                    include_youtube,
+                )
+                if grounding_html:
+                    recipe_html = f"{recipe_html}{grounding_html}"
+        return recipe_html
+
+    return parser
+
+
+def parse_nutrition_response(raw_text: str, _: dict) -> dict:
+    html_fragment = ensure_html_fragment(strip_hidden_json(raw_text), wrapper_class="ai-nutrition")
+    try:
+        meals = extract_actionable_meals(raw_text)
+    except ParseAIError:
+        meals = []
+    return {"html": html_fragment, "meals": meals}
+
+
+def parse_json_array_response(normalizer: Callable[[dict], dict | None]) -> Callable[[str, dict], list[dict]]:
+    def parser(raw_text: str, _: dict) -> list[dict]:
+        parsed = parse_json_payload(raw_text, "array")
+        normalized = []
+        for item in parsed:
+            if isinstance(item, dict):
+                value = normalizer(item)
+                if value:
+                    normalized.append(value)
+        if not normalized:
+            raise ParseAIError("no valid array items")
+        return normalized
+
+    return parser
+
+
+def parse_json_object_response(normalizer: Callable[[dict], dict]) -> Callable[[str, dict], dict]:
+    def parser(raw_text: str, _: dict) -> dict:
+        parsed = parse_json_payload(raw_text, "object")
+        normalized = normalizer(parsed)
+        if not normalized:
+            raise ParseAIError("invalid object")
+        return normalized
+
+    return parser
+
+
+def normalize_screening_result(raw: dict, meal: dict) -> dict:
+    is_safe = bool(raw.get("is_safe", True))
+    reason = str(raw.get("reason", "")).strip()
+    fixed = raw.get("auto_fixed_meal")
+    normalized = {"is_safe": is_safe, "reason": reason}
+    if isinstance(fixed, dict):
+        fixed_candidate = normalize_meal_candidate({
+            **meal,
+            **fixed,
+            "meal_type": meal.get("meal_type", "lunch"),
+        })
+        if fixed_candidate:
+            normalized["auto_fixed_meal"] = fixed_candidate
+    return normalized
+
+
+def normalize_classification(raw: dict, reason: str) -> dict:
+    cleaned = str(raw.get("cleaned_preference") or reason).strip() or reason
+    return {
+        "is_permanent": bool(raw.get("is_permanent", True)),
+        "cleaned_preference": cleaned,
+    }
 
 
 async def query_ai(dish_name: str) -> str:
-    model = await get_default_model()
-    if not model:
-        return "<p class='error'>No AI model configured. Ask admin to add one.</p>"
+    candidates = await get_candidate_models()
+    if not candidates:
+        return "<p class='error'>No configured AI model with an API key is available.</p>"
 
-    model_id = model["model_id"]
-    cached = await get_cached_recipe(dish_name, model_id)
-    if cached:
-        return cached
+    for candidate in candidates:
+        cached = await get_cached_recipe(dish_name, candidate["model_id"])
+        if cached:
+            return cached
 
-    provider = model["provider"]
-    api_key = model.get("api_key", "")
-    headers = {"Content-Type": "application/json"}
+    include_youtube = bool(candidates[0].get("include_youtube", 1))
+    system_prompt = (
+        "You are a practical cooking assistant. "
+        "Return only clean HTML. Keep the structure exact and keep the advice concise."
+    )
+    result, winning_model = await run_with_failover(
+        feature_name="recipe",
+        system_prompt=system_prompt,
+        user_prompt=build_recipe_prompt(dish_name, include_youtube),
+        parser=parse_recipe_response(dish_name, include_youtube),
+        temperature=0.2,
+        max_tokens=1800,
+        enable_grounding=True,
+    )
 
-    if provider == "groq":
-        api_url = GROQ_API_URL
-        api_key = api_key or os.environ.get("GROQ_API_KEY", "")
-    elif provider == "openrouter":
-        api_url = OPENROUTER_API_URL
-        api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
-    elif provider == "gemini":
-        api_url = GEMINI_API_URL_TEMPLATE.format(model_id=model_id)
-        api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-    else:
-        return "<p class='error'>Unknown AI provider configured.</p>"
+    if not result:
+        return build_recipe_unavailable_html(dish_name)
 
-    if not api_key:
-        return (
-            f"<p class='error'>API key not configured for {escape(provider)}. "
-            "Set it in admin settings or an environment variable.</p>"
-        )
+    if winning_model:
+        await cache_recipe(dish_name, winning_model["model_id"], result)
+    return result
 
-    if provider in ("groq", "openrouter"):
-        headers["Authorization"] = f"Bearer {api_key}"
-    if provider == "openrouter":
-        headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
-        headers["X-Title"] = "Diet Plan Dashboard"
-    if provider == "gemini":
-        headers["x-goog-api-key"] = api_key
 
-    if provider == "gemini":
-        search_grounding = bool(model.get("search_grounding", 1))
-        include_youtube = bool(model.get("include_youtube", 1))
-        payload = {
-            "systemInstruction": {
-                "parts": [{
-                    "text": (
-                        "You are a nutrition expert and chef. "
-                        "Respond with valid HTML only. "
-                        "When grounding is enabled, use Google Search results to support the recipe summary."
-                    )
-                }]
-            },
-            "contents": [{"parts": [{"text": build_prompt(dish_name, include_youtube)}]}],
-            "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 2048,
-            },
-        }
-        if search_grounding:
-            payload["tools"] = [{"google_search": {}}]
-    else:
-        payload = {
-            "model": model_id,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a nutrition expert and professional chef. Respond only in clean HTML format.",
-                },
-                {"role": "user", "content": build_prompt(dish_name, include_youtube=True)},
-            ],
-            "max_tokens": 2000,
-            "temperature": 0.7,
-        }
+async def evaluate_nutrition(
+    profile: dict,
+    macros: dict,
+    meals_list: list[str],
+    plan_date: str | None = None,
+) -> str:
+    system_prompt = (
+        "You are a careful clinical nutrition assistant. "
+        "Return predictable HTML followed by one JSON array wrapped in the requested markers."
+    )
+    result, _ = await run_with_failover(
+        feature_name="nutrition",
+        system_prompt=system_prompt,
+        user_prompt=build_nutrition_prompt(profile, macros, meals_list),
+        parser=parse_nutrition_response,
+        temperature=0.1,
+        max_tokens=1800,
+    )
+    if not result:
+        return build_nutrition_fallback_html(macros, meals_list)
 
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+    html_fragment = result["html"]
+    quick_add_html = build_quick_add_html(result["meals"], plan_date)
+    if quick_add_html:
+        html_fragment = append_inside_root(html_fragment, quick_add_html)
+    return html_fragment
 
-        if provider == "gemini":
-            candidates = data.get("candidates") or []
-            if not candidates:
-                return "<p class='error'>Gemini did not return a recipe.</p>"
-            recipe_html = build_gemini_html(
-                dish_name,
-                candidates[0],
-                bool(model.get("include_youtube", 1)),
-            )
-        else:
-            recipe_html = ensure_html_fragment(data["choices"][0]["message"]["content"])
 
-        await cache_recipe(dish_name, model_id, recipe_html)
-        return recipe_html
-    except httpx.TimeoutException:
-        return "<p class='error'>AI service timed out. Please try again.</p>"
-    except httpx.HTTPStatusError as exc:
-        return (
-            f"<p class='error'>AI service error: {exc.response.status_code} "
-            f"- {escape(exc.response.text[:200])}</p>"
-        )
-    except Exception as exc:
-        return f"<p class='error'>Error querying AI: {escape(str(exc))}</p>"
+async def get_rule_based_alternatives(meal: dict) -> list[dict]:
+    db = await get_db()
+    meal_type = normalize_meal_type(meal.get("meal_type"))
+    current_name = str(meal.get("dish_name", "")).strip()
+    alternatives = []
 
-def build_nutrition_prompt(profile: dict, macros: dict, meals_list: list) -> str:
-    meals_str = "\n".join([f"- {m}" for m in meals_list]) if meals_list else "None assigned yet."
-    return f"""
-You are a clinical nutritionist and doctor. Evaluate this daily nutritional intake against WHO guidelines for a patient.
-Patient Profile:
-- Age: {profile.get('age', 'Unknown')}
-- Height: {profile.get('height_cm', 'Unknown')} cm
-- Weight: {profile.get('weight_kg', 'Unknown')} kg
-- Condition: {profile.get('current_disease', 'None')}
-- Treatment: {profile.get('treatment_status', 'None')}
+    cursor = db.dishes.find({
+        "meal_type": meal_type,
+        "dish_name": {"$ne": current_name},
+    }).limit(3)
+    for item in await cursor.to_list(length=3):
+        normalized = normalize_meal_candidate(item)
+        if normalized:
+            alternatives.append(normalized)
 
-Assigned Meals for Today:
-{meals_str}
+    if alternatives:
+        return alternatives
 
-Today's Total Planned Macros:
-- Calories: {macros['calories']} kcal
-- Protein: {macros['protein']} g
-- Carbs: {macros['carbs']} g
-- Fat: {macros['fat']} g
-- Fiber: {macros['fiber']} g
+    cursor = db.meal_plans.find({
+        "meal_type": meal_type,
+        "dish_name": {"$ne": current_name},
+    }).sort([("created_at", -1)]).limit(3)
+    for item in await cursor.to_list(length=3):
+        normalized = normalize_meal_candidate(item)
+        if normalized:
+            alternatives.append(normalized)
+    return alternatives[:3]
 
-Return a clean HTML snippet (no markdown wrapping) containing:
-1. A brief medical assessment, explaining any discrepancies between their medical needs and the plan.
-2. Progress bars for each macro showing % filled based on their specific WHO need. (e.g. <progress value="80" max="100"></progress>) Include estimates for Sugar and Sodium based on the meals list!
-3. 2-3 specific recommendations on what to adjust. If there are missing nutrients, recommend *specific meal names* the user can add to solve the discrepancies.
-Use this exact HTML structure:
-<div class='ai-nutrition'>
-  <h3 style="margin-top:0;">🩺 WHO Nutrition Analysis</h3>
-  <p class='ai-assess'>[Assessment explaining discrepancies]</p>
-  <div class='nutrition-bars' style='display:grid; gap:0.5rem; margin-bottom:1rem;'>
-    <div style='display:flex; justify-content:space-between;'><label>Calories</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Protein</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Carbs</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Fat</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Fiber</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Sugar</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-    <div style='display:flex; justify-content:space-between;'><label>Sodium</label><progress value='[x]' max='100'></progress><span>[x]%</span></div>
-  </div>
-  <ul class='ai-recs'><li>[Specific tip / recipe to fix deficits]</li></ul>
-</div>
-"""
-
-async def evaluate_nutrition(profile: dict, macros: dict, meals_list: list) -> str:
-    model = await get_default_model()
-    if not model:
-        return "<p class='error'>No AI model configured.</p>"
-
-    model_id = model["model_id"]
-    provider = model["provider"]
-    api_key = model.get("api_key", "")
-    headers = {"Content-Type": "application/json"}
-
-    if provider == "groq":
-        api_url = GROQ_API_URL
-        api_key = api_key or os.environ.get("GROQ_API_KEY", "")
-    elif provider == "openrouter":
-        api_url = OPENROUTER_API_URL
-        api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
-    elif provider == "gemini":
-        api_url = GEMINI_API_URL_TEMPLATE.format(model_id=model_id)
-        api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-    else:
-        return "<p class='error'>Unknown AI provider.</p>"
-
-    if provider in ("groq", "openrouter"):
-        headers["Authorization"] = f"Bearer {api_key}"
-    if provider == "openrouter":
-        headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
-        headers["X-Title"] = "Diet Plan Dashboard"
-    if provider == "gemini":
-        headers["x-goog-api-key"] = api_key
-
-    prompt = build_nutrition_prompt(profile, macros, meals_list)
-
-    if provider == "gemini":
-        payload = {
-            "systemInstruction": {"parts": [{"text": "You are a top clinical nutritionist. Respond with valid HTML only."}]},
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}
-        }
-    else:
-        payload = {
-            "model": model_id,
-            "messages": [
-                {"role": "system", "content": "You are a clinical nutritionist. Respond only in clean HTML."},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": 1000,
-            "temperature": 0.3,
-        }
-
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-
-        if provider == "gemini":
-            candidates = data.get("candidates") or []
-            if not candidates:
-                return "<p class='error'>Gemini did not return an analysis.</p>"
-            html_res = extract_text_from_parts((candidates[0].get("content") or {}).get("parts") or [])
-            return ensure_html_fragment(html_res)
-        else:
-            html_res = data["choices"][0]["message"]["content"]
-            return ensure_html_fragment(html_res)
-    except Exception as exc:
-        return f"<p class='error'>Nutrition analysis failed: {escape(str(exc))}</p>"
 
 async def suggest_meal_alternatives(profile: dict, meal: dict, reason: str) -> list[dict]:
-    import json
-    model = await get_default_model()
-    if not model:
-        return []
-
     prefs = profile.get("permanent_preferences", [])
     prefs_str = ", ".join(prefs) if prefs else "None"
-    
     prompt = f"""
-You are a clinical nutritionist and chef. A patient needs to replace their planned meal.
-Patient Profile:
+Suggest 3 healthy meal replacements.
+
+Patient:
 - Age: {profile.get('age', 'Unknown')}
 - Disease: {profile.get('current_disease', 'None')}
 - Treatment: {profile.get('treatment_status', 'None')}
-- Known Allergies/Preferences: {prefs_str}
+- Allergies or permanent preferences: {prefs_str}
 
-Meal to replace: {meal['dish_name']} ({meal['meal_type']})
-Patient's reason for replacement: {reason}
+Current meal: {meal['dish_name']} ({meal['meal_type']})
+Reason for replacement: {reason}
 
-Provide 3 completely different, healthy recipe alternatives that match the meal type, fit their medical constraints, avoid all their allergies, and explicitly resolve their reason for replacement.
+Return only a JSON array of 3 objects with:
+- dish_name
+- description
+- meal_type
+- calories
+- protein_g
+- carbs_g
+- fat_g
+- fiber_g
+""".strip()
 
-Return ONLY a valid JSON array of objects (no markdown blocks, no extra text). Format exact:
-[
-  {{
-    "dish_name": "New Recipe Name",
-    "description": "Short appetizing description",
-    "calories": 400,
-    "protein_g": 30,
-    "carbs_g": 40,
-    "fat_g": 10,
-    "fiber_g": 5
-  }}
-]
-"""
-    model_id = model["model_id"]
-    provider = model["provider"]
-    api_key = model.get("api_key", os.environ.get(f"{provider.upper()}_API_KEY", ""))
-    
-    headers = {"Content-Type": "application/json"}
-    if provider in ("groq", "openrouter"):
-        headers["Authorization"] = f"Bearer {api_key}"
-    if provider == "openrouter":
-        headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
-        api_url = OPENROUTER_API_URL
-    elif provider == "groq":
-        api_url = GROQ_API_URL
-    elif provider == "gemini":
-        api_url = GEMINI_API_URL_TEMPLATE.format(model_id=model_id)
-        headers["x-goog-api-key"] = api_key
-    else:
-        return []
+    result, _ = await run_with_failover(
+        feature_name="meal_replace",
+        system_prompt=(
+            "You are a nutrition planning assistant. "
+            "Return only a raw JSON array. Keep dishes realistic and medically cautious."
+        ),
+        user_prompt=prompt,
+        parser=parse_json_array_response(normalize_meal_candidate),
+        temperature=0.1,
+        max_tokens=1200,
+    )
+    if result:
+        return result[:3]
+    return await get_rule_based_alternatives(meal)
 
-    if provider == "gemini":
-        payload = {
-            "systemInstruction": {"parts": [{"text": "You are a JSON API. Respond only with a raw valid JSON array."}]},
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.4}
-        }
-    else:
-        payload = {
-            "model": model_id,
-            "messages": [
-                {"role": "system", "content": "You are a JSON API. Return only raw JSON arrays."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.4
-        }
-        
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-        if provider == "gemini":
-            res_str = ((data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")))
-        else:
-            res_str = data["choices"][0]["message"]["content"]
-            
-        # Clean JSON from markdown if exists
-        res_str = res_str.strip()
-        if res_str.startswith("```json"):
-            res_str = res_str[7:]
-        elif res_str.startswith("```"):
-            res_str = res_str[3:]
-        if res_str.endswith("```"):
-            res_str = res_str[:-3]
-            
-        return json.loads(res_str.strip())
-    except Exception as e:
-        print(f"AI Meal Suggest error: {e}")
-        return []
 
 async def screen_admin_meal(profile: dict, meal: dict) -> dict:
-    import json
-    model = await get_default_model()
-    if not model:
-        return {"is_safe": True}
-
     prefs = profile.get("permanent_preferences", [])
     if not prefs and not profile.get("current_disease") and not profile.get("treatment_status"):
-        return {"is_safe": True} # No medical constraints
+        return {"is_safe": True}
 
     prefs_str = ", ".join(prefs) if prefs else "None"
-    
     prompt = f"""
-You are a top clinical nutritionist evaluating a meal an admin wants to assign to a patient.
-Patient Profile:
+Review this meal for medical fit.
+
+Patient:
 - Age: {profile.get('age', 'Unknown')}
 - Disease: {profile.get('current_disease', 'None')}
 - Treatment: {profile.get('treatment_status', 'None')}
-- Known Allergies/Preferences: {prefs_str}
+- Allergies or permanent preferences: {prefs_str}
 
-Proposed Meal:
+Meal:
 - Dish: {meal['dish_name']}
-- Desc: {meal['description']}
-- Calories: {meal['calories']}
+- Description: {meal.get('description', '')}
+- Calories: {meal.get('calories', 0)}
+- Protein: {meal.get('protein_g', 0)}
+- Carbs: {meal.get('carbs_g', 0)}
+- Fat: {meal.get('fat_g', 0)}
+- Fiber: {meal.get('fiber_g', 0)}
 
-Is this meal safe for this patient?
-If YES: Return strictly {{"is_safe": true}}
-If NO (dangerous or major conflict): Return {{"is_safe": false, "reason": "Brief reason", "auto_fixed_meal": {{"dish_name": "Safe Dish Name", "description": "Safe desc", "calories": {meal['calories']}, "protein_g": {meal['protein_g']}, "carbs_g": {meal['carbs_g']}, "fat_g": {meal['fat_g']}, "fiber_g": {meal['fiber_g']}}}}}
+Return only one JSON object:
+{{"is_safe": true}}
+or
+{{"is_safe": false, "reason": "short reason", "auto_fixed_meal": {{"dish_name": "...", "description": "...", "meal_type": "{normalize_meal_type(meal.get('meal_type'))}", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fiber_g": 0}}}}
+""".strip()
 
-ONLY return raw JSON object.
-"""
-    model_id = model["model_id"]
-    provider = model["provider"]
-    api_key = model.get("api_key", os.environ.get(f"{provider.upper()}_API_KEY", ""))
-    
-    headers = {"Content-Type": "application/json"}
-    if provider in ("groq", "openrouter"):
-        headers["Authorization"] = f"Bearer {api_key}"
-    if provider == "openrouter":
-        headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
-        api_url = OPENROUTER_API_URL
-    elif provider == "groq":
-        api_url = GROQ_API_URL
-    elif provider == "gemini":
-        api_url = GEMINI_API_URL_TEMPLATE.format(model_id=model_id)
-        headers["x-goog-api-key"] = api_key
+    result, _ = await run_with_failover(
+        feature_name="admin_screen",
+        system_prompt=(
+            "You are a cautious nutrition safety reviewer. "
+            "Return only one raw JSON object."
+        ),
+        user_prompt=prompt,
+        parser=parse_json_object_response(lambda raw: normalize_screening_result(raw, meal)),
+        temperature=0.1,
+        max_tokens=900,
+    )
+    if result:
+        return result
+    return {
+        "is_safe": False,
+        "reason": "AI screening could not verify this meal safely. Manual review is required.",
+    }
 
-    if provider == "gemini":
-        payload = {
-            "systemInstruction": {"parts": [{"text": "You are a JSON API. Respond only with a single raw JSON object."}]},
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2}
-        }
-    else:
-        payload = {
-            "model": model_id,
-            "messages": [
-                {"role": "system", "content": "You are a JSON API. Return exactly one valid JSON object."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2
-        }
-        
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-        if provider == "gemini":
-            res_str = ((data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")))
-        else:
-            res_str = data["choices"][0]["message"]["content"]
-            
-        res_str = res_str.strip()
-        if res_str.startswith("```json"): res_str = res_str[7:]
-        elif res_str.startswith("```"): res_str = res_str[3:]
-        if res_str.endswith("```"): res_str = res_str[:-3]
-            
-        return json.loads(res_str.strip())
-    except Exception as e:
-        print(f"AI Screen admin meal error: {e}")
-        return {"is_safe": True}
+
+async def classify_preference(reason: str, dish_name: str) -> dict:
+    prompt = f"""
+Classify this meal-avoidance reason.
+
+Dish: {dish_name}
+Reason: "{reason}"
+
+Return only one JSON object:
+{{"is_permanent": true, "cleaned_preference": "short permanent preference"}}
+or
+{{"is_permanent": false, "cleaned_preference": "short temporary reason"}}
+""".strip()
+
+    result, _ = await run_with_failover(
+        feature_name="classify_preference",
+        system_prompt=(
+            "You are a dietary preference classifier. "
+            "Return only one raw JSON object."
+        ),
+        user_prompt=prompt,
+        parser=parse_json_object_response(lambda raw: normalize_classification(raw, reason)),
+        temperature=0.0,
+        max_tokens=500,
+    )
+    if result:
+        return result
+    return {"is_permanent": True, "cleaned_preference": reason.strip() or "Meal preference"}

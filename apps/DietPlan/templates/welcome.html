@@ -29,35 +29,39 @@
 
         <form class="new-user-form hidden" id="new-user-form" action="/dietplan/profile/new" method="post">
             <h2>Create Your Profile</h2>
-            <p class="form-hint">Just tell us your name — that's it!</p>
+            <p class="form-hint">Tell us about your health profile so we can personalize your nutrition plan.</p>
             <div class="input-group">
                 <input type="text" name="name" placeholder="Your Name" required autofocus class="input-field"
                     id="name-input" minlength="2" maxlength="50">
                 <label for="name-input" class="input-label">Your Name</label>
             </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 1rem;">
                 <div class="input-group">
                     <input type="number" name="age" placeholder="Age" class="input-field" id="age-input">
                     <label for="age-input" class="input-label">Age</label>
                 </div>
                 <div class="input-group">
-                    <input type="number" step="0.1" name="height" placeholder="Height (cm)" class="input-field" id="height-input">
+                    <input type="number" step="0.1" name="height" placeholder="Height (cm)" class="input-field"
+                        id="height-input">
                     <label for="height-input" class="input-label">Height (cm)</label>
                 </div>
                 <div class="input-group">
-                    <input type="number" step="0.1" name="weight" placeholder="Weight (kg)" class="input-field" id="weight-input">
+                    <input type="number" step="0.1" name="weight" placeholder="Weight (kg)" class="input-field"
+                        id="weight-input">
                     <label for="weight-input" class="input-label">Weight (kg)</label>
                 </div>
             </div>
 
             <div class="input-group">
-                <input type="text" name="disease" placeholder="Current Disease (e.g. Breast Cancer)" class="input-field" id="disease-input">
+                <input type="text" name="disease" placeholder="Current Disease (e.g. Breast Cancer)" class="input-field"
+                    id="disease-input">
                 <label for="disease-input" class="input-label">Current Disease</label>
             </div>
 
             <div class="input-group">
-                <input type="text" name="treatment" placeholder="Undergoing Treatment (e.g. Chemotherapy)" class="input-field" id="treatment-input">
+                <input type="text" name="treatment" placeholder="Undergoing Treatment (e.g. Chemotherapy)"
+                    class="input-field" id="treatment-input">
                 <label for="treatment-input" class="input-label">Undergoing Treatment?</label>
             </div>
             <div class="form-actions">

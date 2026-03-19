@@ -11,6 +11,7 @@
         </div>
         <div class="header-right">
             <a href="/dietplan/history" class="header-btn" title="Weekly History">📊</a>
+            <button class="header-btn" title="Edit Profile" onclick="openEditProfileModal()">✏️</button>
             <a href="/dietplan/profile/switch" class="header-btn" title="Switch Profile">👤</a>
         </div>
     </header>
@@ -65,9 +66,10 @@
     </div>
 
     <!-- WHO Nutrition Analysis -->
-    <div class="who-analysis glass-card" style="margin-top: 1rem;" hx-get="/dietplan/profile/nutrition/today?view_date={{ selected_date.isoformat() }}" hx-trigger="revealed">
-        <div class="loading-spinner">
-            <div class="spinner"></div>
+    <div class="who-analysis glass-card" style="margin-top: 1rem;"
+        hx-get="/dietplan/profile/nutrition/today?view_date={{ selected_date.isoformat() }}" hx-trigger="revealed">
+        <div class="who-loading">
+            <div class="pulse-loader"></div>
             <p>Analyzing WHO nutritional alignment based on your medical profile...</p>
         </div>
     </div>
@@ -82,8 +84,8 @@
             {% for meal in section.meals %}
             <div class="meal-card glass-card {% if meal.is_checked %}meal-checked{% endif %}" id="meal-{{ meal.id }}">
                 <div class="meal-card-top">
-                    <button class="meal-check-btn" hx-post="/dietplan/meal/toggle/{{ meal.id }}" hx-target="#check-{{ meal.id }}"
-                        hx-swap="innerHTML">
+                    <button class="meal-check-btn" hx-post="/dietplan/meal/toggle/{{ meal.id }}"
+                        hx-target="#check-{{ meal.id }}" hx-swap="innerHTML">
                         <span id="check-{{ meal.id }}" class="check-icon">
                             {% if meal.is_checked %}✅{% else %}⬜{% endif %}
                         </span>
@@ -105,9 +107,9 @@
                     </div>
                 </div>
                 <!-- Replace Action -->
-                <button class="btn btn-sm btn-ghost" style="width: 100%; border-top-left-radius: 0; border-top-right-radius: 0; background-color: rgba(255,255,255,0.05);" 
-                    hx-get="/dietplan/meal/replace/{{ meal.id }}" 
-                    hx-target="#dish-modal-body" 
+                <button class="btn btn-sm btn-ghost"
+                    style="width: 100%; border-top-left-radius: 0; border-top-right-radius: 0; background-color: rgba(255,255,255,0.05);"
+                    hx-get="/dietplan/meal/replace/{{ meal.id }}" hx-target="#dish-modal-body"
                     onclick="openDishModal()">
                     🔄 Replace Meal
                 </button>
@@ -169,6 +171,16 @@
         document.getElementById('dish-modal-body').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading recipe info...</p></div>';
     }
 
+    function openEditProfileModal() {
+        document.getElementById('edit-profile-modal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeEditProfileModal(e) {
+        if (e && e.target !== document.getElementById('edit-profile-modal')) return;
+        document.getElementById('edit-profile-modal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
     // Update card visual state after toggle
     document.body.addEventListener('htmx:afterSwap', function (event) {
         if (event.detail.target.id && event.detail.target.id.startsWith('check-')) {
@@ -183,6 +195,56 @@
                 }
             }
         }
+        // Reload page after quick add
+        if (event.detail.target.id === 'quick-add-msg') {
+            const msg = event.detail.target.textContent.trim();
+            if (msg.includes('Added')) {
+                setTimeout(() => window.location.reload(), 500);
+            }
+        }
     });
 </script>
+
+<!-- Edit Profile Modal -->
+<div class="dish-modal-overlay" id="edit-profile-modal" onclick="closeEditProfileModal(event)">
+    <div class="dish-modal glass-card" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeEditProfileModal()">&times;</button>
+        <h3 style="margin-top:0; margin-bottom:1rem;">Edit Your Profile</h3>
+        <form hx-post="/dietplan/profile/edit" hx-target="#edit-profile-msg" hx-swap="innerHTML">
+            <div class="input-group">
+                <input type="text" name="name" value="{{ profile.name }}" class="input-field" required>
+                <label class="input-label">Your Name</label>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 1rem;">
+                <div class="input-group">
+                    <input type="number" name="age" value="{{ profile.age or '' }}" class="input-field"
+                        placeholder="Age">
+                    <label class="input-label">Age</label>
+                </div>
+                <div class="input-group">
+                    <input type="number" step="0.1" name="height" value="{{ profile.height_cm or '' }}"
+                        class="input-field" placeholder="Height (cm)">
+                    <label class="input-label">Height (cm)</label>
+                </div>
+                <div class="input-group">
+                    <input type="number" step="0.1" name="weight" value="{{ profile.weight_kg or '' }}"
+                        class="input-field" placeholder="Weight (kg)">
+                    <label class="input-label">Weight (kg)</label>
+                </div>
+            </div>
+            <div class="input-group">
+                <input type="text" name="disease" value="{{ profile.current_disease or '' }}" class="input-field"
+                    placeholder="Current Disease">
+                <label class="input-label">Current Disease</label>
+            </div>
+            <div class="input-group">
+                <input type="text" name="treatment" value="{{ profile.treatment_status or '' }}" class="input-field"
+                    placeholder="Undergoing Treatment">
+                <label class="input-label">Undergoing Treatment?</label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Save Changes</button>
+            <div id="edit-profile-msg" style="margin-top:0.5rem; text-align:center;"></div>
+        </form>
+    </div>
+</div>
 {% endblock %}

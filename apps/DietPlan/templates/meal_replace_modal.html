@@ -3,7 +3,7 @@
     <p>Why do you want to change this meal? (We'll remember this for future plans!)</p>
     
     <form hx-post="/dietplan/meal/replace/suggest/{{ str(meal['_id']) }}" hx-target="#replace-suggestions" hx-indicator="#replace-spinner">
-        <textarea name="reason" rows="3" class="input-field" placeholder="E.g. I am allergic to peanuts, I don't like broccoli, etc." required style="width: 100%; margin-top: 0.5rem;"></textarea>
+        <textarea name="reason" rows="3" class="input-field meal-replace-textarea" placeholder="E.g. I am allergic to peanuts, I don't like broccoli, etc." required style="width: 100%; margin-top: 0.5rem;"></textarea>
         <button type="submit" class="btn btn-primary" style="margin-top: 1rem; width: 100%;">Find Alternatives 🤖</button>
     </form>
     

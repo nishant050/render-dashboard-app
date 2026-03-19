@@ -6,6 +6,7 @@ import os
 import io
 import csv
 import json
+from html import escape
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from contextlib import asynccontextmanager
@@ -819,7 +820,7 @@ async def get_nutrition_analysis(request: Request, view_date: str = Query(None))
     meals_list = [f"{m.get('dish_name')} ({m.get('meal_type')})" for m in meals if m.get("dish_name")]
     
     from ai_service import evaluate_nutrition
-    html_report = await evaluate_nutrition(profile, macros, meals_list)
+    html_report = await evaluate_nutrition(profile, macros, meals_list, plan_date=view_date)
     return HTMLResponse(html_report)
 
 
@@ -828,6 +829,132 @@ async def switch_profile(request: Request):
     response = RedirectResponse(url="/dietplan/", status_code=302)
     response.delete_cookie("profile_id")
     return response
+
+
+@app.post("/profile/edit", response_class=HTMLResponse)
+async def edit_profile(request: Request, name: str = Form(...), age: str = Form(None), 
+    height: str = Form(None), weight: str = Form(None), disease: str = Form(None), 
+    treatment: str = Form(None)):
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return "<p class='error'>No profile selected.</p>"
+    
+    db = await get_db()
+
+    clean_name = (name or "").strip()
+    if len(clean_name) < 2:
+        return "<p class='error' style='margin: 0;'>Enter a valid name with at least 2 characters.</p>"
+
+    update_data = {"name": clean_name}
+    if age and age.strip():
+        try:
+            parsed_age = int(age)
+        except ValueError:
+            return "<p class='error' style='margin: 0;'>Age must be a whole number.</p>"
+        if parsed_age <= 0:
+            return "<p class='error' style='margin: 0;'>Age must be greater than 0.</p>"
+        update_data["age"] = parsed_age
+    if height and height.strip():
+        try:
+            parsed_height = float(height)
+        except ValueError:
+            return "<p class='error' style='margin: 0;'>Height must be a valid number.</p>"
+        if parsed_height <= 0:
+            return "<p class='error' style='margin: 0;'>Height must be greater than 0.</p>"
+        update_data["height_cm"] = parsed_height
+    if weight and weight.strip():
+        try:
+            parsed_weight = float(weight)
+        except ValueError:
+            return "<p class='error' style='margin: 0;'>Weight must be a valid number.</p>"
+        if parsed_weight <= 0:
+            return "<p class='error' style='margin: 0;'>Weight must be greater than 0.</p>"
+        update_data["weight_kg"] = parsed_weight
+
+    update_data["current_disease"] = (disease or "").strip()
+    update_data["treatment_status"] = (treatment or "").strip()
+    
+    await db.profiles.update_one(
+        {"_id": ObjectId(profile_id)},
+        {"$set": update_data}
+    )
+    
+    await log_activity(profile_id, "profile_edit", f"Updated profile: {clean_name}", request)
+    
+    return "<p style='color: #22c55e; margin: 0;'>Profile updated successfully.</p>"
+
+
+@app.post("/meal/quick_add", response_class=HTMLResponse)
+async def quick_add_meal(request: Request, meal_json: str = Form(...), plan_date: str = Form(None)):
+    """Quick add a meal from WHO recommendations"""
+    import json
+    profile_id = request.cookies.get("profile_id")
+    if not profile_id:
+        return "<p class='error'>No profile selected.</p>"
+    
+    try:
+        meal_data = json.loads(meal_json)
+    except json.JSONDecodeError:
+        return "<p class='error'>Invalid meal data.</p>"
+    
+    dish_name = (meal_data.get("dish_name") or "Unknown").strip()
+    meal_type = str(meal_data.get("meal_type") or "lunch").strip().lower()
+    if meal_type not in MEAL_TYPE_ORDER:
+        meal_type = "lunch"
+
+    target_date = (plan_date or date.today().isoformat()).strip()
+    try:
+        date.fromisoformat(target_date)
+    except ValueError:
+        return "<p class='error'>Invalid plan date.</p>"
+    
+    db = await get_db()
+    
+    # Check if dish exists, create if not
+    dish = await db.dishes.find_one({"dish_name": dish_name})
+    if not dish:
+        dish_id = await db.dishes.insert_one({
+            "dish_name": dish_name,
+            "description": meal_data.get("description", ""),
+            "calories": parse_int(meal_data.get("calories", 0)),
+            "protein_g": parse_float(meal_data.get("protein_g", 0)),
+            "carbs_g": parse_float(meal_data.get("carbs_g", 0)),
+            "fat_g": parse_float(meal_data.get("fat_g", 0)),
+            "fiber_g": parse_float(meal_data.get("fiber_g", 0)),
+            "meal_type": meal_type,
+            "created_at": datetime.utcnow()
+        })
+        dish_id = dish_id.inserted_id
+    else:
+        dish_id = dish["_id"]
+
+    existing_plan = await db.meal_plans.find_one({
+        "profile_id": profile_id,
+        "dish_name": dish_name,
+        "meal_type": meal_type,
+        "plan_date": target_date,
+    })
+    if existing_plan:
+        return f"<span style='color: #fbbf24;'>Already added {escape(dish_name)} for this day.</span>"
+
+    await db.meal_plans.insert_one({
+        "profile_id": profile_id,
+        "dish_id": dish_id,
+        "dish_name": dish_name,
+        "meal_type": meal_type,
+        "plan_date": target_date,
+        "is_checked": False,
+        "calories": parse_int(meal_data.get("calories", 0)),
+        "protein_g": parse_float(meal_data.get("protein_g", 0)),
+        "carbs_g": parse_float(meal_data.get("carbs_g", 0)),
+        "fat_g": parse_float(meal_data.get("fat_g", 0)),
+        "fiber_g": parse_float(meal_data.get("fiber_g", 0)),
+        "created_at": datetime.utcnow()
+    })
+    
+    await log_activity(profile_id, "quick_add", f"Added {dish_name} from WHO recommendation", request)
+    
+    return f"<span style='color: #22c55e;'>Added {escape(dish_name)} to {escape(target_date)}.</span>"
 
 
 # ──────────────────────── Admin Routes ────────────────────────
@@ -1185,6 +1312,18 @@ async def save_meal(
                     payload["fat_g"] = parse_float(fixed.get("fat_g", payload["fat_g"]))
                     payload["fiber_g"] = parse_float(fixed.get("fiber_g", payload["fiber_g"]))
                     flash_text = f"⚠️ AI Auto-Fixed '{old_name}' to '{payload['dish_name']}' ({screening.get('reason', 'Conflict detected')}). "
+
+                else:
+                    context = await build_admin_meals_context(
+                        request,
+                        week_offset=week_offset,
+                        view_all=view_all,
+                        meal_type_filter=meal_type_filter,
+                        assignee_filter=assignee_filter,
+                        q=q,
+                        flash_message={"kind": "error", "text": screening.get("reason", "AI screening could not verify this meal safely. Manual review is required.")},
+                    )
+                    return templates.TemplateResponse("admin_meals_board.html", context, status_code=422)
 
     if meal_id:
         try:
@@ -1658,3 +1797,43 @@ async def change_admin_password(request: Request, current_password: str = Form(.
     await db.admin.update_one({"_id": admin["_id"]}, {"$set": {"password_hash": new_hash}})
 
     return HTMLResponse("""<div class="upload-result success"><span class="icon">✅</span><p>Password updated successfully.</p></div>""")
+
+@app.get("/admin/analyze_day", response_class=HTMLResponse)
+async def admin_analyze_day(request: Request, profile_id: str, date: str):
+    if not get_admin_session(request):
+        return HTMLResponse("Unauthorized", status_code=401)
+        
+    db = await get_db()
+    profile = await db.profiles.find_one({"_id": ObjectId(profile_id)})
+    if not profile:
+        return HTMLResponse("<p>Profile not found.</p>")
+        
+    meals = await db.meal_plans.find({
+        "plan_date": date,
+        "$or": [{"profile_id": None}, {"profile_id": profile_id}]
+    }).to_list(length=None)
+    
+    macros = {
+        "calories": sum(int(float(m.get("calories", 0))) for m in meals),
+        "protein": sum(float(m.get("protein_g", 0)) for m in meals),
+        "carbs": sum(float(m.get("carbs_g", 0)) for m in meals),
+        "fat": sum(float(m.get("fat_g", 0)) for m in meals),
+        "fiber": sum(float(m.get("fiber_g", 0)) for m in meals)
+    }
+    meals_list = [f"{m.get('dish_name')} ({m.get('meal_type')})" for m in meals if m.get("dish_name")]
+    
+    from ai_service import evaluate_nutrition
+    import html
+    
+    html_report = await evaluate_nutrition(profile, macros, meals_list, plan_date=date)
+    return HTMLResponse(f"""
+    <div style="padding: 1rem; margin-bottom: 1rem; background: var(--glass-bg); border: 1px solid var(--border); border-radius:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <h4 style="margin:0; color:var(--text-primary); font-family:var(--font-heading);">WHO Analysis for {html.escape(profile.get('name', 'User'))}</h4>
+        <button onclick="this.parentElement.parentElement.innerHTML=''" class="btn btn-sm btn-ghost">✕</button>
+      </div>
+      <div style="margin-top:0.5rem;">
+        {html_report}
+      </div>
+    </div>
+    """)
