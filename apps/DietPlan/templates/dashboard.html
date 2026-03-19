@@ -188,6 +188,7 @@
         if (!panel) return;
         const isHidden = panel.classList.contains('hidden');
         panel.classList.toggle('hidden', !isHidden);
+        button.classList.toggle('is-open', isHidden);
         button.textContent = isHidden ? 'Hide Details' : 'In Depth';
     }
 

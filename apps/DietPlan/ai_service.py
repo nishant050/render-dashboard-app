@@ -29,6 +29,8 @@ MEAL_TYPES = {
     "dinner",
     "evening_snack",
 }
+PRIMARY_NUTRIENTS = ["Calories", "Protein", "Carbs", "Fat", "Fiber", "Sugar", "Sodium"]
+MICRONUTRIENTS = ["Vitamin A", "Vitamin C", "Vitamin D", "Vitamin B12", "Folate", "Iron", "Calcium"]
 
 
 class RetryableAIError(Exception):
@@ -362,6 +364,14 @@ def find_json_candidates(text: str) -> list[str]:
     return matches
 
 
+def strip_tags(value: str) -> str:
+    return re.sub(r"<[^>]+>", " ", value or "")
+
+
+def normalize_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "")).strip()
+
+
 def parse_json_payload(raw_text: str, expected_type: str) -> Any:
     cleaned = clean_code_fences(raw_text)
     candidates = [cleaned, *find_json_candidates(cleaned)]
@@ -425,14 +435,34 @@ def extract_actionable_meals(raw_text: str) -> list[dict]:
         flags=re.DOTALL,
     )
     payload = marker_match.group(1) if marker_match else raw_text
-    parsed = parse_json_payload(payload, "array")
     meals = []
-    for item in parsed:
-        if isinstance(item, dict):
-            normalized = normalize_meal_candidate(item)
-            if normalized:
-                meals.append(normalized)
-    return meals[:3]
+    try:
+        parsed = parse_json_payload(payload, "array")
+        for item in parsed:
+            if isinstance(item, dict):
+                normalized = normalize_meal_candidate(item)
+                if normalized:
+                    meals.append(normalized)
+    except ParseAIError:
+        for candidate in find_json_candidates(clean_code_fences(payload)):
+            try:
+                item = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                normalized = normalize_meal_candidate(item)
+                if normalized:
+                    meals.append(normalized)
+
+    unique_meals = []
+    seen = set()
+    for meal in meals:
+        key = (meal["dish_name"].lower(), meal["meal_type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_meals.append(meal)
+    return unique_meals[:3]
 
 
 def strip_hidden_json(raw_html: str) -> str:
@@ -449,6 +479,188 @@ def append_inside_root(html_fragment: str, addition: str) -> str:
     if stripped.endswith("</div>"):
         return re.sub(r"</div>\s*$", f"{addition}</div>", stripped, count=1)
     return f"{stripped}{addition}"
+
+
+def extract_percentage_map(raw_text: str, labels: list[str]) -> dict[str, int]:
+    text = strip_hidden_json(raw_text)
+    values = {}
+    for label in labels:
+        pattern = re.compile(rf"{re.escape(label)}\s*[:\-]?\s*(\d{{1,3}})%", re.IGNORECASE)
+        match = pattern.search(text)
+        if match:
+            values[label] = max(0, min(100, parse_int(match.group(1), 0)))
+    return values
+
+
+def extract_list_items(raw_text: str) -> list[str]:
+    html_items = re.findall(r"<li[^>]*>(.*?)</li>", raw_text or "", flags=re.IGNORECASE | re.DOTALL)
+    cleaned_html_items = [normalize_whitespace(strip_tags(item)) for item in html_items]
+    cleaned_html_items = [item for item in cleaned_html_items if item]
+    if cleaned_html_items:
+        return cleaned_html_items
+
+    plain = normalize_whitespace(strip_tags(strip_hidden_json(raw_text)))
+    if not plain:
+        return []
+    candidates = re.split(r"(?<=[.!?])\s+", plain)
+    items = []
+    for candidate in candidates:
+        line = candidate.strip(" -\t")
+        if not line:
+            continue
+        if line == "WHO Nutrition Analysis":
+            continue
+        if any(re.search(rf"{re.escape(label)}\s*\d{{1,3}}%", line, re.IGNORECASE) for label in PRIMARY_NUTRIENTS):
+            continue
+        if line.startswith("[") or line.startswith("{"):
+            continue
+        items.append(line)
+    return items
+
+
+def split_summary_and_detail(raw_text: str) -> tuple[str, str]:
+    plain = normalize_whitespace(strip_tags(strip_hidden_json(raw_text)))
+    for label in PRIMARY_NUTRIENTS:
+        plain = re.sub(rf"{re.escape(label)}\s*(\d{{1,3}})%", "", plain, flags=re.IGNORECASE)
+    plain = re.sub(r"\[\s*{.*", "", plain).strip()
+    plain = plain.replace("WHO Nutrition Analysis", "").strip()
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", plain) if part.strip()]
+    if not sentences:
+        return (
+            "Your tracked meals were analyzed against a general WHO-style nutrition target.",
+            "The model did not provide a clean written explanation, so this card is showing the parsed nutrient summary only.",
+        )
+    summary = sentences[0]
+    detail = " ".join(sentences[:3])
+    return summary, detail
+
+
+def build_metric_cards_html(percentages: dict[str, int]) -> str:
+    cards = []
+    for label in PRIMARY_NUTRIENTS:
+        value = percentages.get(label, 0)
+        cards.append(
+            "<div class='nutrition-metric'>"
+            f"<div class='nutrition-metric-head'><label>{escape(label)}</label><span>{value}%</span></div>"
+            f"<progress value='{value}' max='100'></progress>"
+            f"<p>{value}% of the estimated target</p>"
+            "</div>"
+        )
+    return "".join(cards)
+
+
+def build_vitamin_cards_html(percentages: dict[str, int]) -> str:
+    cards = []
+    for label in MICRONUTRIENTS:
+        if label in percentages:
+            value = f"{percentages[label]}%"
+        else:
+            value = "AI est."
+        cards.append(
+            "<div class='vitamin-chip'>"
+            f"<span>{escape(label)}</span><strong>{escape(value)}</strong>"
+            "</div>"
+        )
+    return "".join(cards)
+
+
+def build_recommendation_list_html(items: list[str]) -> str:
+    if not items:
+        items = [
+            "Add one vegetarian protein source to raise protein intake without making the plan heavy.",
+            "Use fruit, unsalted nuts, or roasted chickpeas instead of salty packaged snacks.",
+        ]
+    return "".join(f"<li>{escape(item)}</li>" for item in items[:4])
+
+
+def build_rule_based_actionable_meals(primary: dict[str, int], micro: dict[str, int]) -> list[dict]:
+    suggestions: list[dict] = []
+
+    def add(meal: dict):
+        normalized = normalize_meal_candidate(meal)
+        if normalized and all(existing["dish_name"] != normalized["dish_name"] for existing in suggestions):
+            suggestions.append(normalized)
+
+    if primary.get("Protein", 100) < 80:
+        add({
+            "dish_name": "Moong Dal Khichdi Bowl",
+            "meal_type": "lunch",
+            "calories": 380,
+            "protein_g": 18,
+            "carbs_g": 52,
+            "fat_g": 9,
+            "fiber_g": 10,
+            "reason": "Easy vegetarian protein to close the protein gap.",
+            "is_vegetarian": True,
+        })
+    if primary.get("Fiber", 100) < 80 or micro.get("Iron", 100) < 80 or micro.get("Folate", 100) < 80:
+        add({
+            "dish_name": "Spinach Chickpea Salad",
+            "meal_type": "dinner",
+            "calories": 320,
+            "protein_g": 14,
+            "carbs_g": 34,
+            "fat_g": 11,
+            "fiber_g": 11,
+            "reason": "Helps with fiber, iron, and folate using vegetarian ingredients.",
+            "is_vegetarian": True,
+        })
+    if micro.get("Calcium", 100) < 80 or micro.get("Vitamin B12", 100) < 80:
+        add({
+            "dish_name": "Paneer Veggie Wrap",
+            "meal_type": "lunch",
+            "calories": 410,
+            "protein_g": 22,
+            "carbs_g": 32,
+            "fat_g": 18,
+            "fiber_g": 7,
+            "reason": "Adds calcium and a stronger vegetarian protein source.",
+            "is_vegetarian": True,
+        })
+    if primary.get("Calories", 100) < 70:
+        add({
+            "dish_name": "Peanut Banana Oats Smoothie",
+            "meal_type": "breakfast",
+            "calories": 350,
+            "protein_g": 15,
+            "carbs_g": 38,
+            "fat_g": 14,
+            "fiber_g": 6,
+            "reason": "Easy way to lift total calories with a vegetarian add-on.",
+            "is_vegetarian": True,
+        })
+    return suggestions[:3]
+
+
+def render_nutrition_dashboard(raw_text: str) -> str:
+    primary = extract_percentage_map(raw_text, PRIMARY_NUTRIENTS)
+    micro = extract_percentage_map(raw_text, MICRONUTRIENTS)
+    summary, detail = split_summary_and_detail(raw_text)
+    recommendations = extract_list_items(raw_text)
+    return f"""
+<div class='ai-nutrition'>
+  <div class='ai-nutrition-top'>
+    <div>
+      <p class='ai-kicker'>Today's nutrition snapshot</p>
+      <h3>WHO Nutrition Analysis</h3>
+    </div>
+    <button type='button' class='btn btn-ghost btn-sm ai-depth-toggle' onclick='toggleAiNutritionDetails(this)'>In Depth</button>
+  </div>
+  <p class='ai-summary'>{escape(summary)}</p>
+  <div class='nutrition-bars'>
+    {build_metric_cards_html(primary)}
+  </div>
+  <div class='vitamin-grid'>
+    {build_vitamin_cards_html(micro)}
+  </div>
+  <div class='ai-depth-panel hidden'>
+    <p class='ai-assess'>{escape(detail)}</p>
+    <ul class='ai-recs'>
+      {build_recommendation_list_html(recommendations)}
+    </ul>
+  </div>
+</div>
+""".strip()
 
 
 def build_quick_add_html(actionable_meals: list[dict], plan_date: str | None) -> str:
@@ -728,11 +940,15 @@ def parse_recipe_response(dish_name: str, include_youtube: bool) -> Callable[[st
 
 
 def parse_nutrition_response(raw_text: str, _: dict) -> dict:
-    html_fragment = ensure_html_fragment(strip_hidden_json(raw_text), wrapper_class="ai-nutrition")
+    primary = extract_percentage_map(raw_text, PRIMARY_NUTRIENTS)
+    micro = extract_percentage_map(raw_text, MICRONUTRIENTS)
+    html_fragment = render_nutrition_dashboard(raw_text)
     try:
         meals = extract_actionable_meals(raw_text)
     except ParseAIError:
         meals = []
+    if not meals:
+        meals = build_rule_based_actionable_meals(primary, micro)
     return {"html": html_fragment, "meals": meals}
 
 

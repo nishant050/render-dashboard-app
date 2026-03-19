@@ -303,6 +303,8 @@ select.input-field {
 .ai-nutrition {
     display: grid;
     gap: 1rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .ai-nutrition-top {
@@ -310,6 +312,7 @@ select.input-field {
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
+    min-width: 0;
 }
 
 .ai-kicker {
@@ -329,6 +332,8 @@ select.input-field {
 .ai-summary {
     color: var(--text-secondary);
     margin: 0;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
 }
 
 .nutrition-bars {
@@ -342,6 +347,7 @@ select.input-field {
     border-radius: var(--radius-md);
     background: rgba(255, 255, 255, 0.035);
     border: 1px solid var(--border-subtle);
+    min-width: 0;
 }
 
 .nutrition-metric-head {
@@ -351,16 +357,20 @@ select.input-field {
     gap: 0.75rem;
     margin-bottom: 0.45rem;
     font-weight: 700;
+    min-width: 0;
 }
 
 .nutrition-metric-head label {
     color: var(--text-primary);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .nutrition-metric-head span,
 .nutrition-metric p {
     color: var(--text-secondary);
     font-size: 0.82rem;
+    overflow-wrap: anywhere;
 }
 
 .nutrition-metric progress {
@@ -404,15 +414,19 @@ select.input-field {
     justify-content: space-between;
     gap: 0.75rem;
     font-size: 0.82rem;
+    min-width: 0;
 }
 
 .vitamin-chip span {
     color: var(--text-secondary);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .vitamin-chip strong {
     color: var(--accent-green-light);
     font-size: 0.85rem;
+    flex-shrink: 0;
 }
 
 .ai-depth-panel {
@@ -420,16 +434,45 @@ select.input-field {
     border-radius: var(--radius-md);
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-subtle);
+    min-width: 0;
+    overflow: hidden;
+}
+
+.ai-depth-panel.hidden {
+    display: none !important;
+}
+
+.ai-depth-panel:not(.hidden) {
+    display: block;
 }
 
 .ai-assess {
     color: var(--text-secondary);
     margin-bottom: 0.8rem;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
 }
 
 .ai-recs {
     padding-left: 1rem;
     color: var(--text-primary);
+    margin: 0;
+}
+
+.ai-recs li {
+    margin-bottom: 0.55rem;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+}
+
+.ai-depth-toggle {
+    flex-shrink: 0;
+}
+
+.ai-depth-toggle.is-open {
+    background: rgba(99, 102, 241, 0.14);
+    color: var(--text-primary);
+    border: 1px solid var(--border-accent);
 }
 
 .ai-quick-add {
@@ -460,23 +503,28 @@ select.input-field {
     background: rgba(255, 255, 255, 0.04);
     display: grid;
     gap: 0.8rem;
+    min-width: 0;
 }
 
 .ai-rec-card-top {
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
+    min-width: 0;
 }
 
 .ai-rec-card h4 {
     margin: 0 0 0.3rem 0;
     font-size: 0.96rem;
+    overflow-wrap: anywhere;
 }
 
 .ai-rec-reason {
     margin: 0;
     color: var(--text-secondary);
     font-size: 0.83rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
 }
 
 .ai-rec-badges {
@@ -506,6 +554,7 @@ select.input-field {
     gap: 0.55rem;
     color: var(--text-secondary);
     font-size: 0.8rem;
+    overflow-wrap: anywhere;
 }
 
 .ai-meal-fallback ul {
@@ -1568,6 +1617,13 @@ select.input-field {
     margin-left: 260px;
     padding: 2rem;
     min-height: 100vh;
+    width: calc(100% - 260px);
+    max-width: none;
+}
+
+.admin-main > * {
+    width: 100%;
+    max-width: none;
 }
 
 .admin-mobile-header {
@@ -1659,6 +1715,7 @@ select.input-field {
 .admin-section {
     padding: 1.5rem;
     margin-bottom: 1.5rem;
+    width: 100%;
 }
 
 .admin-section h2 {
@@ -2462,6 +2519,7 @@ select.input-field {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    align-items: stretch;
 }
 
 .planner-hero {
