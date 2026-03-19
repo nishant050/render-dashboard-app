@@ -664,25 +664,30 @@ async def confirm_replace_meal(request: Request, meal_plan_id: str, alt_json: st
         return ""
         
     db = await get_db()
-    alt_data = json.loads(alt_json)
+    try:
+        alt_data = json.loads(alt_json)
+    except json.JSONDecodeError:
+        return HTMLResponse("<p class='error'>Invalid replacement meal data.</p>", status_code=400)
     
-    await db.meal_plans.update_one(
+    result = await db.meal_plans.update_one(
         {"_id": ObjectId(meal_plan_id)},
         {"$set": {
             "dish_name": alt_data.get("dish_name", "Unknown AI Dish"),
             "description": alt_data.get("description", ""),
-            "calories": alt_data.get("calories", 0),
-            "protein_g": alt_data.get("protein_g", 0),
-            "carbs_g": alt_data.get("carbs_g", 0),
-            "fat_g": alt_data.get("fat_g", 0),
-            "fiber_g": alt_data.get("fiber_g", 0),
+            "calories": parse_int(alt_data.get("calories", 0)),
+            "protein_g": parse_float(alt_data.get("protein_g", 0)),
+            "carbs_g": parse_float(alt_data.get("carbs_g", 0)),
+            "fat_g": parse_float(alt_data.get("fat_g", 0)),
+            "fiber_g": parse_float(alt_data.get("fiber_g", 0)),
         }}
     )
+    if result.matched_count == 0:
+        return HTMLResponse("<p class='error'>Meal not found.</p>", status_code=404)
     
     await log_activity(profile_id, "meal_replaced", f"Replaced with: {alt_data.get('dish_name')}", request)
     
-    # Reload dashboard completely
-    response = HTMLResponse("<script>window.location.reload();</script>")
+    response = HTMLResponse("")
+    response.headers["HX-Refresh"] = "true"
     return response
 
 

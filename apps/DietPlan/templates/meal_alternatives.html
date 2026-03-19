@@ -14,7 +14,7 @@
         </div>
         <form hx-post="/dietplan/meal/replace/confirm/{{ str(meal_id) }}" style="margin-top: 0.8rem;">
             <input type="hidden" name="alt_json" value="{{ alt_json_list[loop.index0] }}">
-            <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;" onclick="closeDishModal()">Select This Meal</button>
+            <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Select This Meal</button>
         </form>
     </div>
     {% endfor %}
