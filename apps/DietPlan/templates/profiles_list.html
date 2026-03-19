@@ -1,0 +1,17 @@
+{% if profiles|length > 0 %}
+<div class="profiles-grid">
+    {% for profile in profiles %}
+    <form action="/dietplan/profile/select/{{ profile.id }}" method="post" class="profile-card-form">
+        <button type="submit" class="profile-card">
+            <div class="profile-avatar">{{ profile.name[0]|upper }}</div>
+            <span class="profile-name">{{ profile.name }}</span>
+        </button>
+    </form>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <span class="empty-icon">🫥</span>
+    <p>No profiles found. Create a new one!</p>
+</div>
+{% endif %}

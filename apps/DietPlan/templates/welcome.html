@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Welcome — Diet Plan Dashboard{% endblock %}
+{% block body_class %}welcome-page{% endblock %}
+
+{% block body %}
+<div class="welcome-container">
+    <div class="welcome-bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+    <div class="welcome-card glass-card">
+        <div class="welcome-logo">
+            <span class="logo-icon">🥗</span>
+            <h1>Diet Plan</h1>
+            <p class="welcome-subtitle">Your personalized meal planner</p>
+        </div>
+
+        <div class="welcome-options" id="welcome-options">
+            <button class="btn btn-primary btn-lg" onclick="showNewUser()">
+                <span class="btn-icon">✨</span>
+                New User
+            </button>
+            <button class="btn btn-secondary btn-lg" onclick="showExisting()">
+                <span class="btn-icon">👤</span>
+                Existing Profile
+            </button>
+        </div>
+
+        <form class="new-user-form hidden" id="new-user-form" action="/dietplan/profile/new" method="post">
+            <h2>Create Your Profile</h2>
+            <p class="form-hint">Just tell us your name — that's it!</p>
+            <div class="input-group">
+                <input type="text" name="name" placeholder="Your Name" required autofocus class="input-field"
+                    id="name-input" minlength="2" maxlength="50">
+                <label for="name-input" class="input-label">Your Name</label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <span class="btn-icon">🚀</span>
+                    Let's Go!
+                </button>
+                <button type="button" class="btn btn-ghost" onclick="showWelcome()">← Back</button>
+            </div>
+        </form>
+
+        <div class="existing-user hidden" id="existing-user">
+            <h2>Choose Your Profile</h2>
+            <div id="profiles-container" hx-get="/dietplan/profiles/list" hx-trigger="load" hx-swap="innerHTML">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Loading profiles...</p>
+                </div>
+            </div>
+            <button type="button" class="btn btn-ghost" onclick="showWelcome()" style="margin-top: 1rem;">←
+                Back</button>
+        </div>
+    </div>
+
+    <a href="/dietplan/admin/login" class="admin-link">Admin Panel →</a>
+</div>
+
+<script>
+    function showNewUser() {
+        document.getElementById('welcome-options').classList.add('hidden');
+        document.getElementById('new-user-form').classList.remove('hidden');
+        document.getElementById('name-input').focus();
+    }
+    function showExisting() {
+        document.getElementById('welcome-options').classList.add('hidden');
+        document.getElementById('existing-user').classList.remove('hidden');
+    }
+    function showWelcome() {
+        document.getElementById('welcome-options').classList.remove('hidden');
+        document.getElementById('new-user-form').classList.add('hidden');
+        document.getElementById('existing-user').classList.add('hidden');
+    }
+</script>
+{% endblock %}

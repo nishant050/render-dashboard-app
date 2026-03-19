@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Weekly History — Diet Plan{% endblock %}
+{% block body_class %}history-page{% endblock %}
+
+{% block body %}
+<div class="dashboard-container">
+    <header class="dash-header glass-card">
+        <div class="header-left">
+            <a href="/dietplan/dashboard" class="back-btn">← Back</a>
+        </div>
+        <div class="header-right">
+            <span class="header-greeting">📊 Weekly History</span>
+        </div>
+    </header>
+
+    <!-- Week Navigation -->
+    <div class="date-nav glass-card">
+        <a href="/dietplan/history?week_offset={{ prev_offset }}" class="date-btn">
+            <span>‹</span>
+        </a>
+        <div class="date-center">
+            <h2 class="date-display">
+                {{ start_of_week.strftime('%b %d') }} — {{ end_of_week.strftime('%b %d, %Y') }}
+            </h2>
+        </div>
+        <a href="/dietplan/history?week_offset={{ next_offset }}" class="date-btn">
+            <span>›</span>
+        </a>
+    </div>
+
+    <!-- Days -->
+    {% for date_key, day in days.items() %}
+    <div class="history-day glass-card {% if day.date == today %}history-today{% endif %}">
+        <div class="history-day-header">
+            <div class="history-day-info">
+                <h3>{{ day.day_name }}</h3>
+                <span class="history-date">{{ day.date.strftime('%b %d') }}</span>
+            </div>
+            <div class="history-day-stats">
+                {% if day.total > 0 %}
+                <div class="history-progress-ring">
+                    <svg viewBox="0 0 40 40">
+                        <circle class="ring-bg" cx="20" cy="20" r="16" />
+                        <circle class="ring-fill" cx="20" cy="20" r="16"
+                            stroke-dasharray="{{ (day.prepared / day.total * 100.5) if day.total > 0 else 0 }} 100.5" />
+                    </svg>
+                    <span class="ring-text">{{ ((day.prepared / day.total * 100) | int) if day.total > 0 else 0
+                        }}%</span>
+                </div>
+                <span class="history-count">{{ day.prepared }}/{{ day.total }}</span>
+                {% else %}
+                <span class="history-empty">No meals</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if day.meals|length > 0 %}
+        <div class="history-meals">
+            {% for meal in day.meals %}
+            <div class="history-meal {% if meal.is_checked %}history-meal-done{% endif %}">
+                <span class="history-check">{% if meal.is_checked %}✅{% else %}❌{% endif %}</span>
+                <div class="history-meal-info">
+                    <span class="history-meal-name">{{ meal.dish_name }}</span>
+                    <span class="history-meal-type">{{ meal.meal_type }}</span>
+                </div>
+                <span class="history-cal">{{ meal.calories }} kcal</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if current_offset != 0 %}
+    <a href="/dietplan/history" class="fab-today">
+        <span>📅</span>
+        This Week
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

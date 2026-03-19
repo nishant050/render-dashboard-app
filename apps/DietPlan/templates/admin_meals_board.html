@@ -1,0 +1,291 @@
+<div class="planner-board-shell" id="meal-board">
+    <form id="meal-board-state" class="hidden">
+        <input type="hidden" name="week_offset" value="{{ week_offset }}">
+        <input type="hidden" name="view_all" value="{{ view_all }}">
+        <input type="hidden" name="meal_type_filter" value="{{ filters.meal_type_filter }}">
+        <input type="hidden" name="assignee_filter" value="{{ filters.assignee_filter }}">
+        <input type="hidden" name="q" value="{{ filters.q }}">
+    </form>
+
+    {% if flash_message %}
+    <div class="planner-flash planner-flash-{{ flash_message.kind }}">
+        {{ flash_message.text }}
+    </div>
+    {% endif %}
+
+    <section class="planner-toolbar glass-card">
+        <div class="planner-range">
+            {% if not view_all and week_start and week_end %}
+            <a href="/dietplan/admin/meals?week_offset={{ week_offset - 1 }}&meal_type_filter={{ filters.meal_type_filter }}&assignee_filter={{ filters.assignee_filter }}&q={{ filters.q }}"
+               class="date-btn">‹</a>
+            <div>
+                <p class="planner-kicker">Current range</p>
+                <h2>{{ week_start.strftime('%d %b') }} to {{ week_end.strftime('%d %b %Y') }}</h2>
+            </div>
+            <a href="/dietplan/admin/meals?week_offset={{ week_offset + 1 }}&meal_type_filter={{ filters.meal_type_filter }}&assignee_filter={{ filters.assignee_filter }}&q={{ filters.q }}"
+               class="date-btn">›</a>
+            {% else %}
+            <div>
+                <p class="planner-kicker">Current range</p>
+                <h2>All planned meals</h2>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="planner-toolbar-actions">
+            {% if view_all %}
+            <a href="/dietplan/admin/meals" class="btn btn-secondary">Week View</a>
+            {% else %}
+            <a href="/dietplan/admin/meals?view_all=1&meal_type_filter={{ filters.meal_type_filter }}&assignee_filter={{ filters.assignee_filter }}&q={{ filters.q }}"
+               class="btn btn-secondary">View All</a>
+            {% endif %}
+            {% if not view_all and week_offset != 0 %}
+            <a href="/dietplan/admin/meals?meal_type_filter={{ filters.meal_type_filter }}&assignee_filter={{ filters.assignee_filter }}"
+               class="btn btn-secondary">This Week</a>
+            {% endif %}
+            {% if not view_all and week_start and week_end and summary.scope_total > 0 %}
+            <form hx-post="/dietplan/admin/meals/clear-range"
+                  hx-target="#meal-board"
+                  hx-swap="outerHTML"
+                  hx-confirm="Clear every meal in this visible week?">
+                <input type="hidden" name="week_start" value="{{ week_start.isoformat() }}">
+                <input type="hidden" name="week_end" value="{{ week_end.isoformat() }}">
+                <input type="hidden" name="week_offset" value="{{ week_offset }}">
+                <input type="hidden" name="view_all" value="{{ view_all }}">
+                <input type="hidden" name="meal_type_filter" value="{{ filters.meal_type_filter }}">
+                <input type="hidden" name="assignee_filter" value="{{ filters.assignee_filter }}">
+                <input type="hidden" name="q" value="{{ filters.q }}">
+                <button type="submit" class="btn btn-danger">Clear Week</button>
+            </form>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="planner-stats">
+        <div class="planner-stat glass-card">
+            <span class="planner-stat-value">{{ summary.visible_total }}</span>
+            <span class="planner-stat-label">Visible meals</span>
+        </div>
+        <div class="planner-stat glass-card">
+            <span class="planner-stat-value">{{ summary.day_count }}</span>
+            <span class="planner-stat-label">{% if view_all %}Days with meals{% else %}Days in planner{% endif %}</span>
+        </div>
+        <div class="planner-stat glass-card">
+            <span class="planner-stat-value">{{ summary.everyone_total }}</span>
+            <span class="planner-stat-label">For everyone</span>
+        </div>
+        <div class="planner-stat glass-card">
+            <span class="planner-stat-value">{{ summary.assigned_total }}</span>
+            <span class="planner-stat-label">Assigned meals</span>
+        </div>
+    </section>
+
+    <section class="planner-filter-panel glass-card">
+        <div class="planner-filter-top">
+            <div>
+                <h3>Find the exact meal fast</h3>
+                <p class="section-desc">Filter by dish name, meal type, or assignee without losing your current week.</p>
+            </div>
+            <a href="/dietplan/admin/meals{% if view_all %}?view_all=1{% endif %}" class="btn btn-ghost">Reset Filters</a>
+        </div>
+
+        <form id="planner-filter-form" class="planner-filter-form">
+            <input type="hidden" name="week_offset" value="{{ week_offset }}">
+            <input type="hidden" name="view_all" value="{{ view_all }}">
+
+            <div class="input-group planner-search">
+                <input type="search"
+                       name="q"
+                       class="input-field"
+                       value="{{ filters.q }}"
+                       placeholder="Search dish name or notes"
+                       hx-get="/dietplan/admin/meals/board"
+                       hx-target="#meal-board"
+                       hx-swap="outerHTML"
+                       hx-include="#planner-filter-form"
+                       hx-trigger="keyup changed delay:350ms, search">
+                <label class="input-label">Search</label>
+            </div>
+
+            <div class="input-group">
+                <select name="meal_type_filter"
+                        class="input-field"
+                        hx-get="/dietplan/admin/meals/board"
+                        hx-target="#meal-board"
+                        hx-swap="outerHTML"
+                        hx-include="#planner-filter-form"
+                        hx-trigger="change">
+                    <option value="all" {% if filters.meal_type_filter == 'all' %}selected{% endif %}>All meal types</option>
+                    {% for meal_type in meal_type_order %}
+                    <option value="{{ meal_type }}" {% if filters.meal_type_filter == meal_type %}selected{% endif %}>
+                        {{ meal_type_labels[meal_type] }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <label class="input-label">Meal Type</label>
+            </div>
+
+            <div class="input-group">
+                <select name="assignee_filter"
+                        class="input-field"
+                        hx-get="/dietplan/admin/meals/board"
+                        hx-target="#meal-board"
+                        hx-swap="outerHTML"
+                        hx-include="#planner-filter-form"
+                        hx-trigger="change">
+                    <option value="all" {% if filters.assignee_filter == 'all' %}selected{% endif %}>All assignees</option>
+                    <option value="everyone" {% if filters.assignee_filter == 'everyone' %}selected{% endif %}>Everyone only</option>
+                    {% for profile in profiles %}
+                    <option value="{{ profile.id }}" {% if filters.assignee_filter == profile.id %}selected{% endif %}>{{ profile.name }}</option>
+                    {% endfor %}
+                </select>
+                <label class="input-label">Assignee</label>
+            </div>
+        </form>
+    </section>
+
+    {% if templates_list %}
+    <section class="planner-templates glass-card">
+        <div class="planner-filter-top">
+            <div>
+                <h3>Quick start from recent meals</h3>
+                <p class="section-desc">Open one of these as a pre-filled template, then adjust only the date or assignee.</p>
+            </div>
+        </div>
+
+        <div class="planner-template-grid">
+            {% for template in templates_list %}
+            <button type="button"
+                    class="planner-template-card"
+                    data-plan-date="{{ today.isoformat() }}"
+                    data-meal-type="{{ template.meal_type }}"
+                    data-profile-id="{{ template.profile_id }}"
+                    data-dish-name="{{ template.dish_name }}"
+                    data-description="{{ template.description }}"
+                    data-calories="{{ template.calories }}"
+                    data-protein-g="{{ template.protein_g }}"
+                    data-carbs-g="{{ template.carbs_g }}"
+                    data-fat-g="{{ template.fat_g }}"
+                    data-fiber-g="{{ template.fiber_g }}"
+                    onclick="openMealEditorFromButton(this, 'duplicate')">
+                <span class="planner-template-type">{{ template.meal_type_label }}</span>
+                <strong>{{ template.dish_name }}</strong>
+                <p>{{ template.description or 'Reusable meal shell with saved macros.' }}</p>
+                <span class="planner-template-meta">{{ template.uses }} uses</span>
+            </button>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="planner-days">
+        {% for day in day_sections %}
+        <article class="planner-day glass-card {% if day.is_today %}planner-day-today{% endif %}">
+            <header class="planner-day-header">
+                <div>
+                    <p class="planner-day-label">{{ day.label }}</p>
+                    <h3>{{ day.long_label }}</h3>
+                </div>
+                <div class="planner-day-meta">
+                    <span>{{ day.meal_count }} meals</span>
+                    <span>{{ day.total_calories }} kcal</span>
+                    <button type="button"
+                            class="btn btn-sm btn-secondary"
+                            data-plan-date="{{ day.iso }}"
+                            data-meal-type="breakfast"
+                            onclick="openMealEditorFromButton(this, 'create')">
+                        Add Meal
+                    </button>
+                </div>
+            </header>
+
+            {% if day.meals %}
+            <div class="planner-meal-list">
+                {% for meal in day.meals %}
+                <article class="planner-meal-card {% if meal.is_personal %}planner-meal-card-personal{% endif %}">
+                    <div class="planner-meal-top">
+                        <span class="planner-pill">{{ meal.meal_type_label }}</span>
+                        <span class="planner-assignee">{{ meal.assigned_to }}</span>
+                        <span class="planner-calories">{{ meal.calories }} kcal</span>
+                    </div>
+
+                    <h4>{{ meal.dish_name }}</h4>
+                    <p class="planner-meal-description">
+                        {{ meal.description or 'No description saved yet.' }}
+                    </p>
+
+                    <div class="planner-macro-row">
+                        <span>P {{ meal.protein_g }}g</span>
+                        <span>C {{ meal.carbs_g }}g</span>
+                        <span>F {{ meal.fat_g }}g</span>
+                        <span>Fiber {{ meal.fiber_g }}g</span>
+                    </div>
+
+                    <div class="planner-card-actions">
+                        <button type="button"
+                                class="btn btn-sm btn-secondary"
+                                data-meal-id="{{ meal.id }}"
+                                data-plan-date="{{ meal.plan_date }}"
+                                data-meal-type="{{ meal.meal_type }}"
+                                data-profile-id="{{ meal.profile_id }}"
+                                data-dish-name="{{ meal.dish_name }}"
+                                data-description="{{ meal.description }}"
+                                data-calories="{{ meal.calories }}"
+                                data-protein-g="{{ meal.protein_g }}"
+                                data-carbs-g="{{ meal.carbs_g }}"
+                                data-fat-g="{{ meal.fat_g }}"
+                                data-fiber-g="{{ meal.fiber_g }}"
+                                onclick="openMealEditorFromButton(this, 'edit')">
+                            Edit
+                        </button>
+                        <button type="button"
+                                class="btn btn-sm btn-copy"
+                                data-plan-date="{{ (day.date + timedelta(days=1)).isoformat() }}"
+                                data-duplicate-date="{{ (day.date + timedelta(days=1)).isoformat() }}"
+                                data-meal-type="{{ meal.meal_type }}"
+                                data-profile-id="{{ meal.profile_id }}"
+                                data-dish-name="{{ meal.dish_name }}"
+                                data-description="{{ meal.description }}"
+                                data-calories="{{ meal.calories }}"
+                                data-protein-g="{{ meal.protein_g }}"
+                                data-carbs-g="{{ meal.carbs_g }}"
+                                data-fat-g="{{ meal.fat_g }}"
+                                data-fiber-g="{{ meal.fiber_g }}"
+                                onclick="openMealEditorFromButton(this, 'duplicate')">
+                            Duplicate
+                        </button>
+                        <form hx-post="/dietplan/admin/meal/{{ meal.id }}/delete"
+                              hx-target="#meal-board"
+                              hx-swap="outerHTML"
+                              hx-include="#meal-board-state"
+                              hx-confirm="Delete this meal?">
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="planner-day-empty">
+                <p>No meals planned for this day yet.</p>
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-plan-date="{{ day.iso }}"
+                        data-meal-type="breakfast"
+                        onclick="openMealEditorFromButton(this, 'create')">
+                    Add the first meal
+                </button>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </section>
+
+    {% if not day_sections %}
+    <div class="empty-state glass-card planner-empty-state">
+        <span class="empty-icon">Plan</span>
+        <h3>No meals match this view</h3>
+        <p>Try clearing the filters or add a fresh meal from the editor.</p>
+    </div>
+    {% endif %}
+</div>

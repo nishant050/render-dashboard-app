@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — Diet Plan{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block body %}
+<div class="admin-container">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar glass-card">
+        <div class="sidebar-header">
+            <span class="logo-icon">🥗</span>
+            <h2>Diet Plan</h2>
+            <span class="badge">Admin</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#overview" class="nav-item active" onclick="switchTab(this, 'overview')">
+                <span>📊</span> Overview
+            </a>
+            <a href="#upload" class="nav-item" onclick="switchTab(this, 'upload')">
+                <span>📤</span> Upload Meals
+            </a>
+            <a href="/dietplan/admin/meals" class="nav-item">
+                <span>🍽️</span> Manage Meals
+            </a>
+            <a href="#models" class="nav-item" onclick="switchTab(this, 'models')">
+                <span>🤖</span> AI Models
+            </a>
+            <a href="/dietplan/admin/activity" class="nav-item">
+                <span>📋</span> Activity Logs
+            </a>
+            <a href="#settings" class="nav-item" onclick="switchTab(this, 'settings')">
+                <span>⚙️</span> Settings
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/dietplan/admin/logout" class="nav-item logout">
+                <span>🚪</span> Logout
+            </a>
+        </div>
+    </aside>
+
+    <!-- Mobile Header -->
+    <header class="admin-mobile-header">
+        <button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
+        <h2>Diet Plan Admin</h2>
+        <a href="/dietplan/admin/logout" class="header-btn" title="Logout">🚪</a>
+    </header>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+        <!-- Overview Tab -->
+        <section class="admin-tab active" id="tab-overview">
+            <h1 class="admin-title">Dashboard Overview</h1>
+
+            <div class="stats-grid">
+                <div class="stat-card glass-card">
+                    <span class="stat-icon">👥</span>
+                    <div class="stat-content">
+                        <span class="stat-number">{{ total_users }}</span>
+                        <span class="stat-label">Total Users</span>
+                    </div>
+                </div>
+                <div class="stat-card glass-card">
+                    <span class="stat-icon">🍽️</span>
+                    <div class="stat-content">
+                        <span class="stat-number">{{ total_meals }}</span>
+                        <span class="stat-label">Total Meals</span>
+                    </div>
+                </div>
+                <div class="stat-card glass-card">
+                    <span class="stat-icon">📅</span>
+                    <div class="stat-content">
+                        <span class="stat-number">{{ total_days }}</span>
+                        <span class="stat-label">Days Planned</span>
+                    </div>
+                </div>
+                <div class="stat-card glass-card">
+                    <span class="stat-icon">🤖</span>
+                    <div class="stat-content">
+                        <span class="stat-number">{{ models|length }}</span>
+                        <span class="stat-label">AI Models</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users List -->
+            <div class="admin-section glass-card">
+                <h2>Registered Users</h2>
+                <div class="table-responsive">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in profiles %}
+                            <tr>
+                                <td>{{ p.id }}</td>
+                                <td><strong>{{ p.name }}</strong></td>
+                                <td>{{ p.created_at }}</td>
+                                <td>
+                                    <a href="/dietplan/admin/activity?profile_filter={{ p.id }}"
+                                        class="btn btn-sm btn-secondary">View Activity</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="admin-section glass-card">
+                <h2>Recent Activity</h2>
+                <div class="activity-list">
+                    {% for act in activities[:15] %}
+                    <div class="activity-item">
+                        <div class="activity-dot {{ act.action }}"></div>
+                        <div class="activity-content">
+                            <p>
+                                <strong>{{ act.profile_name or 'Unknown' }}</strong>
+                                — {{ act.action | replace('_', ' ') | title }}
+                            </p>
+                            <span class="activity-detail">{{ act.details }}</span>
+                        </div>
+                        <div class="activity-meta">
+                            <span class="activity-device">{{ act.device_type }} · {{ act.browser_info }} · {{
+                                act.os_info }}</span>
+                            <span class="activity-time">{{ act.created_at }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <a href="/dietplan/admin/activity" class="btn btn-secondary" style="margin-top: 1rem;">View All Activity →</a>
+            </div>
+        </section>
+
+        <!-- Upload Tab -->
+        <section class="admin-tab" id="tab-upload">
+            <h1 class="admin-title">Upload Meal Plans</h1>
+
+            <div class="admin-section glass-card">
+                <h2>📥 Download Template</h2>
+                <p class="section-desc">Download the CSV template, fill in your meal plan data, then upload it below.
+                </p>
+                <a href="/dietplan/admin/template/download" class="btn btn-primary">
+                    <span class="btn-icon">📄</span>
+                    Download CSV Template
+                </a>
+
+                <div class="template-info">
+                    <h3>Template Columns:</h3>
+                    <ul>
+                        <li><code>plan_date</code> — Date in YYYY-MM-DD format (e.g., 2026-02-22)</li>
+                        <li><code>meal_type</code> — One of: breakfast, morning_snack, lunch, afternoon_snack, dinner,
+                            evening_snack</li>
+                        <li><code>dish_name</code> — Name of the dish (required)</li>
+                        <li><code>description</code> — Short description of the dish</li>
+                        <li><code>calories</code> — Estimated calories per serving</li>
+                        <li><code>protein_g</code> — Protein in grams</li>
+                        <li><code>carbs_g</code> — Carbohydrates in grams</li>
+                        <li><code>fat_g</code> — Fat in grams</li>
+                        <li><code>fiber_g</code> — Fiber in grams</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="admin-section glass-card">
+                <h2>📤 Upload Meal Plan</h2>
+                <p class="section-desc">Upload a CSV or XLSX file with your meal plan data.</p>
+
+                <form hx-post="/dietplan/admin/upload" hx-target="#upload-result" hx-swap="innerHTML"
+                    hx-encoding="multipart/form-data" class="upload-form">
+                    <div class="file-upload-area" id="drop-zone">
+                        <input type="file" name="file" accept=".csv,.xlsx,.xls" required id="file-input"
+                            onchange="showFileName(this)">
+                        <div class="file-upload-content">
+                            <span class="upload-icon">📁</span>
+                            <p>Drag & drop your file here or <strong>click to browse</strong></p>
+                            <span class="file-types">CSV, XLSX supported</span>
+                        </div>
+                        <p class="file-name hidden" id="file-name-display"></p>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 1rem;">
+                        <span class="btn-icon">🚀</span>
+                        Upload Meals
+                    </button>
+                </form>
+
+                <div id="upload-result" style="margin-top: 1rem;"></div>
+            </div>
+        </section>
+
+        <!-- AI Models Tab -->
+        <section class="admin-tab" id="tab-models">
+            <h1 class="admin-title">AI Models</h1>
+
+            <div class="admin-section glass-card">
+                <h2>Configured Models</h2>
+                <div class="models-grid">
+                    {% for model in models %}
+                    <div class="model-card {% if model.is_default %}model-default{% endif %}" id="model-{{ model.id }}">
+                        <div class="model-header">
+                            <span
+                                class="model-provider {% if model.provider == 'groq' %}provider-groq{% elif model.provider == 'gemini' %}provider-gemini{% else %}provider-openrouter{% endif %}">
+                                {{ model.provider | upper }}
+                            </span>
+                            {% if model.is_default %}
+                            <span class="model-badge">⭐ Default</span>
+                            {% endif %}
+                        </div>
+                        <h3>{{ model.display_name }}</h3>
+                        <p class="model-id">{{ model.model_id }}</p>
+                        <p class="model-key">API Key: {{ '••••' + model.api_key[-4:] if model.api_key else '🔑 Using
+                            ENV' }}</p>
+                        {% if model.provider == 'gemini' %}
+                        <p class="model-key">
+                            Search grounding: {{ 'On' if model.search_grounding else 'Off' }} |
+                            Video link: {{ 'On' if model.include_youtube else 'Off' }}
+                        </p>
+                        {% endif %}
+                        <div class="model-actions">
+                            {% if not model.is_default %}
+                            <form action="/dietplan/admin/model/default/{{ model.id }}" method="post" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-primary">Set Default</button>
+                            </form>
+                            {% endif %}
+                            <button class="btn btn-sm btn-danger" hx-delete="/dietplan/admin/model/{{ model.id }}"
+                                hx-target="#model-{{ model.id }}" hx-swap="outerHTML"
+                                hx-confirm="Delete this model?">Delete</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="admin-section glass-card">
+                <h2>Add New Model</h2>
+                <form action="/dietplan/admin/model/add" method="post" class="model-form">
+                    <div class="form-row">
+                        <div class="input-group">
+                            <select name="provider" class="input-field" required>
+                                <option value="groq">Groq</option>
+                                <option value="openrouter">OpenRouter</option>
+                                <option value="gemini">Gemini</option>
+                            </select>
+                            <label class="input-label">Provider</label>
+                        </div>
+                        <div class="input-group">
+                            <input type="text" name="model_id" placeholder="e.g., openai/gpt-oss-120b" required
+                                class="input-field">
+                            <label class="input-label">Model ID</label>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <input type="text" name="display_name" placeholder="e.g., GPT-OSS 120B" required
+                                class="input-field">
+                            <label class="input-label">Display Name</label>
+                        </div>
+                        <div class="input-group">
+                            <input type="text" name="api_key" placeholder="Optional — uses ENV if blank"
+                                class="input-field">
+                            <label class="input-label">API Key (optional)</label>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="checkbox-row">
+                            <input type="checkbox" name="search_grounding" value="1" checked>
+                            <span>Enable Gemini web search grounding</span>
+                        </label>
+                        <label class="checkbox-row">
+                            <input type="checkbox" name="include_youtube" value="1" checked>
+                            <span>Include recipe video link for Gemini</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">➕</span>
+                        Add Model
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Settings Tab -->
+        <section class="admin-tab" id="tab-settings">
+            <h1 class="admin-title">Settings</h1>
+
+            <div class="admin-section glass-card">
+                <h2>Change Admin Password</h2>
+                <form hx-post="/dietplan/admin/password" hx-target="#password-result" hx-swap="innerHTML" class="settings-form">
+                    <div class="input-group">
+                        <input type="password" name="current_password" placeholder="Current Password" required
+                            class="input-field">
+                        <label class="input-label">Current Password</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" name="new_password" placeholder="New Password" required minlength="6"
+                            class="input-field">
+                        <label class="input-label">New Password</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Change Password</button>
+                    <div id="password-result" style="margin-top: 1rem;"></div>
+                </form>
+            </div>
+
+            <div class="admin-section glass-card">
+                <h2>Environment Variables</h2>
+                <p class="section-desc">Set these environment variables on your hosting platform:</p>
+                <div class="env-list">
+                    <div class="env-item">
+                        <code>GROQ_API_KEY</code>
+                        <span>Your Groq API key</span>
+                    </div>
+                    <div class="env-item">
+                        <code>OPENROUTER_API_KEY</code>
+                        <span>Your OpenRouter API key</span>
+                    </div>
+                    <div class="env-item">
+                        <code>GEMINI_API_KEY</code>
+                        <span>Your Gemini API key</span>
+                    </div>
+                    <div class="env-item">
+                        <code>MONGO_URI</code>
+                        <span>MongoDB Atlas Connection Array</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<script>
+    function switchTab(el, tabName) {
+        event.preventDefault();
+        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('tab-' + tabName).classList.add('active');
+        el.classList.add('active');
+        // Close mobile sidebar
+        document.querySelector('.admin-sidebar').classList.remove('open');
+        document.getElementById('sidebar-overlay').classList.remove('active');
+    }
+
+    function toggleSidebar() {
+        document.querySelector('.admin-sidebar').classList.toggle('open');
+        document.getElementById('sidebar-overlay').classList.toggle('active');
+    }
+
+    function showFileName(input) {
+        if (input.files.length > 0) {
+            const nameEl = document.getElementById('file-name-display');
+            nameEl.textContent = '📎 ' + input.files[0].name;
+            nameEl.classList.remove('hidden');
+        }
+    }
+
+    // Handle hash-based tab navigation
+    if (window.location.hash) {
+        const tab = window.location.hash.replace('#', '');
+        const tabEl = document.getElementById('tab-' + tab);
+        const navEl = document.querySelector(`a[href="#${tab}"]`);
+        if (tabEl && navEl) {
+            document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            tabEl.classList.add('active');
+            navEl.classList.add('active');
+        }
+    }
+</script>
+{% endblock %}

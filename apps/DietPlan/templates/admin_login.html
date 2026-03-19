@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Admin Login — Diet Plan{% endblock %}
+{% block body_class %}admin-login-page{% endblock %}
+
+{% block body %}
+<div class="welcome-container">
+    <div class="welcome-bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+    </div>
+    <div class="welcome-card glass-card" style="max-width: 400px;">
+        <div class="welcome-logo">
+            <span class="logo-icon">🔐</span>
+            <h1>Admin Login</h1>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <form action="/dietplan/admin/login" method="post" class="admin-form">
+            <div class="input-group">
+                <input type="text" name="username" placeholder="Username" required class="input-field" id="admin-user">
+                <label for="admin-user" class="input-label">Username</label>
+            </div>
+            <div class="input-group">
+                <input type="password" name="password" placeholder="Password" required class="input-field"
+                    id="admin-pass">
+                <label for="admin-pass" class="input-label">Password</label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
+                <span class="btn-icon">🔑</span>
+                Sign In
+            </button>
+        </form>
+
+        <a href="/dietplan/" class="admin-link" style="margin-top: 1.5rem;">← Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

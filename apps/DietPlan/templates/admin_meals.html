@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Meal Planner - Diet Plan Admin{% endblock %}
+{% block body_class %}admin-page admin-meals-page{% endblock %}
+
+{% block body %}
+<div class="admin-container">
+    <aside class="admin-sidebar glass-card">
+        <div class="sidebar-header">
+            <span class="logo-icon">D</span>
+            <h2>Diet Plan</h2>
+            <span class="badge">Admin</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/dietplan/admin" class="nav-item">
+                <span>Stats</span> Overview
+            </a>
+            <a href="/dietplan/admin#upload" class="nav-item">
+                <span>CSV</span> Upload Meals
+            </a>
+            <a href="/dietplan/admin/meals" class="nav-item active">
+                <span>Plan</span> Manage Meals
+            </a>
+            <a href="/dietplan/admin#models" class="nav-item">
+                <span>AI</span> Models
+            </a>
+            <a href="/dietplan/admin/activity" class="nav-item">
+                <span>Log</span> Activity Logs
+            </a>
+            <a href="/dietplan/admin#settings" class="nav-item">
+                <span>Cfg</span> Settings
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/dietplan/admin/logout" class="nav-item logout">
+                <span>Out</span> Logout
+            </a>
+        </div>
+    </aside>
+
+    <header class="admin-mobile-header">
+        <button class="mobile-menu-btn" onclick="toggleSidebar()">Menu</button>
+        <h2>Meal Planner</h2>
+        <a href="/dietplan/admin/logout" class="header-btn" title="Logout">Out</a>
+    </header>
+
+    <main class="admin-main">
+        <section class="planner-hero glass-card">
+            <div class="planner-hero-copy">
+                <p class="planner-kicker">Admin meal planner</p>
+                <h1 class="admin-title">Manage Meals Faster</h1>
+                <p class="planner-subtitle">
+                    Add meals, assign them to everyone or a single user, and duplicate an existing dish into any day
+                    from one editor.
+                </p>
+            </div>
+            <div class="planner-hero-actions">
+                <button type="button" class="btn btn-primary btn-lg" onclick="openMealEditor()">
+                    New Meal
+                </button>
+                <a href="/dietplan/admin#upload" class="btn btn-secondary">Bulk Upload</a>
+            </div>
+        </section>
+
+        {% include "admin_meals_board.html" %}
+    </main>
+</div>
+
+<div class="dish-modal-overlay meal-editor-overlay" id="meal-editor-overlay" onclick="closeMealEditor(event)">
+    <div class="dish-modal meal-editor-modal glass-card" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeMealEditor()">&times;</button>
+        <div class="meal-editor-shell">
+            <div class="meal-editor-heading">
+                <p class="meal-editor-kicker" id="meal-editor-kicker">Create meal</p>
+                <h2 id="meal-editor-title">Add a new meal</h2>
+                <p class="meal-editor-subtitle">
+                    Fill the basics once. Use duplicate on any existing meal to turn repeated planning into a two-click
+                    action.
+                </p>
+            </div>
+
+            <form id="meal-editor-form"
+                  hx-post="/dietplan/admin/meal/save"
+                  hx-target="#meal-board"
+                  hx-swap="outerHTML"
+                  hx-include="#meal-board-state"
+                  hx-on::after-request="if(event.detail.successful) closeMealEditor()">
+                <input type="hidden" name="meal_id" id="editor-meal-id" value="">
+
+                <div class="meal-editor-grid">
+                    <div class="input-group">
+                        <input type="date" name="plan_date" id="editor-plan-date" required class="input-field"
+                               value="{{ today.isoformat() }}">
+                        <label class="input-label">Date</label>
+                    </div>
+                    <div class="input-group">
+                        <select name="meal_type" id="editor-meal-type" required class="input-field">
+                            {% for mt in meal_type_order %}
+                            <option value="{{ mt }}">{{ meal_type_labels[mt] }}</option>
+                            {% endfor %}
+                        </select>
+                        <label class="input-label">Meal Type</label>
+                    </div>
+                    <div class="input-group">
+                        <select name="profile_id" id="editor-profile-id" class="input-field">
+                            <option value="0">Everyone</option>
+                            {% for profile in profiles %}
+                            <option value="{{ profile.id }}">{{ profile.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <label class="input-label">Assign To</label>
+                    </div>
+                    <div class="meal-editor-quickdates">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="setMealEditorDate('{{ today.isoformat() }}')">Today</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="setMealEditorDate('{{ (today + timedelta(days=1)).isoformat() }}')">Tomorrow</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="setMealEditorDate('{{ (today + timedelta(days=7)).isoformat() }}')">Next Week</button>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" name="dish_name" id="editor-dish-name" required class="input-field"
+                           placeholder="Example: Paneer tikka wrap">
+                    <label class="input-label">Dish Name</label>
+                </div>
+
+                <div class="input-group">
+                    <textarea name="description" id="editor-description" rows="3" class="input-field meal-editor-textarea"
+                              placeholder="Short note about what makes this meal easy to recognize."></textarea>
+                    <label class="input-label">Description</label>
+                </div>
+
+                <div class="meal-macro-grid">
+                    <div class="input-group">
+                        <input type="number" name="calories" id="editor-calories" min="0" step="1" class="input-field" value="0">
+                        <label class="input-label">Calories</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="number" name="protein_g" id="editor-protein" min="0" step="0.1" class="input-field" value="0">
+                        <label class="input-label">Protein (g)</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="number" name="carbs_g" id="editor-carbs" min="0" step="0.1" class="input-field" value="0">
+                        <label class="input-label">Carbs (g)</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="number" name="fat_g" id="editor-fat" min="0" step="0.1" class="input-field" value="0">
+                        <label class="input-label">Fat (g)</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="number" name="fiber_g" id="editor-fiber" min="0" step="0.1" class="input-field" value="0">
+                        <label class="input-label">Fiber (g)</label>
+                    </div>
+                </div>
+
+                <div class="meal-editor-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeMealEditor()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Meal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<script>
+    const mealEditorDefaults = {
+        meal_id: '',
+        plan_date: '{{ today.isoformat() }}',
+        meal_type: 'breakfast',
+        profile_id: '0',
+        dish_name: '',
+        description: '',
+        calories: '0',
+        protein_g: '0',
+        carbs_g: '0',
+        fat_g: '0',
+        fiber_g: '0'
+    };
+
+    function toggleSidebar() {
+        document.querySelector('.admin-sidebar').classList.toggle('open');
+        document.getElementById('sidebar-overlay').classList.toggle('active');
+    }
+
+    function setMealEditorDate(value) {
+        document.getElementById('editor-plan-date').value = value;
+    }
+
+    function fillMealEditor(data, mode) {
+        const payload = Object.assign({}, mealEditorDefaults, data || {});
+        document.getElementById('editor-meal-id').value = payload.meal_id || '';
+        document.getElementById('editor-plan-date').value = payload.plan_date || mealEditorDefaults.plan_date;
+        document.getElementById('editor-meal-type').value = payload.meal_type || mealEditorDefaults.meal_type;
+        document.getElementById('editor-profile-id').value = payload.profile_id || '0';
+        document.getElementById('editor-dish-name').value = payload.dish_name || '';
+        document.getElementById('editor-description').value = payload.description || '';
+        document.getElementById('editor-calories').value = payload.calories || '0';
+        document.getElementById('editor-protein').value = payload.protein_g || '0';
+        document.getElementById('editor-carbs').value = payload.carbs_g || '0';
+        document.getElementById('editor-fat').value = payload.fat_g || '0';
+        document.getElementById('editor-fiber').value = payload.fiber_g || '0';
+
+        const title = mode === 'edit' ? 'Edit meal' : mode === 'duplicate' ? 'Duplicate meal' : 'Add a new meal';
+        const kicker = mode === 'edit' ? 'Update meal' : mode === 'duplicate' ? 'Duplicate meal' : 'Create meal';
+        document.getElementById('meal-editor-title').textContent = title;
+        document.getElementById('meal-editor-kicker').textContent = kicker;
+    }
+
+    function openMealEditor(data) {
+        fillMealEditor(data || mealEditorDefaults, data && data.meal_id ? 'edit' : 'create');
+        document.getElementById('meal-editor-overlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function openMealEditorFromButton(button, mode) {
+        const payload = {
+            meal_id: mode === 'edit' ? (button.dataset.mealId || '') : '',
+            plan_date: button.dataset.planDate || mealEditorDefaults.plan_date,
+            meal_type: button.dataset.mealType || mealEditorDefaults.meal_type,
+            profile_id: button.dataset.profileId || '0',
+            dish_name: button.dataset.dishName || '',
+            description: button.dataset.description || '',
+            calories: button.dataset.calories || '0',
+            protein_g: button.dataset.proteinG || '0',
+            carbs_g: button.dataset.carbsG || '0',
+            fat_g: button.dataset.fatG || '0',
+            fiber_g: button.dataset.fiberG || '0'
+        };
+
+        if (mode === 'duplicate' && button.dataset.duplicateDate) {
+            payload.plan_date = button.dataset.duplicateDate;
+        }
+
+        fillMealEditor(payload, mode);
+        document.getElementById('meal-editor-overlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeMealEditor(event) {
+        if (event && event.target !== document.getElementById('meal-editor-overlay')) return;
+        document.getElementById('meal-editor-form').reset();
+        fillMealEditor(mealEditorDefaults, 'create');
+        document.getElementById('meal-editor-overlay').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+</script>
+{% endblock %}

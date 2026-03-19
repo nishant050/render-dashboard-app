@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Today's Meals — Diet Plan{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block body %}
+<div class="dashboard-container">
+    <!-- Top Nav Bar -->
+    <header class="dash-header glass-card">
+        <div class="header-left">
+            <span class="header-greeting">Hello, <strong>{{ profile.name }}</strong> 👋</span>
+        </div>
+        <div class="header-right">
+            <a href="/dietplan/history" class="header-btn" title="Weekly History">📊</a>
+            <a href="/dietplan/profile/switch" class="header-btn" title="Switch Profile">👤</a>
+        </div>
+    </header>
+
+    <!-- Date Navigation -->
+    <div class="date-nav glass-card">
+        <a href="/dietplan/dashboard?view_date={{ prev_date }}" class="date-btn">
+            <span>‹</span>
+        </a>
+        <div class="date-center">
+            <h2 class="date-display">
+                {% if is_today %}
+                Today
+                {% else %}
+                {{ selected_date.strftime('%A') }}
+                {% endif %}
+            </h2>
+            <p class="date-sub">{{ selected_date.strftime('%B %d, %Y') }}</p>
+        </div>
+        <a href="/dietplan/dashboard?view_date={{ next_date }}" class="date-btn">
+            <span>›</span>
+        </a>
+    </div>
+
+    <!-- Calorie Summary -->
+    <div class="calorie-summary glass-card">
+        <div class="cal-ring-container">
+            <svg class="cal-ring" viewBox="0 0 120 120">
+                <circle class="cal-ring-bg" cx="60" cy="60" r="52" />
+                <circle class="cal-ring-fill" cx="60" cy="60" r="52"
+                    stroke-dasharray="{{ (checked_calories / total_calories * 327) if total_calories > 0 else 0 }} 327" />
+            </svg>
+            <div class="cal-ring-text">
+                <span class="cal-number">{{ checked_calories }}</span>
+                <span class="cal-label">prepared</span>
+            </div>
+        </div>
+        <div class="cal-info">
+            <div class="cal-stat">
+                <span class="cal-stat-val">{{ total_calories }}</span>
+                <span class="cal-stat-label">Total kcal</span>
+            </div>
+            <div class="cal-stat">
+                <span class="cal-stat-val">{{ checked_calories }}</span>
+                <span class="cal-stat-label">Prepared kcal</span>
+            </div>
+            <div class="cal-stat">
+                <span class="cal-stat-val">{{ total_calories - checked_calories }}</span>
+                <span class="cal-stat-label">Remaining kcal</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Meal Sections -->
+    {% for meal_type in meal_type_order %}
+    {% set section = meals[meal_type] %}
+    {% if section.meals|length > 0 %}
+    <div class="meal-section">
+        <h3 class="meal-section-title">{{ section.label }}</h3>
+        <div class="meal-cards">
+            {% for meal in section.meals %}
+            <div class="meal-card glass-card {% if meal.is_checked %}meal-checked{% endif %}" id="meal-{{ meal.id }}">
+                <div class="meal-card-top">
+                    <button class="meal-check-btn" hx-post="/dietplan/meal/toggle/{{ meal.id }}" hx-target="#check-{{ meal.id }}"
+                        hx-swap="innerHTML">
+                        <span id="check-{{ meal.id }}" class="check-icon">
+                            {% if meal.is_checked %}✅{% else %}⬜{% endif %}
+                        </span>
+                    </button>
+                    <div class="meal-info" hx-get="/dietplan/dish/info/{{ meal.id }}" hx-target="#dish-modal-body"
+                        hx-swap="innerHTML" hx-trigger="click" onclick="openDishModal()">
+                        <h4 class="meal-name">{{ meal.dish_name }}</h4>
+                        {% if meal.description %}
+                        <p class="meal-desc">{{ meal.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meal-card-bottom">
+                    <span class="meal-cal">{{ meal.calories }} kcal</span>
+                    <div class="meal-macros">
+                        <span class="macro protein">P: {{ meal.protein_g }}g</span>
+                        <span class="macro carbs">C: {{ meal.carbs_g }}g</span>
+                        <span class="macro fat">F: {{ meal.fat_g }}g</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Empty state -->
+    {% set ns = namespace(has_meals=false) %}
+    {% for mt in meal_type_order %}
+    {% if meals[mt].meals|length > 0 %}
+    {% set ns.has_meals = true %}
+    {% endif %}
+    {% endfor %}
+    {% if not ns.has_meals %}
+    <div class="empty-state glass-card">
+        <span class="empty-icon">📋</span>
+        <h3>No meals planned</h3>
+        <p>No meal plan for {{ selected_date.strftime('%B %d, %Y') }} yet.</p>
+        <p class="empty-hint">Ask your admin to upload a meal plan!</p>
+    </div>
+    {% endif %}
+
+    <!-- Quick Today Button (when not viewing today) -->
+    {% if not is_today %}
+    <a href="/dietplan/dashboard" class="fab-today">
+        <span>📅</span>
+        Today
+    </a>
+    {% endif %}
+</div>
+
+<!-- Dish Info Modal -->
+<div class="dish-modal-overlay" id="dish-modal" onclick="closeDishModal(event)">
+    <div class="dish-modal glass-card" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeDishModal()">&times;</button>
+        <div id="dish-modal-body">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Loading recipe info...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openDishModal() {
+        document.getElementById('dish-modal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeDishModal(e) {
+        if (e && e.target !== document.getElementById('dish-modal')) return;
+        document.getElementById('dish-modal').classList.remove('active');
+        document.body.style.overflow = '';
+        // Reset content
+        document.getElementById('dish-modal-body').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading recipe info...</p></div>';
+    }
+
+    // Update card visual state after toggle
+    document.body.addEventListener('htmx:afterSwap', function (event) {
+        if (event.detail.target.id && event.detail.target.id.startsWith('check-')) {
+            const mealId = event.detail.target.id.replace('check-', '');
+            const card = document.getElementById('meal-' + mealId);
+            if (card) {
+                const icon = event.detail.target.textContent.trim();
+                if (icon === '✅') {
+                    card.classList.add('meal-checked');
+                } else {
+                    card.classList.remove('meal-checked');
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
