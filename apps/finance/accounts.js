@@ -1,7 +1,10 @@
 // ===== ACCOUNTS PAGE LOGIC =====
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     loadAccounts();
     document.getElementById('add-account-btn').addEventListener('click', () => openAccountForm());
     document.getElementById('transfer-btn').addEventListener('click', () => openTransferForm());

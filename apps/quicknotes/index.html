@@ -3,40 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quick Notes</title>
-    <link rel="stylesheet" href="../../style.css">
-    <style>
-        .notes-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:1rem; }
-        .notes-list { display:flex; flex-direction:column; gap:0.75rem; }
-        .note-card { background:#fff; padding:0.75rem; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.06); }
-        .note-meta { display:flex; justify-content:space-between; gap:8px; font-size:0.9rem; color:#666; }
-        textarea#note-content { width:100%; min-height:120px; resize:vertical; }
-    </style>
+    <title>Quicknotes Board</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <nav>
-        <a href="../../index.html">&larr; Back to Dashboard</a>
-    </nav>
+    <div class="page-orb page-orb-left"></div>
+    <div class="page-orb page-orb-right"></div>
 
-    <main class="container">
-        <h1>📝 Quick Notes</h1>
+    <main class="keep-shell">
+        <header class="topbar">
+            <a class="back-link" href="../../index.html">&larr; Back to Dashboard</a>
+            <span class="topbar-pill">Realtime sync</span>
+        </header>
 
-        <div class="notes-toolbar">
-            <input id="note-title" placeholder="Title (optional)" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd;">
-            <button id="clear-all-btn" class="danger-btn">Clear All</button>
-        </div>
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Quicknotes board</p>
+                <h1>Capture thoughts the moment they arrive.</h1>
+                <p class="hero-text">
+                    A polished, Keep-inspired notes space with live autosave, color-coded cards, pinning,
+                    and instant search.
+                </p>
+            </div>
 
-        <textarea id="note-content" placeholder="Write a quick note..."></textarea>
-        <div style="margin-top:0.5rem; display:flex; gap:8px;">
-            <button id="save-note-btn">Save Note</button>
-            <button id="new-note-btn">New Note</button>
-        </div>
+            <div class="hero-stats">
+                <article class="stat-card">
+                    <span class="stat-value" id="note-count">0</span>
+                    <span class="stat-label">notes saved</span>
+                </article>
+                <article class="stat-card stat-card-soft">
+                    <span class="stat-value" id="pinned-count">0</span>
+                    <span class="stat-label">pinned ideas</span>
+                </article>
+            </div>
+        </section>
 
-        <hr style="margin:1.25rem 0;">
+        <section class="toolbar">
+            <label class="search-shell" for="search-input">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 0 1 0-13Zm0 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9Zm8.91 10.5 2.59 2.59-1.41 1.41L18 17.91z"></path>
+                </svg>
+                <input id="search-input" type="search" placeholder="Search notes">
+            </label>
 
-        <h2>Saved Notes</h2>
-        <div id="notes-list" class="notes-list"></div>
+            <div class="toolbar-actions">
+                <span class="status-chip" id="board-status">Loading notes...</span>
+                <button class="ghost-btn" id="clear-all-btn" type="button">Clear board</button>
+            </div>
+        </section>
+
+        <section class="composer-wrap">
+            <div class="composer-card is-compact" id="composer-shell" data-color="linen">
+                <div class="compose-top">
+                    <input id="composer-title" type="text" maxlength="120" placeholder="Title">
+                    <button class="icon-btn" id="composer-pin-btn" type="button" aria-label="Pin note"></button>
+                </div>
+
+                <textarea id="composer-content" placeholder="Take a note..."></textarea>
+
+                <div class="compose-bottom">
+                    <div class="palette" id="composer-colors"></div>
+
+                    <div class="compose-meta">
+                        <span class="color-label" id="composer-color-label">Warm paper</span>
+                        <span class="save-status" id="composer-status">Start typing to create a note</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="empty-state" id="empty-state" hidden>
+            <div class="empty-illustration"></div>
+            <h2>No notes yet</h2>
+            <p>Start typing in the composer above and your first note will appear instantly.</p>
+        </section>
+
+        <section class="notes-section" id="pinned-section" hidden>
+            <div class="section-heading">
+                <h2>Pinned</h2>
+                <span id="pinned-section-count">0</span>
+            </div>
+            <div class="notes-board" id="pinned-notes"></div>
+        </section>
+
+        <section class="notes-section" id="other-section" hidden>
+            <div class="section-heading">
+                <h2>Notes</h2>
+                <span id="other-section-count">0</span>
+            </div>
+            <div class="notes-board" id="other-notes"></div>
+        </section>
     </main>
+
+    <div class="editor-overlay" id="editor-overlay" hidden>
+        <section class="editor-card" id="editor-card" data-color="linen" aria-modal="true" role="dialog">
+            <div class="editor-header">
+                <span class="editor-kicker">Editing note</span>
+                <button class="icon-btn" id="editor-close-btn" type="button" aria-label="Close editor"></button>
+            </div>
+
+            <input id="editor-title" type="text" maxlength="120" placeholder="Title">
+            <textarea id="editor-content" placeholder="Take a note..."></textarea>
+
+            <div class="editor-footer">
+                <div class="palette" id="editor-colors"></div>
+
+                <div class="editor-actions">
+                    <button class="action-btn" id="editor-pin-btn" type="button">Pin</button>
+                    <button class="action-btn" id="editor-duplicate-btn" type="button">Duplicate</button>
+                    <button class="action-btn action-btn-danger" id="editor-delete-btn" type="button">Delete</button>
+                </div>
+            </div>
+
+            <div class="editor-meta">
+                <span class="save-status" id="editor-status">Saved</span>
+                <span class="editor-timestamp" id="editor-timestamp"></span>
+            </div>
+        </section>
+    </div>
 
     <script src="client.js"></script>
 </body>

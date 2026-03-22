@@ -44,10 +44,11 @@ const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
 
 // QuickNotes
 const quickNoteSchema = new mongoose.Schema({
-    title: String,
-    content: String,
-    createdAt: { type: Date, default: Date.now }
-});
+    title: { type: String, default: '' },
+    content: { type: String, default: '' },
+    color: { type: String, default: 'linen' },
+    pinned: { type: Boolean, default: false }
+}, { timestamps: true });
 const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
 const learnInvestingSchema = new mongoose.Schema({
@@ -74,6 +75,25 @@ const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- Finance App Password Protection ---
+const FINANCE_PASSWORD = 'admin123';
+const financeAuth = new Map(); // sessionId -> true (authenticated)
+
+// Generate a simple session token
+const generateSessionToken = () => {
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+};
+
+// Finance authentication middleware - protects /finance and /api/finance routes
+const requireFinanceAuth = (req, res, next) => {
+    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+
+    if (financeAuth.has(sessionToken)) {
+        next();
+    } else {
+        res.status(401).json({ error: 'Authentication required', code: 'FINANCE_AUTH_REQUIRED' });
+    }
+};
 
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '25mb' }));
@@ -95,13 +115,120 @@ app.use('/dietplan', createProxyMiddleware({
     }
 }));
 
-// --- Finance API Routes ---
-const financeRoutes = require('./apps/finance/server/routes');
-app.use('/api/finance', financeRoutes);
+// --- Finance Login API ---
+app.post('/api/finance-login', (req, res) => {
+    const { password } = req.body;
 
-// --- Finance App Static Files ---
-// Serve finance app static files from /finance/ URL
-app.use('/finance', express.static(path.join(__dirname, 'apps', 'finance')));
+    if (password === FINANCE_PASSWORD) {
+        const sessionToken = generateSessionToken();
+        financeAuth.set(sessionToken, true);
+        res.json({ success: true, session: sessionToken });
+    } else {
+        res.status(401).json({ success: false, error: 'Invalid password' });
+    }
+});
+
+// --- Finance Auth Check API ---
+app.get('/api/finance-auth-check', (req, res) => {
+    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+
+    if (financeAuth.has(sessionToken)) {
+        res.json({ authenticated: true });
+    } else {
+        res.json({ authenticated: false });
+    }
+});
+
+// --- Finance API Routes (Protected) ---
+const financeRoutes = require('./apps/finance/server/routes');
+app.use('/api/finance', requireFinanceAuth, financeRoutes);
+
+// --- Finance App Static Files (Protected) ---
+// Custom middleware to protect static files under /finance
+const protectFinanceStatic = (req, res, next) => {
+    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+
+    if (financeAuth.has(sessionToken)) {
+        next();
+    } else {
+        // Redirect to login page or return auth required
+        res.redirect('/finance-login.html');
+    }
+};
+
+// Serve finance app static files from /finance/ URL (protected)
+app.use('/finance', protectFinanceStatic, express.static(path.join(__dirname, 'apps', 'finance')));
+
+// Also serve a dedicated login page for finance
+app.get('/finance-login.html', (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Finance App - Login</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+               background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); 
+               min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-container { background: #fff; padding: 2rem; border-radius: 12px; 
+                          box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 380px; }
+        h1 { color: #1a1a2e; margin-bottom: 1.5rem; text-align: center; font-size: 1.5rem; }
+        .error { color: #e74c3c; margin-bottom: 1rem; padding: 0.75rem; background: #fee; 
+                border-radius: 6px; display: none; }
+        input { width: 100%; padding: 0.875rem; margin-bottom: 1rem; border: 2px solid #e0e0e0; 
+               border-radius: 8px; font-size: 1rem; transition: border-color 0.2s; }
+        input:focus { outline: none; border-color: #4f46e5; }
+        button { width: 100%; padding: 0.875rem; background: #4f46e5; color: #fff; border: none; 
+                border-radius: 8px; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #4338ca; }
+        .back-link { display: block; text-align: center; margin-top: 1rem; color: #666; 
+                    text-decoration: none; }
+        .back-link:hover { color: #4f46e5; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>🔒 Finance App</h1>
+        <div class="error" id="error"></div>
+        <form id="loginForm">
+            <input type="password" id="password" placeholder="Enter password" required autofocus>
+            <button type="submit">Login</button>
+        </form>
+        <a href="/" class="back-link">← Back to Dashboard</a>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error');
+            
+            try {
+                const res = await fetch('/api/finance-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    // Store session and redirect to finance app
+                    localStorage.setItem('financeSession', data.session);
+                    window.location.href = '/finance/index.html?session=' + data.session;
+                } else {
+                    errorDiv.textContent = data.error || 'Invalid password';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Login failed. Please try again.';
+                errorDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
+    `);
+});
 
 // --- Static File Serving ---
 // Serve the main front-end, apps, and uploads
@@ -1282,9 +1409,25 @@ app.post('/api/newshunt/feeds', async (req, res) => {
 
 // --- APIs (Quick Notes with MongoDB) ---
 
+const QUICKNOTE_COLORS = new Set(['linen', 'sunbeam', 'blush', 'mint', 'sky', 'lavender']);
+
+const sanitizeQuickNotePayload = (input = {}, fallback = {}) => {
+    const titleSource = typeof input.title === 'string' ? input.title : (fallback.title || '');
+    const contentSource = typeof input.content === 'string' ? input.content : (fallback.content || '');
+    const colorSource = typeof input.color === 'string' ? input.color : (fallback.color || 'linen');
+    const pinnedSource = typeof input.pinned === 'boolean' ? input.pinned : Boolean(fallback.pinned);
+
+    return {
+        title: titleSource.replace(/\s+/g, ' ').trim().slice(0, 120),
+        content: contentSource.replace(/\r\n/g, '\n').slice(0, 12000).trimEnd(),
+        color: QUICKNOTE_COLORS.has(colorSource) ? colorSource : 'linen',
+        pinned: pinnedSource
+    };
+};
+
 app.get('/api/quicknotes', async (req, res) => {
     try {
-        const notes = await QuickNote.find().sort({ createdAt: -1 });
+        const notes = await QuickNote.find().sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
         res.json(notes);
     } catch (e) {
         res.status(500).json({ error: 'Failed to load notes' });
@@ -1293,17 +1436,42 @@ app.get('/api/quicknotes', async (req, res) => {
 
 app.post('/api/quicknotes', async (req, res) => {
     try {
-        const { title, content } = req.body;
-        const note = await QuickNote.create({ title, content });
+        const payload = sanitizeQuickNotePayload(req.body);
+        if (!payload.title && !payload.content) {
+            return res.status(400).json({ error: 'A note needs a title or content' });
+        }
+
+        const note = await QuickNote.create(payload);
         res.status(201).json(note);
     } catch (e) {
         res.status(500).json({ error: 'Failed to create note' });
     }
 });
 
+app.patch('/api/quicknotes/:id', async (req, res) => {
+    try {
+        const existingNote = await QuickNote.findById(req.params.id);
+        if (!existingNote) {
+            return res.status(404).json({ error: 'Note not found' });
+        }
+
+        const payload = sanitizeQuickNotePayload(req.body, existingNote.toObject());
+        existingNote.set(payload);
+        await existingNote.save();
+
+        res.json(existingNote);
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to update note' });
+    }
+});
+
 app.delete('/api/quicknotes/:id', async (req, res) => {
     try {
-        await QuickNote.findByIdAndDelete(req.params.id);
+        const deleted = await QuickNote.findByIdAndDelete(req.params.id);
+        if (!deleted) {
+            return res.status(404).json({ error: 'Note not found' });
+        }
+
         res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: 'Failed to delete note' });

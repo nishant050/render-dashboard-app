@@ -1,5 +1,8 @@
 // Goals Page Logic
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     loadGoals();
 
     // Add Goal button

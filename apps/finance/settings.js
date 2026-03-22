@@ -1,7 +1,10 @@
 // ===== SETTINGS PAGE LOGIC =====
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     loadSettings();
     setupEventListeners();
 });
@@ -347,6 +350,9 @@ function deleteCategory(type, index) {
 }
 
 // Initialize categories on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     loadCategories();
 });

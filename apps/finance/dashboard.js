@@ -2,7 +2,11 @@
 let categoryChart = null;
 let trendChart = null;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Check authentication first
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     initMonthNavigator(loadDashboard);
     loadDashboard(currentMonth, currentYear);
 

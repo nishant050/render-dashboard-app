@@ -1,6 +1,116 @@
 // ===== CONFIGURATION =====
 const API_BASE = '/api/finance';
 
+// ===== FINANCE APP AUTHENTICATION =====
+let financeSession = null;
+
+// Get session from URL or localStorage
+function getFinanceSession() {
+    // First check URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSession = urlParams.get('session');
+
+    if (urlSession) {
+        localStorage.setItem('financeSession', urlSession);
+        financeSession = urlSession;
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return urlSession;
+    }
+
+    // Then check localStorage
+    financeSession = localStorage.getItem('financeSession');
+    return financeSession;
+}
+
+// Check if authenticated
+async function checkFinanceAuth() {
+    const session = getFinanceSession();
+    if (!session) return false;
+
+    try {
+        const res = await fetch('/api/finance-auth-check', {
+            headers: { 'X-Finance-Session': session }
+        });
+        const data = await res.json();
+
+        if (!data.authenticated) {
+            localStorage.removeItem('financeSession');
+            financeSession = null;
+            return false;
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Show login modal
+function showFinanceLoginModal() {
+    const modal = document.createElement('div');
+    modal.id = 'finance-login-modal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        display: flex; align-items: center; justify-content: center; z-index: 10000;
+    `;
+
+    modal.innerHTML = `
+        <div style="background: #fff; padding: 2rem; border-radius: 12px; 
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 380px;">
+            <h1 style="color: #1a1a2e; margin-bottom: 1.5rem; text-align: center; font-size: 1.5rem;">🔒 Finance App</h1>
+            <div id="finance-login-error" style="color: #e74c3c; margin-bottom: 1rem; padding: 0.75rem; 
+                 background: #fee; border-radius: 6px; display: none;"></div>
+            <form id="finance-login-form">
+                <input type="password" id="finance-password" placeholder="Enter password" 
+                       style="width: 100%; padding: 0.875rem; margin-bottom: 1rem; border: 2px solid #e0e0e0; 
+                              border-radius: 8px; font-size: 1rem;" required autofocus>
+                <button type="submit" style="width: 100%; padding: 0.875rem; background: #4f46e5; color: #fff; 
+                        border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;">Login</button>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById('finance-login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = document.getElementById('finance-password').value;
+        const errorDiv = document.getElementById('finance-login-error');
+
+        try {
+            const res = await fetch('/api/finance-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                localStorage.setItem('financeSession', data.session);
+                financeSession = data.session;
+                window.location.reload();
+            } else {
+                errorDiv.textContent = data.error || 'Invalid password';
+                errorDiv.style.display = 'block';
+            }
+        } catch (err) {
+            errorDiv.textContent = 'Login failed. Please try again.';
+            errorDiv.style.display = 'block';
+        }
+    });
+}
+
+// Initialize finance authentication check
+async function initFinanceAuth() {
+    const isAuth = await checkFinanceAuth();
+    if (!isAuth) {
+        showFinanceLoginModal();
+        return false;
+    }
+    return true;
+}
+
 // Current month/year state
 let currentMonth = new Date().getMonth() + 1;
 let currentYear = new Date().getFullYear();
@@ -16,9 +126,12 @@ if (savedMonth && savedYear) {
 // ===== API HELPER =====
 async function api(endpoint, options = {}) {
     const url = `${API_BASE}${endpoint}`;
+    const session = getFinanceSession();
+
     const config = {
         headers: {
             'Content-Type': 'application/json',
+            'X-Finance-Session': session || '',
         },
         ...options,
     };
@@ -31,13 +144,21 @@ async function api(endpoint, options = {}) {
         const response = await fetch(url, config);
         const data = await response.json();
 
+        // Handle authentication errors
+        if (response.status === 401 && data.code === 'FINANCE_AUTH_REQUIRED') {
+            showFinanceLoginModal();
+            throw new Error('Session expired. Please login again.');
+        }
+
         if (!response.ok) {
             throw new Error(data.error || 'API request failed');
         }
 
         return data;
     } catch (error) {
-        showToast(error.message || 'An error occurred', 'error');
+        if (error.message !== 'Session expired. Please login again.') {
+            showToast(error.message || 'An error occurred', 'error');
+        }
         throw error;
     }
 }

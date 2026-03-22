@@ -4,7 +4,10 @@ let currentReport = 'monthly';
 let charts = {};
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     initMonthNavigator(() => loadReports(currentMonth, currentYear));
     setupReportTabs();
     loadReports(currentMonth, currentYear);

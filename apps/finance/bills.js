@@ -2,7 +2,10 @@
 let currentStatus = 'all';
 let isCalendarView = false;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     initMonthNavigator(loadBills);
     loadBills(currentMonth, currentYear);
     setupFilters();

@@ -1,5 +1,8 @@
 // Budget Page Logic
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     initMonthNavigator(loadBudget);
     loadBudget(currentMonth, currentYear);
 

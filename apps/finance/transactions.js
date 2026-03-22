@@ -4,7 +4,10 @@ let currentCategory = '';
 let searchQuery = '';
 let sortBy = '-date';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const isAuth = await initFinanceAuth();
+    if (!isAuth) return;
+
     initMonthNavigator(loadTransactions);
     setupFilters();
     loadTransactions(currentMonth, currentYear);
