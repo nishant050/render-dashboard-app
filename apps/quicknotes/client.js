@@ -315,11 +315,13 @@ async function closeComposer() {
             await removeNote(state.composer.id);
         }
         resetComposer();
+        renderBoard();
         return;
     }
 
     const saved = await flushComposer();
     resetComposer();
+    renderBoard();
 }
 
 function resetComposer() {
@@ -567,6 +569,7 @@ async function closeEditor() {
         : await processEditorQueue(true);
 
     resetEditor();
+    renderBoard();
 }
 
 function resetEditor() {
@@ -929,11 +932,22 @@ function renderPalette(container, activeColorId, onSelect) {
 }
 
 function getFilteredNotes() {
-    if (!state.query) {
-        return state.notes;
+    let source = state.notes;
+    
+    // Hide active notes to prevent visual duplication on the board while editing
+    const activeIds = new Set();
+    if (state.composer.id) activeIds.add(state.composer.id);
+    if (state.editor.id && state.editor.open) activeIds.add(state.editor.id);
+
+    if (activeIds.size > 0) {
+        source = source.filter(n => !activeIds.has(n._id));
     }
 
-    return state.notes.filter((note) => {
+    if (!state.query) {
+        return source;
+    }
+
+    return source.filter((note) => {
         const haystack = `${note.title} ${note.content}`.toLowerCase();
         return haystack.includes(state.query);
     });
