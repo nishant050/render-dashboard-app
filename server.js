@@ -47,7 +47,8 @@ const quickNoteSchema = new mongoose.Schema({
     title: { type: String, default: '' },
     content: { type: String, default: '' },
     color: { type: String, default: 'linen' },
-    pinned: { type: Boolean, default: false }
+    pinned: { type: Boolean, default: false },
+    isEncrypted: { type: Boolean, default: false }
 }, { timestamps: true });
 const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
@@ -1416,12 +1417,14 @@ const sanitizeQuickNotePayload = (input = {}, fallback = {}) => {
     const contentSource = typeof input.content === 'string' ? input.content : (fallback.content || '');
     const colorSource = typeof input.color === 'string' ? input.color : (fallback.color || 'linen');
     const pinnedSource = typeof input.pinned === 'boolean' ? input.pinned : Boolean(fallback.pinned);
+    const isEncryptedSource = typeof input.isEncrypted === 'boolean' ? input.isEncrypted : Boolean(fallback.isEncrypted);
 
     return {
         title: titleSource.replace(/\s+/g, ' ').trim().slice(0, 120),
-        content: contentSource.replace(/\r\n/g, '\n').slice(0, 12000).trimEnd(),
+        content: contentSource.replace(/\r\n/g, '\n').slice(0, 15000).trimEnd(),
         color: QUICKNOTE_COLORS.has(colorSource) ? colorSource : 'linen',
-        pinned: pinnedSource
+        pinned: pinnedSource,
+        isEncrypted: isEncryptedSource
     };
 };
 

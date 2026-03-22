@@ -15,7 +15,8 @@ const ICONS = {
     pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3a1 1 0 0 1 1 1v2.09l3.12 3.12a1 1 0 0 1-.71 1.7H13v4.67l1.7 1.71A1 1 0 0 1 14 19H10a1 1 0 0 1-.71-1.71L11 15.58V10.9H6.59a1 1 0 0 1-.71-1.7L9 6.09V4a1 1 0 0 1 1-1z"></path></svg>',
     close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18.3 5.71-6.29 6.3-6.3-6.3-1.41 1.42 6.3 6.29-6.3 6.3 1.41 1.41 6.3-6.3 6.29 6.3 1.42-1.41-6.3-6.3 6.3-6.29z"></path></svg>',
     duplicate: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16H10V7h9z"></path></svg>',
-    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 14H7zm9-3 1 2h4v2H4V6h4l1-2z"></path></svg>'
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 14H7zm9-3 1 2h4v2H4V6h4l1-2z"></path></svg>',
+    lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"></path></svg>'
 };
 
 const state = {
@@ -43,6 +44,8 @@ function createComposerState() {
         content: '',
         color: 'linen',
         pinned: false,
+        isEncrypted: false,
+        password: null,
         expanded: false,
         status: 'Start typing to create a note',
         timer: null,
@@ -61,6 +64,8 @@ function createEditorState() {
         content: '',
         color: 'linen',
         pinned: false,
+        isEncrypted: false,
+        password: null,
         updatedAt: '',
         status: 'Saved',
         timer: null,
@@ -101,6 +106,7 @@ function cacheDom() {
     dom.composerStatus = document.getElementById('composer-status');
     dom.composerColorLabel = document.getElementById('composer-color-label');
     dom.composerColors = document.getElementById('composer-colors');
+    dom.composerLockBtn = document.getElementById('composer-lock-btn');
     dom.composerPinBtn = document.getElementById('composer-pin-btn');
 
     dom.editorOverlay = document.getElementById('editor-overlay');
@@ -109,14 +115,23 @@ function cacheDom() {
     dom.editorTitle = document.getElementById('editor-title');
     dom.editorContent = document.getElementById('editor-content');
     dom.editorColors = document.getElementById('editor-colors');
+    dom.editorLockBtn = document.getElementById('editor-lock-btn');
     dom.editorPinBtn = document.getElementById('editor-pin-btn');
     dom.editorDuplicateBtn = document.getElementById('editor-duplicate-btn');
     dom.editorDeleteBtn = document.getElementById('editor-delete-btn');
     dom.editorStatus = document.getElementById('editor-status');
     dom.editorTimestamp = document.getElementById('editor-timestamp');
+
+    dom.passwordModal = document.getElementById('password-modal');
+    dom.passwordModalTitle = document.getElementById('password-modal-title');
+    dom.passwordModalInput = document.getElementById('password-modal-input');
+    dom.passwordModalError = document.getElementById('password-modal-error');
+    dom.passwordModalForm = document.getElementById('password-modal-form');
+    dom.passwordModalCancel = document.getElementById('password-modal-cancel');
 }
 
 function hydrateStaticButtons() {
+    dom.composerLockBtn.innerHTML = ICONS.lock;
     dom.composerPinBtn.innerHTML = ICONS.pin;
     dom.editorCloseBtn.innerHTML = ICONS.close;
 }
@@ -155,6 +170,75 @@ function bindEvents() {
     });
     dom.editorDuplicateBtn.addEventListener('click', handleDuplicateFromEditor);
     dom.editorDeleteBtn.addEventListener('click', handleDeleteFromEditor);
+
+    dom.composerLockBtn.addEventListener('click', handleComposerLock);
+    dom.editorLockBtn.addEventListener('click', handleEditorLock);
+
+    dom.passwordModalForm.addEventListener('submit', handlePasswordSubmit);
+    dom.passwordModalCancel.addEventListener('click', hidePasswordModal);
+}
+
+let passwordModalCallback = null;
+
+function showPasswordModal(resolveCallback, isUnlock = false) {
+    passwordModalCallback = resolveCallback;
+    dom.passwordModalTitle.textContent = isUnlock ? "Unlock Note" : "Set Password";
+    document.getElementById('password-modal-message').textContent = isUnlock ? "Enter the password to unlock this note." : "Enter a password to encrypt this note.";
+    dom.passwordModalInput.value = '';
+    dom.passwordModalError.hidden = true;
+    dom.passwordModal.hidden = false;
+    window.requestAnimationFrame(() => dom.passwordModalInput.focus());
+}
+
+function hidePasswordModal() {
+    dom.passwordModal.hidden = true;
+    if (passwordModalCallback) {
+        passwordModalCallback(null);
+        passwordModalCallback = null;
+    }
+}
+
+function handlePasswordSubmit(e) {
+    e.preventDefault();
+    const pwd = dom.passwordModalInput.value;
+    if (pwd && passwordModalCallback) {
+        passwordModalCallback(pwd);
+        passwordModalCallback = null; // Do not hide yet, wait for validation when unlocking
+    }
+}
+
+function handleComposerLock() {
+    if (state.composer.isEncrypted) {
+        state.composer.isEncrypted = false;
+        state.composer.password = null;
+        markComposerDirty(true);
+    } else {
+        showPasswordModal((pwd) => {
+            if (pwd) {
+                state.composer.isEncrypted = true;
+                state.composer.password = pwd;
+                markComposerDirty(true);
+                dom.passwordModal.hidden = true;
+            }
+        });
+    }
+}
+
+function handleEditorLock() {
+    if (state.editor.isEncrypted) {
+        state.editor.isEncrypted = false;
+        state.editor.password = null;
+        markEditorDirty(true);
+    } else {
+        showPasswordModal((pwd) => {
+            if (pwd) {
+                state.editor.isEncrypted = true;
+                state.editor.password = pwd;
+                markEditorDirty(true);
+                dom.passwordModal.hidden = true;
+            }
+        });
+    }
 }
 
 function handlePointerDown(event) {
@@ -249,6 +333,8 @@ function renderComposer() {
     dom.composerShell.classList.toggle('is-expanded', state.composer.expanded);
     dom.composerShell.classList.toggle('is-compact', !state.composer.expanded);
     dom.composerShell.dataset.color = state.composer.color;
+    dom.composerLockBtn.classList.toggle('is-active', state.composer.isEncrypted);
+    dom.composerLockBtn.title = state.composer.isEncrypted ? 'Remove password' : 'Set password';
     dom.composerPinBtn.classList.toggle('is-active', state.composer.pinned);
     dom.composerStatus.textContent = state.composer.status;
     dom.composerColorLabel.textContent = COLOR_MAP[state.composer.color].label;
@@ -317,6 +403,10 @@ async function processComposerQueue(force = false) {
             const payload = getComposerPayload();
             const revision = state.composer.revision;
 
+            if (payload.isEncrypted && payload.password) {
+                payload.content = await encryptData(payload.content || '', payload.password);
+            }
+
             if (!payload.title && !payload.content && !state.composer.id) {
                 state.composer.syncedRevision = revision;
                 break;
@@ -356,7 +446,9 @@ function getComposerPayload() {
         title: state.composer.title,
         content: state.composer.content,
         color: state.composer.color,
-        pinned: state.composer.pinned
+        pinned: state.composer.pinned,
+        isEncrypted: state.composer.isEncrypted,
+        password: state.composer.password
     };
 }
 
@@ -378,6 +470,8 @@ function renderEditor() {
     dom.editorCard.dataset.color = state.editor.color;
     dom.editorStatus.textContent = state.editor.status;
     dom.editorTimestamp.textContent = state.editor.updatedAt ? `Updated ${formatDateTime(state.editor.updatedAt)}` : '';
+    dom.editorLockBtn.classList.toggle('is-active', state.editor.isEncrypted);
+    dom.editorLockBtn.textContent = state.editor.isEncrypted ? 'Locked' : 'Lock';
     dom.editorPinBtn.classList.toggle('is-active', state.editor.pinned);
     dom.editorPinBtn.textContent = state.editor.pinned ? 'Pinned' : 'Pin';
     setInputValue(dom.editorTitle, state.editor.title);
@@ -417,9 +511,13 @@ async function processEditorQueue(force = false) {
         while ((state.editor.syncedRevision < state.editor.revision || force) && state.editor.id) {
             force = false;
             const revision = state.editor.revision;
+            const payload = getEditorPayload();
+            if (payload.isEncrypted && payload.password) {
+                payload.content = await encryptData(payload.content || '', payload.password);
+            }
 
             try {
-                const note = await updateNote(state.editor.id, getEditorPayload());
+                const note = await updateNote(state.editor.id, payload);
                 state.editor.syncedRevision = revision;
                 state.editor.updatedAt = note.updatedAt;
                 state.editor.status = 'Saved';
@@ -477,7 +575,9 @@ function getEditorPayload() {
         title: state.editor.title,
         content: state.editor.content,
         color: state.editor.color,
-        pinned: state.editor.pinned
+        pinned: state.editor.pinned,
+        isEncrypted: state.editor.isEncrypted,
+        password: state.editor.password
     };
 }
 
@@ -487,14 +587,34 @@ function openEditor(noteId) {
         return;
     }
 
+    if (note.isEncrypted) {
+        showPasswordModal(async (pwd) => {
+            if (!pwd) return;
+            try {
+                const plaintext = await decryptData(note.content, pwd);
+                dom.passwordModal.hidden = true;
+                completeOpenEditor(note, plaintext, pwd);
+            } catch (err) {
+                dom.passwordModalError.textContent = "Incorrect password.";
+                dom.passwordModalError.hidden = false;
+            }
+        }, true);
+    } else {
+        completeOpenEditor(note, note.content, null);
+    }
+}
+
+function completeOpenEditor(note, content, password) {
     state.editor = {
         ...createEditorState(),
         open: true,
         id: note._id,
         title: note.title,
-        content: note.content,
+        content: content,
         color: note.color,
         pinned: note.pinned,
+        isEncrypted: note.isEncrypted,
+        password: password,
         updatedAt: note.updatedAt
     };
 
@@ -520,9 +640,12 @@ function syncEditorFromLatestState() {
     }
 
     state.editor.title = note.title;
-    state.editor.content = note.content;
+    if (!note.isEncrypted || !state.editor.isEncrypted) {
+        state.editor.content = note.content;
+    }
     state.editor.color = note.color;
     state.editor.pinned = note.pinned;
+    state.editor.isEncrypted = note.isEncrypted;
     state.editor.updatedAt = note.updatedAt;
     renderEditorPalette();
     renderEditor();
@@ -565,12 +688,12 @@ async function handleDuplicateFromEditor() {
         return;
     }
 
-    await duplicateNote({
-        title: state.editor.title,
-        content: state.editor.content,
-        color: state.editor.color,
-        pinned: state.editor.pinned
-    });
+    const payload = getEditorPayload();
+    if (payload.isEncrypted && payload.password) {
+        payload.content = await encryptData(payload.content || '', payload.password);
+    }
+    
+    await duplicateNote(payload);
 }
 
 async function handleDeleteFromEditor() {
@@ -686,9 +809,14 @@ function buildNoteCard(note) {
 
     const content = document.createElement('p');
     content.className = 'note-content';
-    content.textContent = note.content || 'Open to start writing more.';
-    if (!note.content) {
-        content.classList.add('is-empty');
+    if (note.isEncrypted) {
+        content.classList.add('is-locked');
+        content.innerHTML = `${ICONS.lock} Encrypted note`;
+    } else {
+        content.textContent = note.content || 'Open to start writing more.';
+        if (!note.content) {
+            content.classList.add('is-empty');
+        }
     }
 
     const footer = document.createElement('div');
@@ -782,6 +910,7 @@ function normalizeNote(note) {
         content: typeof note.content === 'string' ? note.content : '',
         color: COLOR_MAP[note.color] ? note.color : 'linen',
         pinned: Boolean(note.pinned),
+        isEncrypted: Boolean(note.isEncrypted),
         createdAt: note.createdAt || new Date().toISOString(),
         updatedAt: note.updatedAt || note.createdAt || new Date().toISOString()
     };
@@ -955,3 +1084,70 @@ async function readErrorMessage(response) {
         return 'Request failed';
     }
 }
+
+// --- Crypto Utilities ---
+async function deriveKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await window.crypto.subtle.importKey(
+        'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+    );
+    return window.crypto.subtle.deriveKey({
+        name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256'
+    }, keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+function bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
+
+function base64ToBuffer(base64) {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+async function encryptData(text, password) {
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(password, salt);
+    const enc = new TextEncoder();
+    
+    const ciphertext = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv }, key, enc.encode(text)
+    );
+    
+    return JSON.stringify({
+        s: bufferToBase64(salt),
+        i: bufferToBase64(iv),
+        c: bufferToBase64(ciphertext)
+    });
+}
+
+async function decryptData(encryptedJson, password) {
+    try {
+        const data = JSON.parse(encryptedJson);
+        if (!data.s || !data.i || !data.c) throw new Error('Invalid format');
+        const salt = base64ToBuffer(data.s);
+        const iv = base64ToBuffer(data.i);
+        const ciphertext = base64ToBuffer(data.c);
+        
+        const key = await deriveKey(password, salt);
+        const dec = new TextDecoder();
+        
+        const plainBuffer = await window.crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv }, key, ciphertext
+        );
+        return dec.decode(plainBuffer);
+    } catch (e) {
+        throw new Error('Incorrect password');
+    }
+}
+

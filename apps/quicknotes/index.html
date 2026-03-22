@@ -37,6 +37,7 @@
             <div class="composer-card is-compact" id="composer-shell" data-color="linen">
                 <div class="compose-top">
                     <input id="composer-title" type="text" maxlength="120" placeholder="Title">
+                    <button class="icon-btn" id="composer-lock-btn" type="button" aria-label="Lock note"></button>
                     <button class="icon-btn" id="composer-pin-btn" type="button" aria-label="Pin note"></button>
                 </div>
 
@@ -90,6 +91,7 @@
                 <div class="palette" id="editor-colors"></div>
 
                 <div class="editor-actions">
+                    <button class="action-btn" id="editor-lock-btn" type="button">Lock</button>
                     <button class="action-btn" id="editor-pin-btn" type="button">Pin</button>
                     <button class="action-btn" id="editor-duplicate-btn" type="button">Duplicate</button>
                     <button class="action-btn action-btn-danger" id="editor-delete-btn" type="button">Delete</button>
@@ -100,6 +102,21 @@
                 <span class="save-status" id="editor-status">Saved</span>
                 <span class="editor-timestamp" id="editor-timestamp"></span>
             </div>
+        </section>
+    </div>
+
+    <div class="password-overlay" id="password-modal" hidden>
+        <section class="password-card" aria-modal="true" role="dialog">
+            <h3 id="password-modal-title">Set Password</h3>
+            <p id="password-modal-message">Enter a password to encrypt this note.</p>
+            <form id="password-modal-form">
+                <input id="password-modal-input" type="password" required autocomplete="new-password" placeholder="Password">
+                <div class="password-modal-error" id="password-modal-error" hidden>Incorrect password.</div>
+                <div class="password-modal-actions">
+                    <button type="button" class="ghost-btn" id="password-modal-cancel">Cancel</button>
+                    <button type="submit" class="action-btn" id="password-modal-submit">Confirm</button>
+                </div>
+            </form>
         </section>
     </div>
 
