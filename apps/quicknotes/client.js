@@ -406,6 +406,9 @@ async function processComposerQueue(force = false) {
             if (payload.isEncrypted && payload.password) {
                 payload.content = await encryptData(payload.content || '', payload.password);
             }
+            
+            // Ensure password never leaves the browser
+            delete payload.password;
 
             if (!payload.title && !payload.content && !state.composer.id) {
                 state.composer.syncedRevision = revision;
@@ -515,6 +518,9 @@ async function processEditorQueue(force = false) {
             if (payload.isEncrypted && payload.password) {
                 payload.content = await encryptData(payload.content || '', payload.password);
             }
+            
+            // Ensure password never leaves the browser
+            delete payload.password;
 
             try {
                 const note = await updateNote(state.editor.id, payload);
@@ -692,6 +698,9 @@ async function handleDuplicateFromEditor() {
     if (payload.isEncrypted && payload.password) {
         payload.content = await encryptData(payload.content || '', payload.password);
     }
+    
+    // Ensure password never leaves the browser on duplicate
+    delete payload.password;
     
     await duplicateNote(payload);
 }
