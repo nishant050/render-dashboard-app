@@ -243,7 +243,9 @@ function handleEditorLock() {
 
 function handlePointerDown(event) {
     const clickedInsideComposer = dom.composerShell.contains(event.target);
-    if (state.composer.expanded && !clickedInsideComposer && !state.editor.open) {
+    const clickedInsideModal = dom.passwordModal && !dom.passwordModal.hidden && dom.passwordModal.contains(event.target);
+    
+    if (state.composer.expanded && !clickedInsideComposer && !clickedInsideModal && !state.editor.open) {
         closeComposer();
     }
 }
