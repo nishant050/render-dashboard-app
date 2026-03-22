@@ -763,10 +763,35 @@ function renderBoard() {
 }
 
 function renderBoardColumn(container, notes) {
-    container.innerHTML = '';
+    const currentNodes = Array.from(container.children);
+    
+    notes.forEach((note, index) => {
+        const version = `${note.updatedAt}-${note.pinned}-${note.color}-${note.isEncrypted}-${note.title}-${note.content}`;
+        const existingIndex = currentNodes.findIndex(n => n.dataset && n.dataset.noteId === String(note._id));
+        
+        let node;
+        if (existingIndex >= 0) {
+            node = currentNodes[existingIndex];
+            currentNodes.splice(existingIndex, 1);
+            
+            if (node.dataset.version !== version) {
+                const newNode = buildNoteCard(note);
+                container.replaceChild(newNode, node);
+                node = newNode;
+            }
+        } else {
+            node = buildNoteCard(note);
+        }
+        
+        if (container.children[index] !== node) {
+            container.insertBefore(node, container.children[index]);
+        }
+    });
 
-    notes.forEach((note) => {
-        container.appendChild(buildNoteCard(note));
+    currentNodes.forEach(n => {
+        if (n.classList && n.classList.contains('note-card')) {
+            n.remove();
+        }
     });
 }
 
@@ -792,6 +817,8 @@ function buildNoteCard(note) {
     const article = document.createElement('article');
     article.className = 'note-card';
     article.dataset.color = note.color;
+    article.dataset.noteId = String(note._id);
+    article.dataset.version = `${note.updatedAt}-${note.pinned}-${note.color}-${note.isEncrypted}-${note.title}-${note.content}`;
     article.addEventListener('click', () => openEditor(note._id));
 
     const header = document.createElement('div');
