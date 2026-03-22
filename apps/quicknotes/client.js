@@ -180,10 +180,10 @@ function bindEvents() {
 
 let passwordModalCallback = null;
 
-function showPasswordModal(resolveCallback, isUnlock = false) {
+function showPasswordModal(resolveCallback, isUnlock = false, customTitle = null, customMessage = null) {
     passwordModalCallback = resolveCallback;
-    dom.passwordModalTitle.textContent = isUnlock ? "Unlock Note" : "Set Password";
-    document.getElementById('password-modal-message').textContent = isUnlock ? "Enter the password to unlock this note." : "Enter a password to encrypt this note.";
+    dom.passwordModalTitle.textContent = customTitle || (isUnlock ? "Unlock Note" : "Set Password");
+    document.getElementById('password-modal-message').textContent = customMessage || (isUnlock ? "Enter the password to unlock this note." : "Enter a password to encrypt this note.");
     dom.passwordModalInput.value = '';
     dom.passwordModalError.hidden = true;
     dom.passwordModal.hidden = false;
@@ -667,7 +667,12 @@ async function handleClearAll() {
         return;
     }
 
-    const confirmed = window.confirm('Clear every note from the board?');
+    const encryptedCount = state.notes.filter(n => n.isEncrypted).length;
+    const msg = encryptedCount > 0 
+        ? `Clear all unencrypted notes? (${encryptedCount} encrypted notes will be kept safely locked).`
+        : 'Clear every note from the board?';
+
+    const confirmed = window.confirm(msg);
     if (!confirmed) {
         return;
     }
@@ -684,11 +689,16 @@ async function handleClearAll() {
             await state.editor.activePromise;
         }
 
-        await apiRequest('/api/quicknotes', { method: 'DELETE' });
-        state.notes = [];
+        if (encryptedCount > 0) {
+            const unencrypted = state.notes.filter(n => !n.isEncrypted);
+            await Promise.all(unencrypted.map(n => apiRequest(`/api/quicknotes/${n._id}`, { method: 'DELETE' })));
+        } else {
+            await apiRequest('/api/quicknotes', { method: 'DELETE' });
+        }
+        
+        await refreshNotes();
         resetComposer();
         resetEditor();
-        renderBoard();
     } catch (error) {
         setBoardStatus(error.message || 'Unable to clear notes');
     }
@@ -715,8 +725,24 @@ async function handleDeleteFromEditor() {
         return;
     }
 
-    await removeNote(state.editor.id);
-    resetEditor();
+    const note = state.notes.find(n => n._id === state.editor.id);
+    if (note && note.isEncrypted) {
+        showPasswordModal(async (pwd) => {
+            if (!pwd) return;
+            try {
+                await decryptData(note.content, pwd);
+                await removeNote(state.editor.id);
+                dom.passwordModal.hidden = true;
+                resetEditor();
+            } catch (err) {
+                dom.passwordModalError.textContent = "Incorrect password.";
+                dom.passwordModalError.hidden = false;
+            }
+        }, true, "Delete Note", "Enter password to delete this encrypted note.");
+    } else {
+        await removeNote(state.editor.id);
+        resetEditor();
+    }
 }
 
 function renderBoard() {
@@ -902,7 +928,22 @@ function buildNoteCard(note) {
     deleteBtn.innerHTML = ICONS.trash;
     deleteBtn.addEventListener('click', async (event) => {
         event.stopPropagation();
-        await removeNote(note._id);
+        
+        if (note.isEncrypted) {
+            showPasswordModal(async (pwd) => {
+                if (!pwd) return;
+                try {
+                    await decryptData(note.content, pwd);
+                    await removeNote(note._id);
+                    dom.passwordModal.hidden = true;
+                } catch (err) {
+                    dom.passwordModalError.textContent = "Incorrect password.";
+                    dom.passwordModalError.hidden = false;
+                }
+            }, true, "Delete Note", "Enter password to delete this encrypted note.");
+        } else {
+            await removeNote(note._id);
+        }
     });
 
     actions.appendChild(swatches);
