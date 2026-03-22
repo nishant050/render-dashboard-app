@@ -86,8 +86,7 @@ function cacheDom() {
     dom.searchInput = document.getElementById('search-input');
     dom.boardStatus = document.getElementById('board-status');
     dom.clearAllBtn = document.getElementById('clear-all-btn');
-    dom.noteCount = document.getElementById('note-count');
-    dom.pinnedCount = document.getElementById('pinned-count');
+
     dom.emptyState = document.getElementById('empty-state');
     dom.pinnedSection = document.getElementById('pinned-section');
     dom.otherSection = document.getElementById('other-section');
@@ -236,9 +235,7 @@ async function closeComposer() {
     }
 
     const saved = await flushComposer();
-    if (saved) {
-        resetComposer();
-    }
+    resetComposer();
 }
 
 function resetComposer() {
@@ -465,9 +462,7 @@ async function closeEditor() {
         ? true
         : await processEditorQueue(true);
 
-    if (saved) {
-        resetEditor();
-    }
+    resetEditor();
 }
 
 function resetEditor() {
@@ -592,8 +587,7 @@ function renderBoard() {
     const pinned = filteredNotes.filter((note) => note.pinned);
     const others = filteredNotes.filter((note) => !note.pinned);
 
-    dom.noteCount.textContent = String(state.notes.length);
-    dom.pinnedCount.textContent = String(state.notes.filter((note) => note.pinned).length);
+
     dom.pinnedSectionCount.textContent = String(pinned.length);
     dom.otherSectionCount.textContent = String(others.length);
     dom.clearAllBtn.hidden = state.notes.length === 0;

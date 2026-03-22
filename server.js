@@ -14,7 +14,7 @@ const mongoose = require('mongoose');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 // --- MongoDB Configuration ---
-const MONGO_URI = 'mongodb+srv://admin:admin123@diet-plan.42f6xm7.mongodb.net/render-dashboard?appName=render-dashboard';
+const MONGO_URI = 'mongodb://admin:admin123@ac-wnbtpbs-shard-00-00.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-01.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-02.42f6xm7.mongodb.net:27017/render-dashboard?ssl=true&replicaSet=atlas-usm1o0-shard-0&authSource=admin&retryWrites=true&w=majority&appName=diet-plan';
 mongoose.connect(MONGO_URI)
     .then(() => console.log('Connected to MongoDB (render-dashboard)'))
     .catch(err => console.error('MongoDB connection error:', err));
@@ -1430,6 +1430,7 @@ app.get('/api/quicknotes', async (req, res) => {
         const notes = await QuickNote.find().sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
         res.json(notes);
     } catch (e) {
+        console.error('API Error in GET /api/quicknotes:', e);
         res.status(500).json({ error: 'Failed to load notes' });
     }
 });
@@ -1444,6 +1445,7 @@ app.post('/api/quicknotes', async (req, res) => {
         const note = await QuickNote.create(payload);
         res.status(201).json(note);
     } catch (e) {
+        console.error('API Error in POST /api/quicknotes:', e);
         res.status(500).json({ error: 'Failed to create note' });
     }
 });
@@ -1461,6 +1463,7 @@ app.patch('/api/quicknotes/:id', async (req, res) => {
 
         res.json(existingNote);
     } catch (e) {
+        console.error('API Error in PATCH /api/quicknotes/:id:', e);
         res.status(500).json({ error: 'Failed to update note' });
     }
 });
@@ -1474,6 +1477,7 @@ app.delete('/api/quicknotes/:id', async (req, res) => {
 
         res.json({ ok: true });
     } catch (e) {
+        console.error('API Error in DELETE /api/quicknotes/:id:', e);
         res.status(500).json({ error: 'Failed to delete note' });
     }
 });
@@ -1483,6 +1487,7 @@ app.delete('/api/quicknotes', async (req, res) => {
         await QuickNote.deleteMany({});
         res.json({ ok: true });
     } catch (e) {
+        console.error('API Error in DELETE /api/quicknotes:', e);
         res.status(500).json({ error: 'Failed to clear notes' });
     }
 });
