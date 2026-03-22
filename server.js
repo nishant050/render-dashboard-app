@@ -38,7 +38,9 @@ const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressS
 const newsHuntSchema = new mongoose.Schema({
     settings: { type: mongoose.Schema.Types.Mixed, default: {} },
     feeds: { type: [mongoose.Schema.Types.Mixed], default: [] },
-    articles: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} }
+    articles: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+    chatHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    articleContent: { type: Map, of: String, default: {} }
 }, { timestamps: true });
 const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
 
@@ -1142,7 +1144,9 @@ const NEWSHUNT_DATA_PATH = path.join(__dirname, 'newshunt_data.json');
 const NEWSHUNT_DEFAULT_STATE = Object.freeze({
     settings: {},
     feeds: [],
-    articles: {}
+    articles: {},
+    chatHistory: [],
+    articleContent: {}
 });
 
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -1211,7 +1215,9 @@ const normalizeNewshuntData = (data = {}) => {
     return {
         settings: normalizeNewshuntSettings(plainData.settings),
         feeds: normalizeNewshuntFeeds(plainData.feeds),
-        articles: normalizeNewshuntArticles(plainData.articles)
+        articles: normalizeNewshuntArticles(plainData.articles),
+        chatHistory: Array.isArray(plainData.chatHistory) ? plainData.chatHistory : [],
+        articleContent: isPlainObject(plainData.articleContent) ? { ...plainData.articleContent } : {}
     };
 };
 
@@ -1251,9 +1257,13 @@ const writeNewshuntData = async (data) => {
         existing.settings = normalized.settings;
         existing.feeds = normalized.feeds;
         existing.articles = normalized.articles;
+        existing.chatHistory = normalized.chatHistory;
+        existing.articleContent = normalized.articleContent;
         existing.markModified('settings');
         existing.markModified('feeds');
         existing.markModified('articles');
+        existing.markModified('chatHistory');
+        existing.markModified('articleContent');
         await existing.save();
         return existing;
     }
@@ -1405,6 +1415,152 @@ app.post('/api/newshunt/feeds', async (req, res) => {
     } catch (error) {
         console.error('Error in POST /api/newshunt/feeds:', error);
         res.status(500).json({ error: 'Failed to save feeds' });
+    }
+});
+
+// POST /api/newshunt/article — add or modify a single article
+app.post('/api/newshunt/article', async (req, res) => {
+    try {
+        const { article } = req.body;
+        if (!article || !article.guid) return res.status(400).json({ error: 'article and article.guid required' });
+        
+        const data = await readNewshuntData();
+        data.articles[article.guid] = article; // Insert or overwrite
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/article:', error);
+        res.status(500).json({ error: 'Failed to save article' });
+    }
+});
+
+// POST /api/newshunt/articles/batch — batch add multiple articles
+app.post('/api/newshunt/articles/batch', async (req, res) => {
+    try {
+        const { articles } = req.body; // array
+        if (!Array.isArray(articles)) return res.status(400).json({ error: 'articles array required' });
+        
+        const data = await readNewshuntData();
+        for (const article of articles) {
+            if (article && article.guid) {
+                data.articles[article.guid] = article;
+            }
+        }
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/articles/batch:', error);
+        res.status(500).json({ error: 'Failed to save articles batch' });
+    }
+});
+
+// DELETE /api/newshunt/articles/feed — delete articles from a specific feed
+app.delete('/api/newshunt/articles/feed', async (req, res) => {
+    try {
+        const { feedUrl } = req.body;
+        if (!feedUrl) return res.status(400).json({ error: 'feedUrl required' });
+        
+        const data = await readNewshuntData();
+        for (const guid in data.articles) {
+            if (data.articles[guid].feedUrl === feedUrl) {
+                delete data.articles[guid];
+            }
+        }
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in DELETE /api/newshunt/articles/feed:', error);
+        res.status(500).json({ error: 'Failed to delete feed articles' });
+    }
+});
+
+// POST /api/newshunt/articles/purge — delete old articles
+app.post('/api/newshunt/articles/purge', async (req, res) => {
+    try {
+        const { maxAgeDays } = req.body;
+        const days = Number(maxAgeDays) || 3;
+        const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+        
+        const data = await readNewshuntData();
+        let deletedCount = 0;
+        
+        for (const guid in data.articles) {
+            const article = data.articles[guid];
+            const articleDate = new Date(article.pubDate || article.dateAdded || 0).getTime();
+            if (articleDate < cutoff) {
+                delete data.articles[guid];
+                if (data.articleContent[guid]) delete data.articleContent[guid];
+                deletedCount++;
+            }
+        }
+        await writeNewshuntData(data);
+        res.json({ ok: true, deletedCount });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/articles/purge:', error);
+        res.status(500).json({ error: 'Failed to purge articles' });
+    }
+});
+
+// POST /api/newshunt/chat — add chat message
+app.post('/api/newshunt/chat', async (req, res) => {
+    try {
+        const { articleGuid, role, content } = req.body;
+        if (!articleGuid || !role || !content) return res.status(400).json({ error: 'Missing chat params' });
+        
+        const data = await readNewshuntData();
+        const newMessage = {
+            id: Date.now() + Math.random().toString(36).substring(7),
+            articleGuid,
+            role,
+            content,
+            timestamp: Date.now()
+        };
+        data.chatHistory.push(newMessage);
+        await writeNewshuntData(data);
+        res.json({ ok: true, id: newMessage.id });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/chat:', error);
+        res.status(500).json({ error: 'Failed to add chat message' });
+    }
+});
+
+// POST /api/newshunt/article-content — update article content map
+app.post('/api/newshunt/article-content', async (req, res) => {
+    try {
+        const { guid, content } = req.body;
+        if (!guid || !content) return res.status(400).json({ error: 'guid and content required' });
+        
+        const data = await readNewshuntData();
+        data.articleContent[guid] = content;
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in POST /api/newshunt/article-content:', error);
+        res.status(500).json({ error: 'Failed to save article content' });
+    }
+});
+
+// POST /api/newshunt/article-content/clear
+app.post('/api/newshunt/article-content/clear', async (req, res) => {
+    try {
+        const data = await readNewshuntData();
+        data.articleContent = {};
+        await writeNewshuntData(data);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error clearing article content:', error);
+        res.status(500).json({ error: 'Failed to clear content' });
+    }
+});
+
+// DELETE /api/newshunt/clear-all
+app.delete('/api/newshunt/clear-all', async (req, res) => {
+    try {
+        await NewsHuntData.deleteMany({});
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error in DELETE /api/newshunt/clear-all:', error);
+        res.status(500).json({ error: 'Failed to clear data' });
     }
 });
 
