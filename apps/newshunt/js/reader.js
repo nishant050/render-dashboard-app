@@ -11,6 +11,9 @@ const Reader = {
   audioUrl: null,
   isTtsPlaying: false,
   autoAdvanceEnabled: true,
+  ttsChunks: [],
+  currentChunkIndex: 0,
+  ttsInstanceId: null,
 
   // Open and render an article
   async open(guid) {
@@ -501,11 +504,42 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
   // ============================================
   // TEXT-TO-SPEECH
   // ============================================
+
+  _chunkText(text, maxLen = 800) {
+      const chunks = [];
+      let current = "";
+      const paragraphs = text.split(/\n+/);
+      
+      for (let p of paragraphs) {
+          p = p.trim();
+          if (!p) continue;
+          
+          if (current.length + p.length > maxLen && current.length > 0) {
+              chunks.push(current.trim());
+              current = "";
+          }
+          
+          // If a single paragraph is larger than maxLen, we should split it by sentences
+          if (p.length > maxLen) {
+               const sentences = p.match(/[^.!?]+[.!?]+/g) || [p];
+               for (const s of sentences) {
+                   if (current.length + s.length > maxLen && current.length > 0) {
+                       chunks.push(current.trim());
+                       current = s;
+                   } else {
+                       current += " " + s;
+                   }
+               }
+          } else {
+              current += (current ? "\n" : "") + p;
+          }
+      }
+      if (current.trim().length > 0) chunks.push(current.trim());
+      return chunks;
+  },
+
   async toggleTTS() {
     const playBtn = document.getElementById('tts-play-btn');
-    const stopBtn = document.getElementById('tts-stop-btn');
-    const restartBtn = document.getElementById('tts-restart-btn');
-
     if (!playBtn) return;
 
     if (this.isTtsPlaying) {
@@ -515,86 +549,138 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
       return;
     }
 
-    if (this.audioElement && this.audioElement.src) {
+    // Resume if already loaded
+    if (this.audioElement && this.ttsChunks.length > 0 && this.currentChunkIndex < this.ttsChunks.length) {
       this.audioElement.play();
       this.isTtsPlaying = true;
       playBtn.innerHTML = '⏸️ Pause';
       return;
     }
 
-    // Generate speech
-    playBtn.disabled = true;
-    playBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Loading...';
-    
-    try {
+    // Initialize chunks if not already
+    if (!this.ttsChunks || this.ttsChunks.length === 0) {
       const contentEl = document.getElementById('reader-content');
-      if (!contentEl) throw new Error("No content to read");
-      
-      // Basic text extraction without huge DOM overhead
-      const text = contentEl.innerText.substring(0, 4000); 
-
-      this.audioUrl = await AI.generateSpeech(text, 'hannah');
-      this.audioElement = new Audio(this.audioUrl);
-      
-      this.audioElement.onended = () => {
-        this.isTtsPlaying = false;
-        playBtn.innerHTML = '▶️ Listen';
-        stopBtn.style.display = 'none';
-        restartBtn.style.display = 'none';
-        
-        if (this.autoAdvanceEnabled && App.currentFeedList) {
-           const idx = App.currentFeedList.findIndex(a => a.guid === this.currentArticle.guid);
-           if (idx > -1 && idx < App.currentFeedList.length - 1) {
-              const nextGuid = App.currentFeedList[idx + 1].guid;
-              App.openReader(nextGuid).then(() => {
-                setTimeout(() => Reader.toggleTTS(), 1000); // 1s delay before reading next
-              });
-           }
-        }
-      };
-
-      this.audioElement.play();
-      this.isTtsPlaying = true;
-      
-      playBtn.disabled = false;
-      playBtn.innerHTML = '⏸️ Pause';
-      stopBtn.style.display = 'inline-flex';
-      restartBtn.style.display = 'inline-flex';
-    } catch (error) {
-      console.error(error);
-      const isConfigError = String(error.message).includes('key');
-      Components.showToast('TTS Error: ' + error.message, 'error');
-      playBtn.disabled = false;
-      playBtn.innerHTML = isConfigError ? '⚠️ API Key Needed' : '▶️ Listen';
-      if (isConfigError) setTimeout(() => App.navigate('settings'), 2000);
+      if (!contentEl) return;
+      this.ttsChunks = this._chunkText(contentEl.innerText, 800);
+      this.currentChunkIndex = 0;
     }
+
+    if (this.currentChunkIndex >= this.ttsChunks.length) {
+       this.restartTTS();
+       return;
+    }
+    
+    // Safety check - if absolutely no valid chunks extracted, just fail nicely
+    if (this.ttsChunks.length === 0) {
+       Components.showToast('No text found to read aloud', 'warning');
+       return;
+    }
+    
+    await this._playCurrentChunk();
+  },
+
+  async _playCurrentChunk() {
+     const playBtn = document.getElementById('tts-play-btn');
+     const stopBtn = document.getElementById('tts-stop-btn');
+     const restartBtn = document.getElementById('tts-restart-btn');
+
+     playBtn.disabled = true;
+     playBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;border-top-color:transparent;"></span> Loading...';
+     
+     const instanceId = Date.now();
+     this.ttsInstanceId = instanceId;
+
+     try {
+       const text = this.ttsChunks[this.currentChunkIndex];
+       if (this.audioUrl) {
+           URL.revokeObjectURL(this.audioUrl);
+       }
+       
+       const generatedUrl = await AI.generateSpeech(text, 'hannah');
+       if (this.ttsInstanceId !== instanceId) {
+           URL.revokeObjectURL(generatedUrl); // Clean up if aborted
+           return;
+       }
+       
+       this.audioUrl = generatedUrl;
+       this.audioElement = new Audio(this.audioUrl);
+       
+       this.audioElement.onended = async () => {
+          this.currentChunkIndex++;
+          if (this.currentChunkIndex < this.ttsChunks.length) {
+              // Automatically fetch and play next chunk if we were playing
+              if (this.isTtsPlaying && this.ttsInstanceId === instanceId) {
+                  await this._playCurrentChunk();
+              }
+          } else {
+              // Finished all chunks matching this article
+              this.isTtsPlaying = false;
+              if (playBtn) playBtn.innerHTML = '▶️ Listen';
+              if (stopBtn) stopBtn.style.display = 'none';
+              if (restartBtn) restartBtn.style.display = 'none';
+              
+              if (this.autoAdvanceEnabled && App.currentFeedList) {
+                  const idx = App.currentFeedList.findIndex(a => a.guid === this.currentArticle.guid);
+                  if (idx > -1 && idx < App.currentFeedList.length - 1) {
+                      const nextGuid = App.currentFeedList[idx + 1].guid;
+                      App.openReader(nextGuid).then(() => {
+                          setTimeout(() => Reader.toggleTTS(), 1000); 
+                      });
+                  }
+              }
+          }
+       };
+
+       this.audioElement.play();
+       this.isTtsPlaying = true;
+       
+       if (playBtn) {
+           playBtn.disabled = false;
+           playBtn.innerHTML = '⏸️ Pause';
+       }
+       if (stopBtn) stopBtn.style.display = 'inline-flex';
+       if (restartBtn) restartBtn.style.display = 'inline-flex';
+     } catch (error) {
+       console.error(error);
+       if (this.ttsInstanceId !== instanceId) return; // user probably clicked Stop while getting an error
+       
+       const isConfigError = String(error.message).includes('key');
+       Components.showToast('TTS Error: ' + error.message, 'error');
+       if (playBtn) {
+           playBtn.disabled = false;
+           playBtn.innerHTML = isConfigError ? '⚠️ API Key Needed' : '▶️ Retry';
+       }
+       if (isConfigError) setTimeout(() => App.navigate('settings'), 2000);
+     }
   },
 
   stopTTS() {
+    this.ttsInstanceId = null; // Aborts any pending chunk loads
     if (this.audioElement) {
        this.audioElement.pause();
-       this.audioElement.currentTime = 0;
+    }
+    if (this.audioUrl) {
+       URL.revokeObjectURL(this.audioUrl);
+       this.audioUrl = null;
     }
     this.isTtsPlaying = false;
+    this.ttsChunks = [];
+    this.currentChunkIndex = 0;
     
     const playBtn = document.getElementById('tts-play-btn');
     const stopBtn = document.getElementById('tts-stop-btn');
     const restartBtn = document.getElementById('tts-restart-btn');
     
-    if (playBtn) playBtn.innerHTML = '▶️ Listen';
+    if (playBtn) {
+        playBtn.disabled = false;
+        playBtn.innerHTML = '▶️ Listen';
+    }
     if (stopBtn) stopBtn.style.display = 'none';
     if (restartBtn) restartBtn.style.display = 'none';
   },
 
   restartTTS() {
-    if (this.audioElement) {
-       this.audioElement.currentTime = 0;
-       if (!this.isTtsPlaying) {
-         this.audioElement.play();
-         this.isTtsPlaying = true;
-         const playBtn = document.getElementById('tts-play-btn');
-         if (playBtn) playBtn.innerHTML = '⏸️ Pause';
-       }
-    }
+    this.stopTTS();
+    setTimeout(() => this.toggleTTS(), 100);
   }
 };
