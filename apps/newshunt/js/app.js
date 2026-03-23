@@ -55,6 +55,11 @@ const App = {
 
         // Remove reader floating nav if it exists
         Reader._removeFloatingNav();
+        
+        // Stop any active TTS reading
+        if (typeof Reader !== 'undefined' && Reader.stopTTS) {
+            Reader.stopTTS();
+        }
 
         // Hide all views
         document.querySelectorAll('.view').forEach(v => v.classList.remove('view--active'));

@@ -349,5 +349,38 @@ const AI = {
         }
 
         return fullContent;
+    },
+
+    // ==========================================
+    // TEXT-TO-SPEECH (GROQ ORPHEUS)
+    // ==========================================
+    async generateSpeech(text, voice = 'hannah') {
+        const apiKey = await db.getSetting('api_key_groq') || await db.getSetting('ai_api_key');
+        if (!apiKey) throw new Error('Groq API key not configured for TTS. Please add a Groq key in Settings.');
+
+        const body = {
+            model: 'canopylabs/orpheus-v1-english',
+            voice: voice,
+            input: text,
+            response_format: 'wav'
+        };
+
+        const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || `TTS API Error: ${response.status}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+        return URL.createObjectURL(blob);
     }
 };

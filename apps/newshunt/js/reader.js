@@ -7,9 +7,14 @@ const Reader = {
   currentArticle: null,
   abortController: null,
   explainPopup: null,
+  audioElement: null,
+  audioUrl: null,
+  isTtsPlaying: false,
+  autoAdvanceEnabled: true,
 
   // Open and render an article
   async open(guid) {
+    this.stopTTS(); // Stop any currently playing audio
     const article = await db.getArticle(guid);
     if (!article) {
       Components.showToast('Article not found', 'error');
@@ -71,6 +76,16 @@ const Reader = {
           <button class="btn btn--ghost btn--icon" data-tooltip="Chat with Article" onclick="Chat.toggle()">💬</button>
           <button class="btn btn--ghost btn--icon" data-tooltip="Rewrite Article" onclick="Reader.rewrite()">🔄</button>
           <button class="btn btn--ghost btn--icon" data-tooltip="Open Original" onclick="window.open('${Utils.escapeHtml(article.link)}', '_blank')">🔗</button>
+          
+          <div class="tts-controls" style="display:inline-flex; align-items:center; gap:8px; margin-left:16px; padding-left:16px; border-left:1px solid var(--color-border);">
+            <button class="btn btn--primary btn--sm" id="tts-play-btn" onclick="Reader.toggleTTS()">▶️ Listen</button>
+            <button class="btn btn--secondary btn--icon btn--sm" id="tts-stop-btn" onclick="Reader.stopTTS()" style="display:none" title="Stop">⏹️</button>
+            <button class="btn btn--secondary btn--icon btn--sm" id="tts-restart-btn" onclick="Reader.restartTTS()" style="display:none" title="Start Over">⏮️</button>
+            <label style="font-size: 12px; margin-left: 8px; display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Automatically read the next article when finished">
+              <input type="checkbox" id="tts-autoadvance" onchange="Reader.autoAdvanceEnabled = this.checked" ${this.autoAdvanceEnabled ? 'checked' : ''}> Auto-advance
+            </label>
+          </div>
+
           <span style="flex:1"></span>
           <span class="reader__hint">💡 Select text → Right-click → Explain</span>
         </div>
@@ -478,7 +493,108 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
   // Re-trigger the AI rewrite
   async rewrite() {
     if (!this.currentArticle) return;
+    this.stopTTS(); // Stop reading if they rewrite
     await db.saveArticleContent(this.currentArticle.guid, null);
     await this._fetchAndRewrite(this.currentArticle);
+  },
+
+  // ============================================
+  // TEXT-TO-SPEECH
+  // ============================================
+  async toggleTTS() {
+    const playBtn = document.getElementById('tts-play-btn');
+    const stopBtn = document.getElementById('tts-stop-btn');
+    const restartBtn = document.getElementById('tts-restart-btn');
+
+    if (!playBtn) return;
+
+    if (this.isTtsPlaying) {
+      if (this.audioElement) this.audioElement.pause();
+      this.isTtsPlaying = false;
+      playBtn.innerHTML = '▶️ Resume';
+      return;
+    }
+
+    if (this.audioElement && this.audioElement.src) {
+      this.audioElement.play();
+      this.isTtsPlaying = true;
+      playBtn.innerHTML = '⏸️ Pause';
+      return;
+    }
+
+    // Generate speech
+    playBtn.disabled = true;
+    playBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Loading...';
+    
+    try {
+      const contentEl = document.getElementById('reader-content');
+      if (!contentEl) throw new Error("No content to read");
+      
+      // Basic text extraction without huge DOM overhead
+      const text = contentEl.innerText.substring(0, 4000); 
+
+      this.audioUrl = await AI.generateSpeech(text, 'hannah');
+      this.audioElement = new Audio(this.audioUrl);
+      
+      this.audioElement.onended = () => {
+        this.isTtsPlaying = false;
+        playBtn.innerHTML = '▶️ Listen';
+        stopBtn.style.display = 'none';
+        restartBtn.style.display = 'none';
+        
+        if (this.autoAdvanceEnabled && App.currentFeedList) {
+           const idx = App.currentFeedList.findIndex(a => a.guid === this.currentArticle.guid);
+           if (idx > -1 && idx < App.currentFeedList.length - 1) {
+              const nextGuid = App.currentFeedList[idx + 1].guid;
+              App.openReader(nextGuid).then(() => {
+                setTimeout(() => Reader.toggleTTS(), 1000); // 1s delay before reading next
+              });
+           }
+        }
+      };
+
+      this.audioElement.play();
+      this.isTtsPlaying = true;
+      
+      playBtn.disabled = false;
+      playBtn.innerHTML = '⏸️ Pause';
+      stopBtn.style.display = 'inline-flex';
+      restartBtn.style.display = 'inline-flex';
+    } catch (error) {
+      console.error(error);
+      const isConfigError = String(error.message).includes('key');
+      Components.showToast('TTS Error: ' + error.message, 'error');
+      playBtn.disabled = false;
+      playBtn.innerHTML = isConfigError ? '⚠️ API Key Needed' : '▶️ Listen';
+      if (isConfigError) setTimeout(() => App.navigate('settings'), 2000);
+    }
+  },
+
+  stopTTS() {
+    if (this.audioElement) {
+       this.audioElement.pause();
+       this.audioElement.currentTime = 0;
+    }
+    this.isTtsPlaying = false;
+    
+    const playBtn = document.getElementById('tts-play-btn');
+    const stopBtn = document.getElementById('tts-stop-btn');
+    const restartBtn = document.getElementById('tts-restart-btn');
+    
+    if (playBtn) playBtn.innerHTML = '▶️ Listen';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (restartBtn) restartBtn.style.display = 'none';
+  },
+
+  restartTTS() {
+    if (this.audioElement) {
+       this.audioElement.currentTime = 0;
+       if (!this.isTtsPlaying) {
+         this.audioElement.play();
+         this.isTtsPlaying = true;
+         const playBtn = document.getElementById('tts-play-btn');
+         if (playBtn) playBtn.innerHTML = '⏸️ Pause';
+       }
+    }
   }
 };
