@@ -233,12 +233,9 @@ const Settings = {
       return;
     }
     await db.setSetting(`api_key_${provider}`, apiKey);
-    db.syncSetting(`api_key_${provider}`, apiKey);
     // Also set the legacy keys for backward compat
     await db.setSetting('ai_provider', provider);
-    db.syncSetting('ai_provider', provider);
     await db.setSetting('ai_api_key', apiKey);
-    db.syncSetting('ai_api_key', apiKey);
 
     let providerName = 'Groq';
     if (provider === 'openrouter') providerName = 'OpenRouter';
@@ -251,7 +248,6 @@ const Settings = {
 
   async removeAPIKey(provider) {
     await db.setSetting(`api_key_${provider}`, null);
-    await db.syncSetting(`api_key_${provider}`, null);
     Components.showToast('API key removed', 'success');
     await this._renderPage('api');
   },

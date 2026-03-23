@@ -1371,9 +1371,20 @@ app.post('/api/newshunt/settings', async (req, res) => {
         const { key, value } = req.body;
         if (!key) return res.status(400).json({ error: 'key is required' });
 
-        const data = await readNewshuntData();
-        data.settings[key] = value;
-        await writeNewshuntData(data);
+        const existing = await NewsHuntData.findOne();
+        if (existing) {
+            // Atomic update to avoid race condition during burst saves
+            await NewsHuntData.updateOne(
+                { _id: existing._id },
+                { $set: { [`settings.${key}`]: value } }
+            );
+        } else {
+            // Fallback if no document exists yet
+            const defaultData = NEWSHUNT_DEFAULT_STATE;
+            defaultData.settings[key] = value;
+            await NewsHuntData.create(defaultData);
+        }
+
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in POST /api/newshunt/settings:', error);
