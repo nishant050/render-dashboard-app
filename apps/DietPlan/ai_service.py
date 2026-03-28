@@ -16,6 +16,7 @@ from database import get_db
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 GEMINI_API_URL_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
 )
@@ -61,6 +62,7 @@ def get_api_key(model: dict) -> str:
         "gemini": "GEMINI_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "groq": "GROQ_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
     }
     env_name = env_map.get(provider, f"{provider.upper()}_API_KEY")
     return (model.get("api_key") or os.environ.get(env_name, "")).strip()
@@ -91,7 +93,7 @@ async def get_candidate_models() -> list[dict]:
 
     add_model(default_model)
 
-    for provider_name in ("openrouter", "groq"):
+    for provider_name in ("nvidia", "openrouter", "groq"):
         for model in all_models:
             if (model.get("provider") or "").lower() == provider_name:
                 add_model(model)
@@ -929,6 +931,9 @@ def get_endpoint_and_headers(model: dict) -> tuple[str, dict]:
         headers["HTTP-Referer"] = os.environ.get("APP_URL", "http://localhost:8000")
         headers["X-Title"] = "Diet Plan Dashboard"
         return OPENROUTER_API_URL, headers
+    if provider == "nvidia":
+        headers["Authorization"] = f"Bearer {api_key}"
+        return NVIDIA_API_URL, headers
     if provider == "gemini":
         headers["x-goog-api-key"] = api_key
         return GEMINI_API_URL_TEMPLATE.format(model_id=model["model_id"]), headers

@@ -3071,3 +3071,10 @@ select.input-field {
  . a l t - c a r d   {   m a r g i n - b o t t o m :   1 r e m ;   p a d d i n g :   1 r e m ;   b o r d e r :   1 p x   s o l i d   v a r ( - - b o r d e r - s u b t l e ) ;   } 
   
  
+ / *   N V I D I A   p r o v i d e r   b a d g e   * / 
+ . p r o v i d e r - n v i d i a   { 
+         b a c k g r o u n d :   r g b a ( 1 1 8 ,   1 8 5 ,   0 ,   0 . 1 5 ) ; 
+         c o l o r :   # 7 6 b 9 0 0 ; 
+ } 
+  
+ 

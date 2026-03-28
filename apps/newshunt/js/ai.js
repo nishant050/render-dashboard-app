@@ -14,6 +14,11 @@ const AI = {
             baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
             defaultModel: 'google/gemini-2.0-flash-001'
         },
+        nvidia: {
+            name: 'NVIDIA',
+            baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions',
+            defaultModel: 'z-ai/glm4.7'
+        },
         gemini: {
             name: 'Google Gemini',
             // Base URL will be constructed dynamically with the model name and API key
