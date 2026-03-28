@@ -354,33 +354,29 @@ class NewsHuntDB {
       if (!response.ok) return;
       const envKeys = await response.json();
 
-      let currentProvider = await this.getSetting('ai_provider');
+      // Store env keys in provider-specific slots (in-memory only)
+      if (envKeys.groq) await this.setSetting('api_key_groq', envKeys.groq, { skipSync: true });
+      if (envKeys.openrouter) await this.setSetting('api_key_openrouter', envKeys.openrouter, { skipSync: true });
+      if (envKeys.gemini) await this.setSetting('api_key_gemini', envKeys.gemini, { skipSync: true });
+      if (envKeys.mistral) await this.setSetting('api_key_mistral', envKeys.mistral, { skipSync: true });
 
-      if (envKeys.groq) {
-        await this.setSetting('api_key_groq', envKeys.groq, { skipSync: true });
-        if (!currentProvider) {
-          await this.setSetting('ai_provider', 'groq', { skipSync: true });
-          await this.setSetting('ai_api_key', envKeys.groq, { skipSync: true });
-          currentProvider = 'groq';
+      // Only set legacy ai_provider/ai_api_key if the user has NEVER configured any provider
+      const currentProvider = await this.getSetting('ai_provider');
+      if (!currentProvider) {
+        // Pick the first available env key as default
+        const firstProvider = envKeys.groq ? 'groq' : envKeys.openrouter ? 'openrouter' : envKeys.gemini ? 'gemini' : envKeys.mistral ? 'mistral' : null;
+        if (firstProvider) {
+          await this.setSetting('ai_provider', firstProvider, { skipSync: true });
+          await this.setSetting('ai_api_key', envKeys[firstProvider], { skipSync: true });
+          await this.setSetting('ai_model', AI.PROVIDERS[firstProvider]?.defaultModel || '', { skipSync: true });
         }
-      }
-
-      if (envKeys.openrouter) {
-        await this.setSetting('api_key_openrouter', envKeys.openrouter, { skipSync: true });
-      }
-
-      if (envKeys.gemini) {
-        await this.setSetting('api_key_gemini', envKeys.gemini, { skipSync: true });
-        if (!currentProvider) {
-          await this.setSetting('ai_provider', 'gemini', { skipSync: true });
-          await this.setSetting('ai_api_key', envKeys.gemini, { skipSync: true });
-          currentProvider = 'gemini';
+      } else {
+        // Provider is already set by user, just ensure ai_api_key matches
+        // First check provider-specific stored key, then fall back to env
+        const storedKey = await this.getSetting(`api_key_${currentProvider}`);
+        if (storedKey) {
+          await this.setSetting('ai_api_key', storedKey, { skipSync: true });
         }
-      }
-
-      const provider = await this.getSetting('ai_provider');
-      if (provider && envKeys[provider]) {
-        await this.setSetting('ai_api_key', envKeys[provider], { skipSync: true });
       }
 
       console.log('[Sync] Loaded API keys from server env vars');

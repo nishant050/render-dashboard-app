@@ -270,12 +270,10 @@ const Settings = {
     };
     models.push(newModel);
     await db.setSetting('ai_models', models);
-    db.syncSetting('ai_models', models);
 
     // Auto-set as default if first model
     if (models.length === 1) {
       await db.setSetting('ai_default_model', newModel);
-      db.syncSetting('ai_default_model', newModel);
       await this._syncDefaultToLegacy(newModel);
     }
 
@@ -287,7 +285,6 @@ const Settings = {
     const models = (await db.getSetting('ai_models')) || [];
     if (models[index]) {
       await db.setSetting('ai_default_model', models[index]);
-      db.syncSetting('ai_default_model', models[index]);
       await this._syncDefaultToLegacy(models[index]);
       Components.showToast(`"${models[index].label}" set as default`, 'success');
       await this._renderPage('api');
@@ -297,12 +294,9 @@ const Settings = {
   async _syncDefaultToLegacy(model) {
     const apiKey = await db.getSetting(`api_key_${model.provider}`);
     await db.setSetting('ai_provider', model.provider);
-    db.syncSetting('ai_provider', model.provider);
     await db.setSetting('ai_model', model.model);
-    db.syncSetting('ai_model', model.model);
     if (apiKey) {
       await db.setSetting('ai_api_key', apiKey);
-      db.syncSetting('ai_api_key', apiKey);
     }
   },
 
@@ -311,12 +305,10 @@ const Settings = {
     const defaultModel = await db.getSetting('ai_default_model');
     const removed = models.splice(index, 1)[0];
     await db.setSetting('ai_models', models);
-    db.syncSetting('ai_models', models);
 
     if (defaultModel && defaultModel.id === removed.id) {
       const newDefault = models[0] || null;
       await db.setSetting('ai_default_model', newDefault);
-      db.syncSetting('ai_default_model', newDefault);
       if (newDefault) await this._syncDefaultToLegacy(newDefault);
     }
     Components.showToast('Model removed', 'success');

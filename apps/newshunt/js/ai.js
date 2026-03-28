@@ -29,9 +29,22 @@ const AI = {
 
     // Get current provider config from settings
     async getConfig() {
-        const provider = await db.getSetting('ai_provider') || 'groq';
-        const apiKey = await db.getSetting('ai_api_key') || '';
-        const model = await db.getSetting('ai_model') || this.PROVIDERS[provider]?.defaultModel || '';
+        // Prefer the explicit default model object (set via Settings UI)
+        const defaultModel = await db.getSetting('ai_default_model');
+        
+        let provider, model, apiKey;
+        
+        if (defaultModel && defaultModel.provider && defaultModel.model) {
+            provider = defaultModel.provider;
+            model = defaultModel.model;
+            // Get the provider-specific key first, fall back to legacy ai_api_key
+            apiKey = await db.getSetting(`api_key_${provider}`) || await db.getSetting('ai_api_key') || '';
+        } else {
+            // Fall back to legacy flat settings
+            provider = await db.getSetting('ai_provider') || 'groq';
+            model = await db.getSetting('ai_model') || this.PROVIDERS[provider]?.defaultModel || '';
+            apiKey = await db.getSetting('ai_api_key') || '';
+        }
 
         return {
             provider,

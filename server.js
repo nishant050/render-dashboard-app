@@ -1251,24 +1251,22 @@ const readNewshuntData = async () => {
 
 const writeNewshuntData = async (data) => {
     const normalized = normalizeNewshuntData(data);
-    const existing = await NewsHuntData.findOne();
-
-    if (existing) {
-        existing.settings = normalized.settings;
-        existing.feeds = normalized.feeds;
-        existing.articles = normalized.articles;
-        existing.chatHistory = normalized.chatHistory;
-        existing.articleContent = normalized.articleContent;
-        existing.markModified('settings');
-        existing.markModified('feeds');
-        existing.markModified('articles');
-        existing.markModified('chatHistory');
-        existing.markModified('articleContent');
-        await existing.save();
-        return existing;
-    }
-
-    return NewsHuntData.create(normalized);
+    
+    // Use findOneAndUpdate with upsert to avoid Mongoose VersionError on concurrent writes
+    const result = await NewsHuntData.findOneAndUpdate(
+        {},
+        {
+            $set: {
+                settings: normalized.settings,
+                feeds: normalized.feeds,
+                articles: normalized.articles,
+                chatHistory: normalized.chatHistory,
+                articleContent: normalized.articleContent
+            }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return result;
 };
 
 // GET /api/newshunt/ai-config — provide API keys from environment variables
