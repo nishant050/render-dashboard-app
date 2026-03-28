@@ -686,9 +686,15 @@ async def confirm_replace_meal(request: Request, meal_plan_id: str, alt_json: st
     
     await log_activity(profile_id, "meal_replaced", f"Replaced with: {alt_data.get('dish_name')}", request)
     
-    response = HTMLResponse("")
-    response.headers["HX-Refresh"] = "true"
-    return response
+    dish = escape(alt_data.get("dish_name", "meal"))
+    return HTMLResponse(
+        f"<div style='text-align:center;padding:2rem;'>"
+        f"<p style='font-size:1.5rem;margin-bottom:0.5rem;'>✅</p>"
+        f"<p style='color:#22c55e;font-weight:600;'>Replaced with {dish}</p>"
+        f"<p style='color:var(--text-muted);font-size:0.85rem;margin-top:0.5rem;'>Refreshing...</p>"
+        f"</div>"
+        f"<script>setTimeout(function(){{window.location.reload()}},800)</script>"
+    )
 
 
 @app.get("/dish/info/{meal_plan_id}", response_class=HTMLResponse)
@@ -825,7 +831,10 @@ async def get_nutrition_analysis(request: Request, view_date: str = Query(None))
     meals_list = [f"{m.get('dish_name')} ({m.get('meal_type')})" for m in meals if m.get("dish_name")]
     
     from ai_service import evaluate_nutrition
-    html_report = await evaluate_nutrition(profile, macros, meals_list, plan_date=view_date)
+    html_report = await evaluate_nutrition(
+        profile, macros, meals_list, plan_date=view_date,
+        per_meal_data=meals, existing_dish_names=[m.get("dish_name") for m in meals if m.get("dish_name")]
+    )
     return HTMLResponse(html_report)
 
 
@@ -1830,7 +1839,10 @@ async def admin_analyze_day(request: Request, profile_id: str, date: str):
     from ai_service import evaluate_nutrition
     import html
     
-    html_report = await evaluate_nutrition(profile, macros, meals_list, plan_date=date)
+    html_report = await evaluate_nutrition(
+        profile, macros, meals_list, plan_date=date,
+        per_meal_data=meals, existing_dish_names=[m.get("dish_name") for m in meals if m.get("dish_name")]
+    )
     return HTMLResponse(f"""
     <div style="padding: 1rem; margin-bottom: 1rem; background: var(--glass-bg); border: 1px solid var(--border); border-radius:12px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">

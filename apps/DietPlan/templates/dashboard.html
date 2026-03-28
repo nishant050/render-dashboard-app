@@ -51,19 +51,44 @@
         </div>
         <div class="cal-info">
             <div class="cal-stat">
-                <span class="cal-stat-val">{{ total_calories }}</span>
+                <span class="cal-stat-val" id="cal-total-val">{{ total_calories }}</span>
                 <span class="cal-stat-label">Total kcal</span>
             </div>
             <div class="cal-stat">
-                <span class="cal-stat-val">{{ checked_calories }}</span>
+                <span class="cal-stat-val" id="cal-prep-val">{{ checked_calories }}</span>
                 <span class="cal-stat-label">Prepared kcal</span>
             </div>
             <div class="cal-stat">
-                <span class="cal-stat-val">{{ total_calories - checked_calories }}</span>
+                <span class="cal-stat-val" id="cal-rem-val">{{ total_calories - checked_calories }}</span>
                 <span class="cal-stat-label">Remaining kcal</span>
             </div>
         </div>
     </div>
+
+    <!-- Macro Nutrient Breakdown Bar -->
+    {% set ns_macro = namespace(total_p=0, total_c=0, total_f=0) %}
+    {% for mt in meal_type_order %}
+    {% for m in meals[mt].meals %}
+    {% set ns_macro.total_p = ns_macro.total_p + (m.protein_g|float) %}
+    {% set ns_macro.total_c = ns_macro.total_c + (m.carbs_g|float) %}
+    {% set ns_macro.total_f = ns_macro.total_f + (m.fat_g|float) %}
+    {% endfor %}
+    {% endfor %}
+    {% set macro_sum = ns_macro.total_p + ns_macro.total_c + ns_macro.total_f %}
+    {% if macro_sum > 0 %}
+    <div class="macro-breakdown glass-card" id="macro-bar">
+        <div class="macro-bar-track">
+            <div class="macro-seg macro-seg-protein" style="width: {{ (ns_macro.total_p / macro_sum * 100)|round(1) }}%"></div>
+            <div class="macro-seg macro-seg-carbs" style="width: {{ (ns_macro.total_c / macro_sum * 100)|round(1) }}%"></div>
+            <div class="macro-seg macro-seg-fat" style="width: {{ (ns_macro.total_f / macro_sum * 100)|round(1) }}%"></div>
+        </div>
+        <div class="macro-legend">
+            <span class="macro-legend-item"><span class="macro-dot protein-dot"></span>Protein <strong id="macro-p-val">{{ ns_macro.total_p|round|int }}g</strong></span>
+            <span class="macro-legend-item"><span class="macro-dot carbs-dot"></span>Carbs <strong id="macro-c-val">{{ ns_macro.total_c|round|int }}g</strong></span>
+            <span class="macro-legend-item"><span class="macro-dot fat-dot"></span>Fat <strong id="macro-f-val">{{ ns_macro.total_f|round|int }}g</strong></span>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- WHO Nutrition Analysis -->
     <div class="who-analysis glass-card" style="margin-top: 1rem;"
@@ -82,7 +107,8 @@
         <h3 class="meal-section-title">{{ section.label }}</h3>
         <div class="meal-cards">
             {% for meal in section.meals %}
-            <div class="meal-card glass-card {% if meal.is_checked %}meal-checked{% endif %}" id="meal-{{ meal.id }}">
+            <div class="meal-card glass-card {% if meal.is_checked %}meal-checked{% endif %}" id="meal-{{ meal.id }}"
+                 data-cal="{{ meal.calories }}" data-protein="{{ meal.protein_g }}" data-carbs="{{ meal.carbs_g }}" data-fat="{{ meal.fat_g }}">
                 <div class="meal-card-top">
                     <button class="meal-check-btn" hx-post="/dietplan/meal/toggle/{{ meal.id }}"
                         hx-target="#check-{{ meal.id }}" hx-swap="innerHTML">
@@ -107,10 +133,9 @@
                     </div>
                 </div>
                 <!-- Replace Action -->
-                <button class="btn btn-sm btn-ghost"
-                    style="width: 100%; border-top-left-radius: 0; border-top-right-radius: 0; background-color: rgba(255,255,255,0.05);"
+                <button class="btn btn-sm btn-replace-meal"
                     hx-get="/dietplan/meal/replace/{{ meal.id }}" hx-target="#dish-modal-body"
-                    onclick="openDishModal()">
+                    hx-swap="innerHTML" onclick="openDishModal()">
                     🔄 Replace Meal
                 </button>
             </div>
@@ -164,10 +189,10 @@
         document.body.style.overflow = 'hidden';
     }
     function closeDishModal(e) {
-        if (e && e.target !== document.getElementById('dish-modal')) return;
+        // If called from overlay click, only close when clicking on overlay itself
+        if (e && e.target && e.target.id !== 'dish-modal') return;
         document.getElementById('dish-modal').classList.remove('active');
         document.body.style.overflow = '';
-        // Reset content
         document.getElementById('dish-modal-body').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading recipe info...</p></div>';
     }
 
@@ -176,7 +201,7 @@
         document.body.style.overflow = 'hidden';
     }
     function closeEditProfileModal(e) {
-        if (e && e.target !== document.getElementById('edit-profile-modal')) return;
+        if (e && e.target && e.target.id !== 'edit-profile-modal') return;
         document.getElementById('edit-profile-modal').classList.remove('active');
         document.body.style.overflow = '';
     }
@@ -192,7 +217,48 @@
         button.textContent = isHidden ? 'Hide Details' : 'In Depth';
     }
 
-    // Update card visual state after toggle
+    /* ── Live recalculate calorie ring + macro bar after meal toggle ── */
+    function recalcCalorieSummary() {
+        const cards = document.querySelectorAll('.meal-card[data-cal]');
+        let totalCal = 0, checkedCal = 0, totalP = 0, totalC = 0, totalF = 0;
+        cards.forEach(c => {
+            const cal = parseFloat(c.dataset.cal) || 0;
+            totalCal += cal;
+            totalP += parseFloat(c.dataset.protein) || 0;
+            totalC += parseFloat(c.dataset.carbs) || 0;
+            totalF += parseFloat(c.dataset.fat) || 0;
+            if (c.classList.contains('meal-checked')) checkedCal += cal;
+        });
+        const $id = id => document.getElementById(id);
+        const $q = s => document.querySelector(s);
+        if ($id('cal-total-val')) $id('cal-total-val').textContent = Math.round(totalCal);
+        if ($id('cal-prep-val'))  $id('cal-prep-val').textContent  = Math.round(checkedCal);
+        if ($id('cal-rem-val'))   $id('cal-rem-val').textContent   = Math.round(totalCal - checkedCal);
+        const ringNum = $q('.cal-number');
+        if (ringNum) ringNum.textContent = Math.round(checkedCal);
+        const ringFill = $q('.cal-ring-fill');
+        if (ringFill) {
+            const pct = totalCal > 0 ? checkedCal / totalCal : 0;
+            ringFill.setAttribute('stroke-dasharray', (pct * 327).toFixed(1) + ' 327');
+        }
+        const macroTotal = totalP + totalC + totalF;
+        if (macroTotal > 0 && $id('macro-bar')) {
+            const pp = (totalP / macroTotal * 100).toFixed(1);
+            const cp = (totalC / macroTotal * 100).toFixed(1);
+            const fp = (totalF / macroTotal * 100).toFixed(1);
+            const barEl = $id('macro-bar');
+            const ps = barEl.querySelector('.macro-seg-protein');
+            const cs = barEl.querySelector('.macro-seg-carbs');
+            const fs = barEl.querySelector('.macro-seg-fat');
+            if (ps) ps.style.width = pp + '%';
+            if (cs) cs.style.width = cp + '%';
+            if (fs) fs.style.width = fp + '%';
+            if ($id('macro-p-val')) $id('macro-p-val').textContent = Math.round(totalP) + 'g';
+            if ($id('macro-c-val')) $id('macro-c-val').textContent = Math.round(totalC) + 'g';
+            if ($id('macro-f-val')) $id('macro-f-val').textContent = Math.round(totalF) + 'g';
+        }
+    }
+
     document.body.addEventListener('htmx:afterSwap', function (event) {
         if (event.detail.target.id && event.detail.target.id.startsWith('check-')) {
             const mealId = event.detail.target.id.replace('check-', '');
@@ -205,6 +271,7 @@
                     card.classList.remove('meal-checked');
                 }
             }
+            recalcCalorieSummary();
         }
         // Reload page after quick add
         if (event.detail.target.id === 'quick-add-msg') {

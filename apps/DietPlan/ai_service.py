@@ -158,10 +158,73 @@ If you are unsure, keep the answer simple and practical.
 """.strip()
 
 
-def build_nutrition_prompt(profile: dict, macros: dict, meals_list: list[str]) -> str:
+def compute_daily_targets(profile: dict) -> dict:
+    """Compute recommended daily targets using Mifflin-St Jeor + WHO macros."""
+    age = parse_float(profile.get('age'), 30)
+    height = parse_float(profile.get('height_cm'), 165)
+    weight = parse_float(profile.get('weight_kg'), 65)
+    # Mifflin-St Jeor (assume moderately active, using male formula as gender-neutral approx)
+    bmr = 10 * weight + 6.25 * height - 5 * age + 5
+    tdee = bmr * 1.4  # moderately active
+    cal_target = max(1400, min(2800, round(tdee)))
+    return {
+        'calories': cal_target,
+        'protein': round(weight * 0.8, 1),   # 0.8 g/kg
+        'carbs': round(cal_target * 0.50 / 4, 1),  # 50% from carbs
+        'fat': round(cal_target * 0.30 / 9, 1),    # 30% from fat
+        'fiber': 25.0,   # WHO recommendation
+        'sugar': 50.0,   # WHO max ~10% of 2000 kcal
+        'sodium': 2000.0, # WHO max mg
+    }
+
+
+def compute_primary_percentages(macros: dict, targets: dict) -> dict[str, int]:
+    """Compute percentage of target for each primary nutrient from actual data."""
+    mapping = [
+        ('Calories', 'calories', 'calories'),
+        ('Protein', 'protein', 'protein'),
+        ('Carbs', 'carbs', 'carbs'),
+        ('Fat', 'fat', 'fat'),
+        ('Fiber', 'fiber', 'fiber'),
+    ]
+    result = {}
+    for label, macro_key, target_key in mapping:
+        actual = parse_float(macros.get(macro_key), 0)
+        target = parse_float(targets.get(target_key), 1)
+        if target > 0:
+            result[label] = max(0, min(200, round(actual / target * 100)))
+        else:
+            result[label] = 0
+    return result
+
+
+def build_nutrition_prompt(profile: dict, macros: dict, meals_list: list[str],
+                           per_meal_data: list[dict] | None = None,
+                           existing_dish_names: list[str] | None = None) -> str:
     meals_str = "\n".join([f"- {meal}" for meal in meals_list]) if meals_list else "- None assigned yet"
+    targets = compute_daily_targets(profile)
+    targets_str = (
+        f"- Calories target: {targets['calories']} kcal\n"
+        f"- Protein target: {targets['protein']} g\n"
+        f"- Carbs target: {targets['carbs']} g\n"
+        f"- Fat target: {targets['fat']} g\n"
+        f"- Fiber target: {targets['fiber']} g"
+    )
+    per_meal_str = ""
+    if per_meal_data:
+        lines = []
+        for m in per_meal_data:
+            lines.append(
+                f"  - {m.get('dish_name','?')} ({m.get('meal_type','?')}): "
+                f"{m.get('calories',0)} kcal, P:{m.get('protein_g',0)}g, "
+                f"C:{m.get('carbs_g',0)}g, F:{m.get('fat_g',0)}g, Fiber:{m.get('fiber_g',0)}g"
+            )
+        per_meal_str = "\nPer-meal breakdown:\n" + "\n".join(lines)
+    exclude_str = ""
+    if existing_dish_names:
+        exclude_str = "\n- Do NOT recommend any of these dishes (already planned): " + ", ".join(existing_dish_names)
     return f"""
-Review this patient's meal plan against general WHO-style nutrition guidance.
+Review this patient's meal plan against WHO-style nutrition guidance.
 
 Patient:
 - Age: {profile.get('age', 'Unknown')}
@@ -172,6 +235,7 @@ Patient:
 
 Meals today:
 {meals_str}
+{per_meal_str}
 
 Planned totals:
 - Calories: {macros['calories']} kcal
@@ -179,6 +243,9 @@ Planned totals:
 - Carbs: {macros['carbs']} g
 - Fat: {macros['fat']} g
 - Fiber: {macros['fiber']} g
+
+Recommended daily targets (computed from patient profile):
+{targets_str}
 
 Return only HTML using this structure:
 <div class='ai-nutrition'>
@@ -252,7 +319,7 @@ After the HTML, include one JSON array wrapped in these exact markers:
 Rules for recommendations:
 - Every recommendation must be vegetarian.
 - Suggestions should be easy to cook or easy to source.
-- Prefer alternatives that directly fix the biggest nutrient gaps.
+- Prefer alternatives that directly fix the biggest nutrient gaps.{exclude_str}
 - Keep the top summary visually compact and save the explanation for the hidden detail panel.
 """.strip()
 
@@ -573,12 +640,18 @@ def build_recommendation_list_html(items: list[str]) -> str:
     return "".join(f"<li>{escape(item)}</li>" for item in items[:4])
 
 
-def build_rule_based_actionable_meals(primary: dict[str, int], micro: dict[str, int]) -> list[dict]:
+def build_rule_based_actionable_meals(primary: dict[str, int], micro: dict[str, int],
+                                      existing_names: set[str] | None = None) -> list[dict]:
     suggestions: list[dict] = []
+    _existing = {n.lower() for n in (existing_names or set())}
 
     def add(meal: dict):
         normalized = normalize_meal_candidate(meal)
-        if normalized and all(existing["dish_name"] != normalized["dish_name"] for existing in suggestions):
+        if not normalized:
+            return
+        if normalized["dish_name"].lower() in _existing:
+            return
+        if all(existing["dish_name"] != normalized["dish_name"] for existing in suggestions):
             suggestions.append(normalized)
 
     if primary.get("Protein", 100) < 80:
@@ -657,6 +730,71 @@ def render_nutrition_dashboard(raw_text: str) -> str:
     <p class='ai-assess'>{escape(detail)}</p>
     <ul class='ai-recs'>
       {build_recommendation_list_html(recommendations)}
+    </ul>
+  </div>
+  </div>
+</div>
+""".strip()
+
+
+def render_nutrition_dashboard_with_overrides(
+    html: str,
+    ai_primary: dict[str, int],
+    true_primary: dict[str, int],
+    micro: dict[str, int],
+    macros: dict,
+    targets: dict
+) -> str:
+    """Rebuild the HTML using accurate server-side macros instead of AI hallucinations."""
+    summary, detail = split_summary_and_detail(html)
+    recommendations = extract_list_items(html)
+    
+    # We rebuild the metric cards using true data
+    metric_htmls = []
+    mapping = [
+        ('Calories', 'calories', 'kcal'),
+        ('Protein', 'protein', 'g'),
+        ('Carbs', 'carbs', 'g'),
+        ('Fat', 'fat', 'g'),
+        ('Fiber', 'fiber', 'g'),
+    ]
+    for label, key, unit in mapping:
+        val = int(parse_float(macros.get(key), 0))
+        target = int(parse_float(targets.get(key), 0))
+        pct = true_primary.get(label, 0)
+        cls = "bad" if pct < 80 or pct > 120 else "good"
+        metric_htmls.append(
+            f"<div class='nutrition-metric'>"
+            f"<div class='nutrition-metric-head'><label>{label}</label><span class='{cls}'>{pct}%</span></div>"
+            f"<progress value='{min(pct, 100)}' max='100' class='{cls}'></progress>"
+            f"<p>{val} {unit} / target {target} {unit}</p>"
+            f"</div>"
+        )
+    
+    metrics = "".join(metric_htmls)
+    vitamins = build_vitamin_cards_html(micro)
+    recs = build_recommendation_list_html(recommendations)
+    
+    return f"""
+<div class='ai-nutrition'>
+  <div class='ai-nutrition-top'>
+    <div>
+      <p class='ai-kicker'>Today's nutrition snapshot</p>
+      <h3>WHO Nutrition Analysis</h3>
+    </div>
+    <button type='button' class='btn btn-ghost btn-sm ai-depth-toggle' onclick='toggleAiNutritionDetails(this)'>In Depth</button>
+  </div>
+  <p class='ai-summary'>{escape(summary)}</p>
+  <div class='nutrition-bars'>
+    {metrics}
+  </div>
+  <div class='vitamin-grid'>
+    {vitamins}
+  </div>
+  <div class='ai-depth-panel hidden'>
+    <p class='ai-assess'>{escape(detail)}</p>
+    <ul class='ai-recs'>
+      {recs}
     </ul>
   </div>
 </div>
@@ -947,9 +1085,7 @@ def parse_nutrition_response(raw_text: str, _: dict) -> dict:
         meals = extract_actionable_meals(raw_text)
     except ParseAIError:
         meals = []
-    if not meals:
-        meals = build_rule_based_actionable_meals(primary, micro)
-    return {"html": html_fragment, "meals": meals}
+    return {"html": html_fragment, "meals": meals, "primary": primary, "micro": micro}
 
 
 def parse_json_array_response(normalizer: Callable[[dict], dict | None]) -> Callable[[str, dict], list[dict]]:
@@ -1041,7 +1177,11 @@ async def evaluate_nutrition(
     macros: dict,
     meals_list: list[str],
     plan_date: str | None = None,
+    per_meal_data: list[dict] | None = None,
+    existing_dish_names: list[str] | None = None,
 ) -> str:
+    targets = compute_daily_targets(profile)
+    existing_set = {n.lower() for n in (existing_dish_names or [])}
     system_prompt = (
         "You are a careful clinical nutrition assistant. "
         "Return predictable HTML followed by one JSON array wrapped in the requested markers."
@@ -1049,7 +1189,11 @@ async def evaluate_nutrition(
     result, _ = await run_with_failover(
         feature_name="nutrition",
         system_prompt=system_prompt,
-        user_prompt=build_nutrition_prompt(profile, macros, meals_list),
+        user_prompt=build_nutrition_prompt(
+            profile, macros, meals_list,
+            per_meal_data=per_meal_data,
+            existing_dish_names=existing_dish_names,
+        ),
         parser=parse_nutrition_response,
         temperature=0.1,
         max_tokens=1800,
@@ -1057,8 +1201,21 @@ async def evaluate_nutrition(
     if not result:
         return build_nutrition_fallback_html(macros, meals_list)
 
-    html_fragment = result["html"]
-    quick_add_html = build_quick_add_html(result["meals"], plan_date)
+    # Override AI primary nutrient percentages with accurate server-side computation
+    computed_primary = compute_primary_percentages(macros, targets)
+    html_fragment = render_nutrition_dashboard_with_overrides(
+        result["html"], result.get("primary", {}), computed_primary,
+        result.get("micro", {}), macros, targets,
+    )
+
+    # Filter out recommendations that match already-planned meals
+    meals = result.get("meals", [])
+    meals = [m for m in meals if m["dish_name"].lower() not in existing_set]
+    if not meals:
+        meals = build_rule_based_actionable_meals(
+            computed_primary, result.get("micro", {}), existing_names=existing_set,
+        )
+    quick_add_html = build_quick_add_html(meals, plan_date)
     if quick_add_html:
         html_fragment = append_inside_root(html_fragment, quick_add_html)
     return html_fragment
