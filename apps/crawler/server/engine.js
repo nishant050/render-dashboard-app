@@ -8,18 +8,56 @@ const CrawlerTask = mongoose.model('CrawlerTask');
 const CrawlerRun = mongoose.model('CrawlerRun');
 
 // --- Helper to call AI Models ---
-async function callAI(messages, modelId, tools = null) {
-    const isGroq = modelId.includes('llama') || modelId.includes('mixtral') || modelId.includes('gemma');
-    const apiKey = isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY;
-    const baseURL = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+async function callAI(messages, modelString, tools = null) {
+    let provider = modelString;
+    let actualModel = modelString;
     
-    // Default to a Groq model if string is just 'groq'
-    let actualModel = modelId;
-    if (modelId === 'groq') actualModel = 'llama-3.3-70b-versatile';
-    if (modelId === 'gemini') actualModel = 'google/gemini-2.5-flash';
-    if (modelId === 'openrouter') actualModel = 'anthropic/claude-3.5-sonnet:beta';
-    
-    if (!apiKey) throw new Error(`Missing API Key for model ${actualModel}`);
+    if (modelString.includes('|')) {
+        [provider, actualModel] = modelString.split('|');
+    } else {
+        if (modelString === 'groq') { provider = 'groq'; actualModel = 'llama-3.3-70b-versatile'; }
+        else if (modelString === 'gemini') { provider = 'openrouter'; actualModel = 'google/gemini-2.5-flash'; }
+        else if (modelString === 'openrouter') { provider = 'openrouter'; actualModel = 'anthropic/claude-3.5-sonnet:beta'; }
+        else provider = 'groq';
+    }
+
+    let apiKey = '';
+    let baseURL = '';
+    const headers = { 'Content-Type': 'application/json' };
+
+    switch (provider) {
+        case 'groq':
+            apiKey = process.env.GROQ_API_KEY;
+            baseURL = 'https://api.groq.com/openai/v1/chat/completions';
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            break;
+        case 'openrouter':
+            apiKey = process.env.OPENROUTER_API_KEY;
+            baseURL = 'https://openrouter.ai/api/v1/chat/completions';
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            headers['HTTP-Referer'] = 'http://localhost:3000';
+            headers['X-Title'] = 'Dashboard Crawler';
+            break;
+        case 'nvidia':
+            apiKey = process.env.NVIDIA_API_KEY;
+            baseURL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            break;
+        case 'mistral':
+            apiKey = process.env.MISTRAL_API_KEY;
+            baseURL = 'https://api.mistral.ai/v1/chat/completions';
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            break;
+        case 'gemini':
+            apiKey = process.env.GEMINI_API_KEY;
+            baseURL = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            break;
+        default:
+            throw new Error(`Unknown provider ${provider}`);
+    }
+
+    if (!apiKey) throw new Error(`Missing API Key for provider ${provider}`);
 
     const payload = {
         model: actualModel,
@@ -30,18 +68,14 @@ async function callAI(messages, modelId, tools = null) {
 
     if (tools) {
         payload.tools = tools;
-        payload.tool_choice = 'auto'; // Force use tools if needed
+        payload.tool_choice = 'auto';
     }
 
-    const response = await axios.post(baseURL, payload, {
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:3000',
-            'X-Title': 'Dashboard Crawler'
-        }
-    });
+    if (provider === 'nvidia') {
+        payload.chat_template_kwargs = { enable_thinking: true, clear_thinking: false };
+    }
 
+    const response = await axios.post(baseURL, payload, { headers, timeout: 60000 });
     return response.data.choices[0].message;
 }
 
@@ -66,6 +100,20 @@ const CRAWLER_TOOLS = [
                     selector: { type: "string", description: "The CSS selector of the link or button to click." }
                 },
                 required: ["selector"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "goto_url",
+            description: "Navigates the browser to another URL (e.g. to switch context to the next URL on your target list).",
+            parameters: {
+                type: "object",
+                properties: {
+                    url: { type: "string", description: "The full URL to navigate to." }
+                },
+                required: ["url"]
             }
         }
     },
@@ -100,7 +148,6 @@ const CRAWLER_TOOLS = [
     }
 ];
 
-
 // --- Single Autonomous Run ---
 async function executeCrawlerRun(runId) {
     const run = await CrawlerRun.findById(runId).populate('taskId');
@@ -117,67 +164,84 @@ async function executeCrawlerRun(runId) {
 
     let browser = null;
     try {
-        console.log(`[Crawler] Starting run ${run._id} for task "${task.name}"`);
+        console.log(`\n\x1b[1;36m[Crawler 🕷️]\x1b[0m \x1b[33mStarting run ${run._id}\x1b[0m`);
+        console.log(`\x1b[36m[Task]\x1b[0m "${task.name}"`);
         
-        // Connect to ZenRows Scraping Browser
+        const targetUrls = task.startUrls && task.startUrls.length > 0 ? task.startUrls : (task.startUrl ? [task.startUrl] : []);
+        console.log(`\x1b[36m[Target URLs]\x1b[0m ${targetUrls.length}`);
+        
+        if (targetUrls.length === 0) throw new Error("No start URLs provided for this task.");
+
+        console.log(`\x1b[90m[Browser]\x1b[0m Connecting...`);
         browser = await puppeteer.connect({
             browserWSEndpoint: `wss://browser.zenrows.com?apikey=${zenrowsKey}&proxy_region=global`
         });
         
         const page = await browser.newPage();
-        await page.goto(task.startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        console.log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);
+        await page.goto(targetUrls[0], { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Track visited URLs
         run.visitedUrls.push(page.url());
         await run.save();
 
         let messages = [
             {
                 role: 'system',
-                content: `You are an autonomous web extraction agent. Your goal is: ${task.goal}\n\nYou are currently at URL: ${page.url()}\nUse your tools to extract page content, click to navigate further if needed, save relevant attachments, and finalize when the goal is met. Always get_page_content first on a new page.`
+                content: `You are an autonomous web extraction agent. Your goal is: ${task.goal}\n\nYou MUST process information from ALL of the following URLs:\n${targetUrls.join('\n')}\n\nYou are currently at URL: ${page.url()}\nUse your tools to extract page content, click to navigate, save relevant attachments, or use goto_url to switch to the next URL in the list. Finally, call 'finalize' when the goal is met across all targets.`
             }
         ];
 
         let isFinished = false;
         let loopCount = 0;
-        const MAX_LOOPS = 15;
+        const MAX_LOOPS = 25;
 
         while (!isFinished && loopCount < MAX_LOOPS) {
             loopCount++;
-            console.log(`[Crawler] Loop ${loopCount}/15...`);
+            console.log(`\n\x1b[35m[Engine]\x1b[0m Loop ${loopCount}/${MAX_LOOPS}`);
 
-            // 1. Call AI
             let aiMessage;
             try {
+                console.log(`\x1b[90m[AI]\x1b[0m Thinking with primary model (${task.primaryModel})...`);
                 aiMessage = await callAI(messages, task.primaryModel, CRAWLER_TOOLS);
             } catch (aiErr) {
-                console.warn(`[Crawler] Primary model failed: ${aiErr.message}. Trying fallback: ${task.fallbackModel}`);
+                console.warn(`\x1b[31m[AI Error]\x1b[0m ${aiErr.message}`);
+                console.log(`\x1b[33m[AI Fallback]\x1b[0m Swapping to ${task.fallbackModel}...`);
                 aiMessage = await callAI(messages, task.fallbackModel, CRAWLER_TOOLS);
             }
 
             messages.push(aiMessage);
 
-            // 2. Handle Tool Calls
             if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
                 for (const toolCall of aiMessage.tool_calls) {
                     const funcName = toolCall.function.name;
-                    const args = JSON.parse(toolCall.function.arguments);
+                    const args = JSON.parse(toolCall.function.arguments || '{}');
                     let toolResponse = "";
 
-                    console.log(`[Crawler] -> Tool Call: ${funcName}(${JSON.stringify(args)})`);
+                    console.log(`\x1b[92m[Agent => Tool]\x1b[0m \x1b[32m${funcName}\x1b[0m (${JSON.stringify(args).substring(0, 100)}...)`);
 
                     try {
                         if (funcName === 'get_page_content') {
                             const text = await page.evaluate(() => document.body.innerText);
-                            // Truncate to avoid context window explosion
                             toolResponse = text.substring(0, 40000); 
+                            console.log(`\x1b[90m[Tool]\x1b[0m Extracted ${toolResponse.length} characters.`);
                         } 
                         else if (funcName === 'click') {
                             await Promise.all([
-                                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}), // Ignore timeouts on click nav
+                                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
                                 page.click(args.selector)
                             ]);
-                            toolResponse = `Navigated. New URL: ${page.url()}. Run get_page_content to read it.`;
+                            toolResponse = `Navigated. New URL: ${page.url()}. Run get_page_content.`;
+                            console.log(`\x1b[90m[Tool]\x1b[0m Navigated to ${page.url()}`);
+                            
+                            if (!run.visitedUrls.includes(page.url())) {
+                                run.visitedUrls.push(page.url());
+                                await run.save();
+                            }
+                        }
+                        else if (funcName === 'goto_url') {
+                            await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 60000 });
+                            toolResponse = `Navigated to: ${page.url()}. Run get_page_content.`;
+                            console.log(`\x1b[90m[Tool]\x1b[0m Switched to ${page.url()}`);
                             
                             if (!run.visitedUrls.includes(page.url())) {
                                 run.visitedUrls.push(page.url());
@@ -185,7 +249,6 @@ async function executeCrawlerRun(runId) {
                             }
                         }
                         else if (funcName === 'save_attachment') {
-                            // Download the file instead of just saving link
                             const uploadsDir = path.join(process.cwd(), 'uploads', 'crawler');
                             if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
                             
@@ -194,6 +257,7 @@ async function executeCrawlerRun(runId) {
                             const filePath = path.join(uploadsDir, fileName);
                             const relativeUrl = `/uploads/crawler/${fileName}`;
 
+                            console.log(`\x1b[90m[Tool]\x1b[0m Downloading attachment ${args.url}`);
                             const fileRes = await axios.get(args.url, { responseType: 'stream' });
                             const writer = fs.createWriteStream(filePath);
                             fileRes.data.pipe(writer);
@@ -205,7 +269,8 @@ async function executeCrawlerRun(runId) {
 
                             run.attachments.push({ name: args.name, url: relativeUrl });
                             await run.save();
-                            toolResponse = `Attachment downloaded to server and saved as ${relativeUrl}`;
+                            toolResponse = `Attachment saved as ${relativeUrl}`;
+                            console.log(`\x1b[90m[Tool]\x1b[0m Attachment saved.`);
                         }
                         else if (funcName === 'finalize') {
                             run.finalSummary = args.summary_markdown;
@@ -214,10 +279,12 @@ async function executeCrawlerRun(runId) {
                             await run.save();
                             isFinished = true;
                             toolResponse = "Finalized.";
+                            console.log(`\x1b[92m[Success]\x1b[0m Crawler run complete.`);
                             break; 
                         }
                     } catch (toolErr) {
                         toolResponse = `Error executing tool: ${toolErr.message}`;
+                        console.log(`\x1b[31m[Tool Error]\x1b[0m ${toolErr.message}`);
                     }
 
                     messages.push({
@@ -228,7 +295,7 @@ async function executeCrawlerRun(runId) {
                     });
                 }
             } else {
-                // If the AI didn't use a tool, prompt it to use finalize
+                console.log(`\x1b[33m[Agent Warning]\x1b[0m Wandering... no tool calls made.`);
                 messages.push({
                     role: 'user',
                     content: "Please use the 'finalize' tool to save the results, or another tool if you still need information."
@@ -237,17 +304,19 @@ async function executeCrawlerRun(runId) {
         }
 
         if (!isFinished) {
+            console.log(`\x1b[31m[Timeout]\x1b[0m Max loops reached without finalize.`);
             run.status = 'failed';
             run.error = 'Max loops reached without finalize tool call.';
         }
     } catch (err) {
-        console.error(`[Crawler] Run error:`, err);
+        console.error(`\x1b[31m[Crawler Fatal Error]\x1b[0m`, err);
         run.status = 'failed';
         run.error = err.message || JSON.stringify(err);
     } finally {
         run.endTime = new Date();
         await run.save();
         if (browser) await browser.close();
+        console.log(`\x1b[90m[Crawler Shutdown]\x1b[0m Resources cleaned up.`);
     }
 }
 
@@ -260,34 +329,30 @@ async function crawlerWorkerLoop() {
 
     try {
         const now = new Date();
-        // Find tasks that are due and active
         const dueTasks = await CrawlerTask.find({ 
             isActive: true, 
             nextRunAt: { $lte: now } 
         });
 
         for (const task of dueTasks) {
-            // Update nextRunAt immediately so duplicate workers don't pick it up
             task.nextRunAt = new Date(now.getTime() + task.frequencyMinutes * 60000);
             await task.save();
 
-            // Create a run record
             const run = new CrawlerRun({ taskId: task._id });
             await run.save();
 
-            // Run asynchronously in background
             executeCrawlerRun(run._id);
         }
     } catch (err) {
-        console.error('[CrawlerWorker] Error checking tasks:', err);
+        console.error('\x1b[31m[CrawlerWorker]\x1b[0m Error checking tasks:', err);
     } finally {
         isWorkerRunning = false;
     }
 }
 
 function startBackgroundWorker() {
-    setInterval(crawlerWorkerLoop, 60000); // Check every minute
-    console.log('[CrawlerWorker] Started background polling loop (60s)');
+    setInterval(crawlerWorkerLoop, 60000);
+    console.log('\x1b[32m[Startup]\x1b[0m Background crawler started (60s tick).');
 }
 
 module.exports = {

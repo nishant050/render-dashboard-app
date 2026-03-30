@@ -74,7 +74,7 @@ const FileHubEntry = mongoose.model('FileHubEntry', fileHubEntrySchema);
 // Crawler App
 const crawlerTaskSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    startUrl: { type: String, required: true },
+    startUrls: { type: [String], default: [] },
     goal: { type: String, required: true },
     frequencyMinutes: { type: Number, required: true, default: 60 * 24 }, // Daily default
     nextRunAt: { type: Date, default: Date.now },
@@ -176,6 +176,139 @@ app.use('/api/crawler', crawlerRoutes);
 app.use('/uploads/crawler', express.static(path.join(__dirname, 'uploads', 'crawler')));
 const crawlerEngine = require('./apps/crawler/server/engine');
 crawlerEngine.startBackgroundWorker();
+
+// --- Proxy Browser API ---
+app.use('/api/proxy', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).send('URL is required');
+
+    try {
+        const parsedUrl = new URL(targetUrl);
+        const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+
+        const response = await axios({
+            method: req.method,
+            url: targetUrl,
+            data: req.method !== 'GET' ? req.body : undefined,
+            responseType: 'arraybuffer',
+            validateStatus: () => true, // Accept all statuses
+            headers: {
+                // Forward some safe headers
+                'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': req.headers.accept || '*/*',
+                'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
+            }
+        });
+
+        const contentType = response.headers['content-type'] || '';
+        
+        // Strip headers that prevent framing
+        const headersToKeep = { ...response.headers };
+        delete headersToKeep['x-frame-options'];
+        delete headersToKeep['content-security-policy'];
+        delete headersToKeep['content-security-policy-report-only'];
+        delete headersToKeep['strict-transport-security'];
+        delete headersToKeep['set-cookie']; // Let the client handle them or ignore for simple proxy
+        
+        // We modify headers before sending
+        res.set(headersToKeep);
+        res.status(response.status);
+
+        if (contentType.includes('text/html')) {
+            const html = response.data.toString('utf-8');
+            const $ = cheerio.load(html);
+
+            // Re-write URLs
+            const rewriteUrl = (originalUrl) => {
+                if (!originalUrl) return originalUrl;
+                originalUrl = originalUrl.trim();
+                // Ignore base64, javascript, hash links
+                if (originalUrl.startsWith('data:') || originalUrl.startsWith('javascript:') || originalUrl.startsWith('#')) return originalUrl;
+                try {
+                    let absoluteUrl = new URL(originalUrl, targetUrl).href;
+                    return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                } catch (e) {
+                    return originalUrl;
+                }
+            };
+
+            // Process typical attributes where URLs reside
+            $('a').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
+            $('link').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
+            $('img').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+            $('script').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+            $('iframe').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+            $('source').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+            $('form').each((i, el) => { if ($(el).attr('action')) $(el).attr('action', rewriteUrl($(el).attr('action'))); });
+            
+            // Rewrite URL in style attributes
+            $('[style]').each((i, el) => {
+                let style = $(el).attr('style');
+                if (style && style.includes('url(')) {
+                    style = style.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
+                         if (url.startsWith('data:')) return match;
+                         return `url(${quote}${rewriteUrl(url)}${quote})`;
+                    });
+                    $(el).attr('style', style);
+                }
+            });
+
+            // Inject script to override window.fetch and XMLHttpRequest!
+            const interceptScript = `
+                <script>
+                    const originalFetch = window.fetch;
+                    window.fetch = function() {
+                        if (typeof arguments[0] === 'string' && !arguments[0].startsWith('data:')) {
+                            try { arguments[0] = '/api/proxy?url=' + encodeURIComponent(new URL(arguments[0], '${targetUrl}').href); } catch(e){}
+                        } else if (arguments[0] instanceof Request) {
+                           try { arguments[0] = new Request('/api/proxy?url=' + encodeURIComponent(new URL(arguments[0].url, '${targetUrl}').href), arguments[0]); } catch(e){}
+                        }
+                        return originalFetch.apply(this, arguments);
+                    };
+                    const originalXHROpen = XMLHttpRequest.prototype.open;
+                    XMLHttpRequest.prototype.open = function(method, url) {
+                        try {
+                            if (typeof url === 'string' && !url.startsWith('data:')) {
+                                url = '/api/proxy?url=' + encodeURIComponent(new URL(url, '${targetUrl}').href);
+                            }
+                        } catch(e) {}
+                        return originalXHROpen.apply(this, arguments);
+                    };
+                </script>
+            `;
+            $('head').prepend(interceptScript);
+
+            res.send(Buffer.from($.html(), 'utf-8'));
+        } else if (contentType.includes('text/css')) {
+             let css = response.data.toString('utf-8');
+             css = css.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
+                 if (url.startsWith('data:')) return match;
+                 try {
+                     let absoluteUrl = new URL(url, targetUrl).href;
+                     return `url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                 } catch (e) {
+                     return match;
+                 }
+             });
+             css = css.replace(/@import\s+(?:url\()?\s*(['"])(.*?)\1\s*\)?/g, (match, quote, url) => {
+                  if (url.startsWith('data:')) return match;
+                  try {
+                      let absoluteUrl = new URL(url, targetUrl).href;
+                      return `@import url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                  } catch (e) {
+                      return match;
+                  }
+             });
+             res.send(Buffer.from(css, 'utf-8'));
+        } else {
+            // For images, js, etc., just send the binary data
+            res.send(response.data);
+        }
+    } catch (error) {
+        console.error('Proxy Error:', error.message);
+        res.status(error.response ? error.response.status : 500).send(`Proxy Error: ${error.message}`);
+    }
+});
 
 // --- Finance API Routes (Protected) ---
 const financeRoutes = require('./apps/finance/server/routes');

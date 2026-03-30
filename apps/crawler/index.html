@@ -129,8 +129,8 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Start URL</label>
-                    <input type="url" id="task-url" required placeholder="https://example.com">
+                    <label>Target URLs (One per line)</label>
+                    <textarea id="task-urls" rows="3" required placeholder="https://example.com&#10;https://another.com"></textarea>
                 </div>
 
                 <div class="form-group">
@@ -158,17 +158,21 @@
                     <div class="form-group">
                         <label>Primary AI Model</label>
                         <select id="task-primary-model">
-                            <option value="groq">Groq (Llama 3.3 70B)</option>
-                            <option value="gemini">Gemini 2.5 Flash</option>
-                            <option value="openrouter">OpenRouter (Claude 3.5 Sonnet)</option>
+                            <option value="groq|llama-3.3-70b-versatile">Groq (Llama 3.3 70B)</option>
+                            <option value="openrouter|google/gemini-2.0-flash-001">OpenRouter (Gemini 2.0 Flash)</option>
+                            <option value="nvidia|z-ai/glm4.7">NVIDIA (GLM 4.7)</option>
+                            <option value="gemini|gemini-3.1-flash-lite-preview">Google Gemini (3.1 Flash Lite)</option>
+                            <option value="mistral|mistral-small-2603">Mistral (Small)</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Fallback AI Model</label>
                         <select id="task-fallback-model">
-                            <option value="gemini">Gemini 2.5 Flash</option>
-                            <option value="groq">Groq (Llama 3.3 70B)</option>
-                            <option value="openrouter">OpenRouter (Claude 3.5 Sonnet)</option>
+                            <option value="gemini|gemini-3.1-flash-lite-preview">Google Gemini (3.1 Flash Lite)</option>
+                            <option value="groq|llama-3.3-70b-versatile">Groq (Llama 3.3 70B)</option>
+                            <option value="openrouter|google/gemini-2.0-flash-001">OpenRouter (Gemini 2.0 Flash)</option>
+                            <option value="nvidia|z-ai/glm4.7">NVIDIA (GLM 4.7)</option>
+                            <option value="mistral|mistral-small-2603">Mistral (Small)</option>
                         </select>
                     </div>
                 </div>

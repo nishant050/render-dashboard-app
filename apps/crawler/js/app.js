@@ -129,7 +129,7 @@ const App = {
                 </div>
                 <div class="card-title">${t.name}</div>
                 <div style="font-size:0.875rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    ${t.startUrl}
+                    ${(t.startUrls || []).length} Target URLs
                 </div>
                 <div style="font-size:0.8rem; margin-top:0.5rem; color:var(--text-muted);">
                     Next Run: ${new Date(t.nextRunAt).toLocaleString()}<br>
@@ -211,7 +211,7 @@ const App = {
         
         document.getElementById('task-id').value = task._id;
         document.getElementById('task-name').value = task.name;
-        document.getElementById('task-url').value = task.startUrl;
+        document.getElementById('task-urls').value = (task.startUrls || []).join('\n');
         document.getElementById('task-goal').value = task.goal;
         
         // Convert frequencyMinutes back to unit based
@@ -249,7 +249,7 @@ const App = {
 
         const payload = {
             name: document.getElementById('task-name').value,
-            startUrl: document.getElementById('task-url').value,
+            startUrls: document.getElementById('task-urls').value.split('\n').map(u => u.trim()).filter(u => u),
             goal: document.getElementById('task-goal').value,
             frequencyMinutes: freqMinutes,
             primaryModel: document.getElementById('task-primary-model').value,
