@@ -37,6 +37,27 @@ const AI = {
         }
     },
 
+    normalizeModelId(provider, model) {
+        const raw = String(model || '').trim();
+        if (!raw) return raw;
+
+        const normalized = raw.toLowerCase().replace(/[\s_]+/g, '-');
+
+        if (provider === 'cerebras') {
+            if (['glm-4.7', 'glm4.7', 'z-ai/glm4.7', 'zai-glm-4.7'].includes(normalized)) {
+                return 'zai-glm-4.7';
+            }
+        }
+
+        if (provider === 'nvidia') {
+            if (['glm-4.7', 'glm4.7', 'zai-glm-4.7', 'z-ai/glm4.7'].includes(normalized)) {
+                return 'z-ai/glm4.7';
+            }
+        }
+
+        return raw;
+    },
+
     // Task types that can have individual model assignments
     TASK_TYPES: {
         categorize: { label: 'Categorize & Rate', icon: '⭐', desc: 'Star-rating articles' },
@@ -57,7 +78,7 @@ const AI = {
         return {
             provider,
             apiKey,
-            model: selection.model,
+            model: this.normalizeModelId(provider, selection.model),
             baseUrl: this.PROVIDERS[provider]?.baseUrl || ''
         };
     },
@@ -85,12 +106,12 @@ const AI = {
                 return defaultConfig;
             }
             provider = defaultModel.provider;
-            model = defaultModel.model;
+            model = this.normalizeModelId(provider, defaultModel.model);
             apiKey = await db.getSetting(`api_key_${provider}`) || await db.getSetting('ai_api_key') || '';
         } else {
             // 3. Fall back to legacy flat settings
             provider = await db.getSetting('ai_provider') || 'groq';
-            model = await db.getSetting('ai_model') || this.PROVIDERS[provider]?.defaultModel || '';
+            model = this.normalizeModelId(provider, await db.getSetting('ai_model') || this.PROVIDERS[provider]?.defaultModel || '');
             apiKey = await db.getSetting('ai_api_key') || '';
         }
 

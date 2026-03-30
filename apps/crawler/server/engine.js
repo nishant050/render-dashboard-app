@@ -52,6 +52,80 @@ function normalizeAIMessage(message = {}) {
     };
 }
 
+function getCrawlerRemoteBrowserEndpoints() {
+    const endpoints = [];
+
+    if (process.env.CRAWLER_BROWSER_WS_ENDPOINT) {
+        endpoints.push({
+            label: 'Configured remote browser',
+            wsEndpoint: process.env.CRAWLER_BROWSER_WS_ENDPOINT
+        });
+    }
+
+    if (process.env.BROWSER_WS_ENDPOINT && process.env.BROWSER_WS_ENDPOINT !== process.env.CRAWLER_BROWSER_WS_ENDPOINT) {
+        endpoints.push({
+            label: 'Shared remote browser',
+            wsEndpoint: process.env.BROWSER_WS_ENDPOINT
+        });
+    }
+
+    if (process.env.ZENROWS_API_KEY) {
+        endpoints.push({
+            label: 'ZenRows browser',
+            wsEndpoint: `wss://browser.zenrows.com?apikey=${process.env.ZENROWS_API_KEY}&proxy_region=${process.env.ZENROWS_PROXY_REGION || 'global'}`
+        });
+    }
+
+    return endpoints;
+}
+
+function formatBrowserConnectError(error) {
+    const message = error?.message || String(error);
+    if (message.includes('Unexpected server response: 400')) {
+        return `${message}. The remote browser rejected the websocket handshake. Check the browser endpoint, API key, and service quota/access.`;
+    }
+    return message;
+}
+
+async function launchCrawlerBrowser(log) {
+    const remoteEndpoints = getCrawlerRemoteBrowserEndpoints();
+    const errors = [];
+
+    for (const endpoint of remoteEndpoints) {
+        try {
+            log(`\x1b[90m[Browser]\x1b[0m Connecting via ${endpoint.label}...`);
+            const browser = await puppeteer.connect({
+                browserWSEndpoint: endpoint.wsEndpoint,
+                protocolTimeout: 60000
+            });
+            return { browser, mode: endpoint.label };
+        } catch (error) {
+            const formatted = formatBrowserConnectError(error);
+            errors.push(`${endpoint.label}: ${formatted}`);
+            log(`\x1b[33m[Browser Warning]\x1b[0m ${endpoint.label} failed: ${formatted}`);
+        }
+    }
+
+    try {
+        log(`\x1b[90m[Browser]\x1b[0m Launching local Chromium fallback...`);
+        const browser = await puppeteer.launch({
+            headless: true,
+            protocolTimeout: 60000,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
+        });
+        return { browser, mode: 'Local Chromium' };
+    } catch (error) {
+        const formatted = formatBrowserConnectError(error);
+        errors.push(`Local Chromium: ${formatted}`);
+        throw new Error(`Unable to start crawler browser. ${errors.join(' | ')}`);
+    }
+}
+
 // --- Helper to call AI Models ---
 async function callAI(messages, modelString, tools = null) {
     let provider = modelString;
@@ -195,17 +269,11 @@ async function executeCrawlerRun(runId) {
     if (!run || !run.taskId) return;
 
     const task = run.taskId;
-    const zenrowsKey = process.env.ZENROWS_API_KEY;
-    
-    if (!zenrowsKey) {
-        run.status = 'failed';
-        run.error = 'ZENROWS_API_KEY is missing from environment.';
-        return await run.save();
-    }
 
     let browser = null;
+    let log = console.log;
     try {
-        const log = (msg) => {
+        log = (msg) => {
             console.log(msg);
             const plain = typeof msg === 'string' ? msg.replace(/\x1b\[[0-9;]*m/g, '') : msg;
             CrawlerRun.findByIdAndUpdate(run._id, { $push: { activityLog: `[${new Date().toLocaleTimeString()}] ${plain}` } }).catch(()=>{});
@@ -219,10 +287,9 @@ async function executeCrawlerRun(runId) {
         
         if (targetUrls.length === 0) throw new Error("No start URLs provided for this task.");
 
-        log(`\x1b[90m[Browser]\x1b[0m Connecting...`);
-        browser = await puppeteer.connect({
-            browserWSEndpoint: `wss://browser.zenrows.com?apikey=${zenrowsKey}&proxy_region=global`
-        });
+        const browserSession = await launchCrawlerBrowser(log);
+        browser = browserSession.browser;
+        log(`\x1b[90m[Browser]\x1b[0m Ready via ${browserSession.mode}.`);
         
         const page = await browser.newPage();
         log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);

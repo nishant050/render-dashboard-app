@@ -127,7 +127,7 @@ const Settings = {
           <div class="input-group">
             <label class="input-group__label">Model Name</label>
             <input type="text" class="input" id="model-name" placeholder="e.g., llama-3.3-70b-versatile">
-            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Cerebras: llama3.1-8b or qwen-3-235b-a22b-instruct-2507 &bull; NVIDIA: nvidia/llama-3.1-nemotron-70b-instruct &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
+            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Cerebras: llama3.1-8b, qwen-3-235b-a22b-instruct-2507, zai-glm-4.7 &bull; NVIDIA: nvidia/llama-3.1-nemotron-70b-instruct or z-ai/glm4.7 &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
           </div>
           <div class="input-group">
             <label class="input-group__label">Display Label (optional)</label>

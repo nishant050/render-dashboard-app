@@ -6,6 +6,27 @@ const App = {
     pendingScrollToBottom: false,
     renderFrameId: null,
 
+    normalizeModelId(provider, model) {
+        const raw = String(model || '').trim();
+        if (!raw) return raw;
+
+        const normalized = raw.toLowerCase().replace(/[\s_]+/g, '-');
+
+        if (provider === 'cerebras') {
+            if (['glm-4.7', 'glm4.7', 'z-ai/glm4.7', 'zai-glm-4.7'].includes(normalized)) {
+                return 'zai-glm-4.7';
+            }
+        }
+
+        if (provider === 'nvidia') {
+            if (['glm-4.7', 'glm4.7', 'zai-glm-4.7', 'z-ai/glm4.7'].includes(normalized)) {
+                return 'z-ai/glm4.7';
+            }
+        }
+
+        return raw;
+    },
+
     isThinkingPart(part) {
         if (!part || typeof part !== 'object') return false;
         const type = String(part.type || '').toLowerCase();
@@ -253,7 +274,7 @@ const App = {
         const newModel = {
             id: 'm_' + Date.now() + Math.random().toString(36).substr(2, 5),
             provider: provider,
-            model: modelStr,
+            model: this.normalizeModelId(provider, modelStr),
             label: labelStr || modelStr
         };
         
@@ -308,9 +329,14 @@ const App = {
         
         const modelDef = (this.settings.ai_models || []).find(m => m.id === this.selectedModelId);
         if (!modelDef) return this.showToast('Model definition lost.', 'error');
-        
-        const apiKey = this.settings[`api_key_${modelDef.provider}`];
-        if (!apiKey) return this.showToast(`No Universal API Key found for provider: ${modelDef.provider}`, 'error');
+
+        const modelToUse = {
+            ...modelDef,
+            model: this.normalizeModelId(modelDef.provider, modelDef.model)
+        };
+
+        const apiKey = this.settings[`api_key_${modelToUse.provider}`];
+        if (!apiKey) return this.showToast(`No Universal API Key found for provider: ${modelToUse.provider}`, 'error');
 
         // Add to UI as user
         this.chatHistory.push({ role: 'user', content: txt });
@@ -322,7 +348,7 @@ const App = {
         this.chatHistory.push({ role: 'assistant', content: '', reasoning: '' });
         this.renderChatWindow();
         
-        await this.streamChat(modelDef, apiKey, txt, botIdx);
+        await this.streamChat(modelToUse, apiKey, txt, botIdx);
     },
 
     async streamChat(modelDef, apiKey, prompt, botIdx) {
