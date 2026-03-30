@@ -120,6 +120,46 @@ async function getProviderApiKey(provider) {
     return sharedSettings[`api_key_${provider}`] || sharedSettings.ai_api_key || '';
 }
 
+async function callAIWithFallback(messages, primaryModel, fallbackModel, tools, log, label = 'AI') {
+    try {
+        log(`\x1b[90m[${label}]\x1b[0m Thinking with primary model (${primaryModel})...`);
+        return await callAI(messages, primaryModel, tools);
+    } catch (primaryError) {
+        console.warn(`\x1b[31m[${label} Error]\x1b[0m ${primaryError.message}`);
+        if (!fallbackModel || fallbackModel === primaryModel) {
+            throw primaryError;
+        }
+
+        log(`\x1b[33m[${label} Fallback]\x1b[0m Swapping to ${fallbackModel}...`);
+        return await callAI(messages, fallbackModel, tools);
+    }
+}
+
+async function buildRecoverySummary(task, visitedUrls, pageSnapshots, primaryModel, fallbackModel, log) {
+    const snapshotEntries = Array.from(pageSnapshots.entries());
+    if (snapshotEntries.length === 0) {
+        return null;
+    }
+
+    const collectedContext = snapshotEntries.map(([url, text], index) => {
+        return `## Page ${index + 1}\nURL: ${url}\n${String(text || '').slice(0, 12000)}`;
+    }).join('\n\n');
+
+    const recoveryMessages = [
+        {
+            role: 'system',
+            content: 'You are a precise web research assistant. Produce a concise but complete markdown summary from the collected crawler notes. Do not mention missing tools or agent loops. If some details are uncertain, say so briefly.'
+        },
+        {
+            role: 'user',
+            content: `Task: ${task.name}\nGoal: ${task.goal}\nVisited URLs:\n${visitedUrls.join('\n')}\n\nCollected page notes:\n${collectedContext}\n\nWrite the final markdown summary that the crawler should have finalized with.`
+        }
+    ];
+
+    const response = await callAIWithFallback(recoveryMessages, primaryModel, fallbackModel, null, log, 'Recovery AI');
+    return response?.content || response || null;
+}
+
 function getCrawlerRemoteBrowserEndpoints() {
     const endpoints = [];
 
@@ -390,6 +430,9 @@ async function executeCrawlerRun(runId) {
     if (!run || !run.taskId) return;
 
     const task = run.taskId;
+    const pageSnapshots = new Map();
+    const toolFailureCounts = new Map();
+    const MAX_REPEAT_FAILURES_BEFORE_RECOVERY = 5;
 
     let browser = null;
     let log = console.log;
@@ -434,15 +477,7 @@ async function executeCrawlerRun(runId) {
             loopCount++;
             log(`\n\x1b[35m[Engine]\x1b[0m Loop ${loopCount}/${MAX_LOOPS}`);
 
-            let aiMessage;
-            try {
-                log(`\x1b[90m[AI]\x1b[0m Thinking with primary model (${task.primaryModel})...`);
-                aiMessage = await callAI(messages, task.primaryModel, CRAWLER_TOOLS);
-            } catch (aiErr) {
-                console.warn(`\x1b[31m[AI Error]\x1b[0m ${aiErr.message}`);
-                log(`\x1b[33m[AI Fallback]\x1b[0m Swapping to ${task.fallbackModel}...`);
-                aiMessage = await callAI(messages, task.fallbackModel, CRAWLER_TOOLS);
-            }
+            const aiMessage = await callAIWithFallback(messages, task.primaryModel, task.fallbackModel, CRAWLER_TOOLS, log, 'AI');
 
             messages.push(aiMessage);
 
@@ -451,6 +486,7 @@ async function executeCrawlerRun(runId) {
                     const funcName = toolCall.function.name;
                     const args = JSON.parse(toolCall.function.arguments || '{}');
                     let toolResponse = "";
+                    const toolSignature = `${funcName}:${JSON.stringify(args)}`;
 
                     log(`\x1b[92m[Agent => Tool]\x1b[0m \x1b[32m${funcName}\x1b[0m (${JSON.stringify(args).substring(0, 100)}...)`);
 
@@ -458,6 +494,8 @@ async function executeCrawlerRun(runId) {
                         if (funcName === 'get_page_content') {
                             const text = await page.evaluate(() => document.body.innerText);
                             toolResponse = text.substring(0, 40000); 
+                            pageSnapshots.set(page.url(), text.substring(0, 15000));
+                            toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Extracted ${toolResponse.length} characters.`);
                         } 
                         else if (funcName === 'click') {
@@ -466,6 +504,7 @@ async function executeCrawlerRun(runId) {
                                 page.click(args.selector)
                             ]);
                             toolResponse = `Navigated. New URL: ${page.url()}. Run get_page_content.`;
+                            toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Navigated to ${page.url()}`);
                             
                             if (!run.visitedUrls.includes(page.url())) {
@@ -476,6 +515,7 @@ async function executeCrawlerRun(runId) {
                         else if (funcName === 'goto_url') {
                             await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 60000 });
                             toolResponse = `Navigated to: ${page.url()}. Run get_page_content.`;
+                            toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Switched to ${page.url()}`);
                             
                             if (!run.visitedUrls.includes(page.url())) {
@@ -505,6 +545,7 @@ async function executeCrawlerRun(runId) {
                             run.attachments.push({ name: args.name, url: relativeUrl });
                             await run.save();
                             toolResponse = `Attachment saved as ${relativeUrl}`;
+                            toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Attachment saved.`);
                         }
                         else if (funcName === 'finalize') {
@@ -518,8 +559,38 @@ async function executeCrawlerRun(runId) {
                             break; 
                         }
                     } catch (toolErr) {
-                        toolResponse = `Error executing tool: ${toolErr.message}`;
+                        const failureCount = (toolFailureCounts.get(toolSignature) || 0) + 1;
+                        toolFailureCounts.set(toolSignature, failureCount);
+                        toolResponse = `Error executing tool: ${toolErr.message}. This exact action has failed ${failureCount} time(s). Do not repeat the same action if it keeps failing. Choose another approach or finalize with the information already collected.`;
                         log(`\x1b[31m[Tool Error]\x1b[0m ${toolErr.message}`);
+
+                        if (failureCount >= 3) {
+                            messages.push({
+                                role: 'user',
+                                content: `The exact tool action ${toolSignature} has already failed ${failureCount} times. Stop retrying it. If you have enough information, call finalize now with the best available summary.`
+                            });
+                        }
+
+                        if (failureCount >= MAX_REPEAT_FAILURES_BEFORE_RECOVERY && pageSnapshots.size > 0) {
+                            log(`\x1b[33m[Recovery]\x1b[0m Repeated tool failure detected. Generating summary from collected pages...`);
+                            const recoveredSummary = await buildRecoverySummary(task, run.visitedUrls || [], pageSnapshots, task.primaryModel, task.fallbackModel, log);
+                            if (recoveredSummary) {
+                                run.finalSummary = recoveredSummary;
+                                run.status = 'success';
+                                run.endTime = new Date();
+                                await run.save();
+                                isFinished = true;
+                                toolResponse = 'Recovery summary generated after repeated tool failures.';
+                                log(`\x1b[92m[Recovery]\x1b[0m Summary generated and run finalized.`);
+                                messages.push({
+                                    role: 'tool',
+                                    tool_call_id: toolCall.id,
+                                    name: funcName,
+                                    content: toolResponse
+                                });
+                                break;
+                            }
+                        }
                     }
 
                     messages.push({
@@ -540,8 +611,15 @@ async function executeCrawlerRun(runId) {
 
         if (!isFinished) {
             log(`\x1b[31m[Timeout]\x1b[0m Max loops reached without finalize.`);
-            run.status = 'failed';
-            run.error = 'Max loops reached without finalize tool call.';
+            const recoveredSummary = await buildRecoverySummary(task, run.visitedUrls || [], pageSnapshots, task.primaryModel, task.fallbackModel, log);
+            if (recoveredSummary) {
+                run.finalSummary = recoveredSummary;
+                run.status = 'success';
+                log(`\x1b[92m[Recovery]\x1b[0m Timeout summary generated from collected pages.`);
+            } else {
+                run.status = 'failed';
+                run.error = 'Max loops reached without finalize tool call.';
+            }
         }
     } catch (err) {
         console.error(`\x1b[31m[Crawler Fatal Error]\x1b[0m`, err);
