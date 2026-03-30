@@ -359,6 +359,7 @@ class NewsHuntDB {
       // Store env keys in provider-specific slots (in-memory only)
       if (envKeys.groq) await this.setSetting('api_key_groq', envKeys.groq, { skipSync: true });
       if (envKeys.openrouter) await this.setSetting('api_key_openrouter', envKeys.openrouter, { skipSync: true });
+      if (envKeys.nvidia) await this.setSetting('api_key_nvidia', envKeys.nvidia, { skipSync: true });
       if (envKeys.gemini) await this.setSetting('api_key_gemini', envKeys.gemini, { skipSync: true });
       if (envKeys.mistral) await this.setSetting('api_key_mistral', envKeys.mistral, { skipSync: true });
 
@@ -366,7 +367,7 @@ class NewsHuntDB {
       const currentProvider = await this.getSetting('ai_provider');
       if (!currentProvider) {
         // Pick the first available env key as default
-        const firstProvider = envKeys.groq ? 'groq' : envKeys.openrouter ? 'openrouter' : envKeys.gemini ? 'gemini' : envKeys.mistral ? 'mistral' : null;
+        const firstProvider = envKeys.groq ? 'groq' : envKeys.openrouter ? 'openrouter' : envKeys.nvidia ? 'nvidia' : envKeys.gemini ? 'gemini' : envKeys.mistral ? 'mistral' : null;
         if (firstProvider) {
           await this.setSetting('ai_provider', firstProvider, { skipSync: true });
           await this.setSetting('ai_api_key', envKeys[firstProvider], { skipSync: true });

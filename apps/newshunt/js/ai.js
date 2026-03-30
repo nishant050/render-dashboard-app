@@ -41,20 +41,31 @@ const AI = {
         summarize:  { label: 'Summarize', icon: '📝', desc: 'Topic & group summaries' }
     },
 
+    async _buildConfigFromSelection(selection) {
+        if (!selection?.provider || !selection?.model) return null;
+        const provider = selection.provider;
+        if (!this.PROVIDERS[provider]) return null;
+
+        const apiKey = await db.getSetting(`api_key_${provider}`) || await db.getSetting('ai_api_key') || '';
+        if (!apiKey) return null;
+
+        return {
+            provider,
+            apiKey,
+            model: selection.model,
+            baseUrl: this.PROVIDERS[provider]?.baseUrl || ''
+        };
+    },
+
     // Get current provider config from settings
     // Accepts an optional `task` to use a task-specific model override
     async getConfig(task) {
         // 1. Check for task-specific model assignment
         if (task) {
             const taskModel = await db.getSetting(`task_model_${task}`);
-            if (taskModel && taskModel.provider && taskModel.model) {
-                const apiKey = await db.getSetting(`api_key_${taskModel.provider}`) || await db.getSetting('ai_api_key') || '';
-                return {
-                    provider: taskModel.provider,
-                    apiKey,
-                    model: taskModel.model,
-                    baseUrl: this.PROVIDERS[taskModel.provider]?.baseUrl || ''
-                };
+            const taskConfig = await this._buildConfigFromSelection(taskModel);
+            if (taskConfig) {
+                return taskConfig;
             }
         }
 
@@ -64,6 +75,10 @@ const AI = {
         let provider, model, apiKey;
         
         if (defaultModel && defaultModel.provider && defaultModel.model) {
+            const defaultConfig = await this._buildConfigFromSelection(defaultModel);
+            if (defaultConfig) {
+                return defaultConfig;
+            }
             provider = defaultModel.provider;
             model = defaultModel.model;
             apiKey = await db.getSetting(`api_key_${provider}`) || await db.getSetting('ai_api_key') || '';
@@ -217,6 +232,181 @@ const AI = {
         };
     },
 
+    _mergeSystemIntoUserMessages(messages) {
+        const systemText = messages
+            .filter(msg => msg?.role === 'system' && msg.content)
+            .map(msg => String(msg.content).trim())
+            .filter(Boolean)
+            .join('\n\n');
+
+        if (!systemText) return messages;
+
+        const nonSystemMessages = messages
+            .filter(msg => msg?.role !== 'system')
+            .map(msg => ({ ...msg }));
+
+        const mergedInstruction = `Follow these instructions carefully:\n${systemText}`;
+        const firstUserIndex = nonSystemMessages.findIndex(msg => msg?.role === 'user');
+
+        if (firstUserIndex >= 0) {
+            nonSystemMessages[firstUserIndex].content = `${mergedInstruction}\n\n${nonSystemMessages[firstUserIndex].content || ''}`.trim();
+            return nonSystemMessages;
+        }
+
+        return [{ role: 'user', content: mergedInstruction }, ...nonSystemMessages];
+    },
+
+    _buildCompatibilityVariants(messages, options = {}) {
+        const variants = [];
+        const seen = new Set();
+
+        const pushVariant = (variantMessages, variantOptions = {}) => {
+            const key = JSON.stringify({
+                messages: variantMessages,
+                response_format: variantOptions.response_format || null
+            });
+            if (seen.has(key)) return;
+            seen.add(key);
+            variants.push({
+                messages: variantMessages,
+                options: {
+                    ...options,
+                    ...variantOptions
+                }
+            });
+        };
+
+        pushVariant(messages, {});
+        if (options.response_format) {
+            pushVariant(messages, { response_format: undefined });
+        }
+
+        const mergedMessages = this._mergeSystemIntoUserMessages(messages);
+        if (mergedMessages !== messages) {
+            pushVariant(mergedMessages, {});
+            if (options.response_format) {
+                pushVariant(mergedMessages, { response_format: undefined });
+            }
+        }
+
+        return variants;
+    },
+
+    async _readErrorResponse(response, label = 'API Error') {
+        let errorText = '';
+        try {
+            const errorJson = await response.json();
+            errorText = errorJson?.error?.message || errorJson?.message || JSON.stringify(errorJson);
+        } catch {
+            errorText = await response.text().catch(() => '');
+        }
+
+        return errorText || `${label}: ${response.status}`;
+    },
+
+    _formatOpenAIHeaders(config) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`
+        };
+
+        if (config.provider === 'openrouter') {
+            headers['HTTP-Referer'] = window.location.href;
+            headers['X-Title'] = 'NewsHunt';
+        }
+
+        return headers;
+    },
+
+    _buildOpenAIBody(config, messages, options = {}, stream = false) {
+        let formattedMessages = messages;
+        if (config.provider === 'mistral') {
+            formattedMessages = this._formatMistralMessages(messages);
+        }
+
+        return {
+            model: config.model,
+            messages: formattedMessages,
+            temperature: options.temperature ?? (stream ? 0.5 : 0.3),
+            max_tokens: options.max_tokens ?? (stream ? 8192 : 4096),
+            ...(stream ? { stream: true } : {}),
+            ...(options.response_format ? { response_format: options.response_format } : {})
+        };
+    },
+
+    async _callOpenAINonStreamingAttempt(config, messages, options = {}) {
+        const response = await fetch(config.baseUrl, {
+            method: 'POST',
+            headers: this._formatOpenAIHeaders(config),
+            body: JSON.stringify(this._buildOpenAIBody(config, messages, options, false))
+        });
+
+        if (!response.ok) {
+            throw new Error(await this._readErrorResponse(response));
+        }
+
+        const data = await response.json();
+        return this._extractOpenAIMessageParts(data.choices?.[0]?.message || {});
+    },
+
+    async _callOpenAIStreamingAttempt(config, messages, onChunk, options = {}) {
+        const response = await fetch(config.baseUrl, {
+            method: 'POST',
+            headers: this._formatOpenAIHeaders(config),
+            body: JSON.stringify(this._buildOpenAIBody(config, messages, options, true))
+        });
+
+        if (!response.ok) {
+            throw new Error(await this._readErrorResponse(response));
+        }
+
+        const reader = response.body?.getReader?.();
+        if (!reader) {
+            throw new Error('Streaming not supported by this response.');
+        }
+
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let fullReasoning = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                const data = trimmed.slice(6);
+                if (data === '[DONE]') continue;
+
+                try {
+                    const parsed = JSON.parse(data);
+                    const { content, reasoning } = this._extractOpenAIMessageParts(parsed.choices?.[0]?.delta || {});
+                    if (reasoning) {
+                        fullReasoning += reasoning;
+                        options.onReasoningChunk?.(reasoning, fullReasoning);
+                    }
+                    if (content) {
+                        fullContent += content;
+                        onChunk(content, fullContent);
+                    }
+                } catch (e) {
+                    // Skip malformed chunks
+                }
+            }
+        }
+
+        return {
+            content: fullContent,
+            reasoning: fullReasoning
+        };
+    },
+
     // ==========================================
     // GEMINI SPECIFIC HELPERS
     // ==========================================
@@ -366,50 +556,19 @@ const AI = {
             return this._callGemini(config, messages, options);
         }
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`
-        };
+        const variants = this._buildCompatibilityVariants(messages, options);
+        let lastError = null;
 
-        // ... [OpenRouter Logic]
-        if (config.provider === 'openrouter') {
-            headers['HTTP-Referer'] = window.location.href;
-            headers['X-Title'] = 'NewsHunt';
+        for (const variant of variants) {
+            try {
+                const result = await this._callOpenAINonStreamingAttempt(config, variant.messages, variant.options);
+                return result.content;
+            } catch (error) {
+                lastError = error;
+            }
         }
 
-        let formattedMessages = messages;
-        if (config.provider === 'mistral') {
-            formattedMessages = this._formatMistralMessages(messages);
-        }
-
-        const body = {
-            model: config.model,
-            messages: formattedMessages,
-            temperature: options.temperature ?? 0.3,
-            max_tokens: options.max_tokens ?? 4096,
-            ...(options.response_format && { response_format: options.response_format })
-        };
-
-        if (config.provider === 'nvidia') {
-            body.chat_template_kwargs = {
-                enable_thinking: true,
-                clear_thinking: false
-            };
-        }
-
-        const response = await fetch(config.baseUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error?.message || `API Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        return this._extractOpenAIMessageParts(data.choices?.[0]?.message || {}).content;
+        throw lastError || new Error('AI request failed.');
     },
 
     // Make a streaming API call
@@ -421,85 +580,38 @@ const AI = {
             return this._callGeminiStreaming(config, messages, onChunk, options);
         }
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`
-        };
+        const variants = this._buildCompatibilityVariants(messages, options);
+        let lastError = null;
 
-        if (config.provider === 'openrouter') {
-            headers['HTTP-Referer'] = window.location.href;
-            headers['X-Title'] = 'NewsHunt';
-        }
-
-        let formattedMessages = messages;
-        if (config.provider === 'mistral') {
-            formattedMessages = this._formatMistralMessages(messages);
-        }
-
-        const body = {
-            model: config.model,
-            messages: formattedMessages,
-            temperature: options.temperature ?? 0.5,
-            max_tokens: options.max_tokens ?? 8192,
-            stream: true
-        };
-
-        if (config.provider === 'nvidia') {
-            body.chat_template_kwargs = {
-                enable_thinking: true,
-                clear_thinking: false
-            };
-        }
-
-        const response = await fetch(config.baseUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error?.message || `API Error: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullContent = '';
-        let fullReasoning = '';
-        let buffer = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || !trimmed.startsWith('data: ')) continue;
-                const data = trimmed.slice(6);
-                if (data === '[DONE]') continue;
-
-                try {
-                    const parsed = JSON.parse(data);
-                    const { content, reasoning } = this._extractOpenAIMessageParts(parsed.choices?.[0]?.delta || {});
-                    if (reasoning) {
-                        fullReasoning += reasoning;
-                        options.onReasoningChunk?.(reasoning, fullReasoning);
+        for (const variant of variants) {
+            try {
+                const streamed = await this._callOpenAIStreamingAttempt(config, variant.messages, onChunk, variant.options);
+                if (streamed.content || streamed.reasoning) {
+                    if (!streamed.content) {
+                        const fallback = await this._callOpenAINonStreamingAttempt(config, variant.messages, variant.options);
+                        if (fallback.reasoning) options.onReasoningChunk?.(fallback.reasoning, fallback.reasoning);
+                        if (fallback.content) onChunk(fallback.content, fallback.content);
+                        return fallback.content;
                     }
-                    if (content) {
-                        fullContent += content;
-                        onChunk(content, fullContent);
-                    }
-                } catch (e) {
-                    // Skip malformed chunks
+                    return streamed.content;
                 }
+            } catch (error) {
+                lastError = error;
             }
         }
 
-        return fullContent;
+        for (const variant of variants) {
+            try {
+                const fallback = await this._callOpenAINonStreamingAttempt(config, variant.messages, variant.options);
+                if (fallback.reasoning) options.onReasoningChunk?.(fallback.reasoning, fallback.reasoning);
+                if (fallback.content) onChunk(fallback.content, fallback.content);
+                return fallback.content;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        throw lastError || new Error('AI request failed.');
     },
 
     // ==========================================

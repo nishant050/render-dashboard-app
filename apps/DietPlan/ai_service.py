@@ -326,6 +326,7 @@ def get_api_key(model: dict) -> str:
         "openrouter": "OPENROUTER_API_KEY",
         "groq": "GROQ_API_KEY",
         "nvidia": "NVIDIA_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
     }
     env_name = env_map.get(provider, f"{provider.upper()}_API_KEY")
     return (os.environ.get(env_name, "")).strip()
@@ -356,10 +357,8 @@ async def get_candidate_models() -> list[dict]:
 
     add_model(default_model)
 
-    for provider_name in ("nvidia", "openrouter", "groq"):
-        for model in all_models:
-            if (model.get("provider") or "").lower() == provider_name:
-                add_model(model)
+    for model in all_models:
+        add_model(model)
 
     return ordered
 
@@ -1265,12 +1264,6 @@ def build_payload(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-
-    if model["provider"] == "nvidia":
-        payload["chat_template_kwargs"] = {
-            "enable_thinking": True,
-            "clear_thinking": False
-        }
 
     return payload
 

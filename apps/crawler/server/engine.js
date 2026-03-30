@@ -116,10 +116,6 @@ async function callAI(messages, modelString, tools = null) {
         payload.tool_choice = 'auto';
     }
 
-    if (provider === 'nvidia') {
-        payload.chat_template_kwargs = { enable_thinking: true, clear_thinking: false };
-    }
-
     const response = await axios.post(baseURL, payload, { headers, timeout: 60000 });
     return normalizeAIMessage(response.data.choices[0].message || {});
 }

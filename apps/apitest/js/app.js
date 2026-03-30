@@ -363,10 +363,6 @@ const App = {
                 temperature: 0.7,
                 max_tokens: 4096
             };
-            
-            if (modelDef.provider === 'nvidia') {
-                body.chat_template_kwargs = { enable_thinking: true, clear_thinking: false };
-            }
         }
 
         try {

@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const PROXY_EVENT = 'proxy:navigation';
     const urlForm = document.getElementById('url-form');
     const urlInput = document.getElementById('url-input');
     const browserView = document.getElementById('browser-view');
@@ -8,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let history = [];
     let currentHistoryIndex = -1;
+    let lastObservedProxyLocation = '';
 
     // Default startup URL
     const initialUrl = 'https://duckduckgo.com';
@@ -47,40 +49,119 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadUrl(url, pushToHistory = true) {
         urlInput.value = url;
         loadingOverlay.classList.add('active');
+        lastObservedProxyLocation = '';
         
         // Route through backend proxy API
         const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
         browserView.src = proxyUrl;
         
         if (pushToHistory) {
-            // Trim forward history if we navigated back then went to new page
-            history = history.slice(0, currentHistoryIndex + 1);
-            history.push(url);
-            currentHistoryIndex++;
+            syncHistory(url, 'push');
         }
     }
 
-    browserView.addEventListener('load', () => {
-        loadingOverlay.classList.remove('active');
-        
-        // Due to proxy routing logic, we try to detect if iframe internally navigated
-        // Because of same-origin policy, we CAN read the iframe url since it resolves to our /api/proxy
+    function syncHistory(url, mode = 'push') {
+        if (!url) return;
+
+        urlInput.value = url;
+
+        if (mode === 'skip') {
+            return;
+        }
+
+        if (mode === 'replace' && currentHistoryIndex >= 0) {
+            history[currentHistoryIndex] = url;
+            return;
+        }
+
+        if (history[currentHistoryIndex] === url) {
+            return;
+        }
+
+        history = history.slice(0, currentHistoryIndex + 1);
+        history.push(url);
+        currentHistoryIndex++;
+    }
+
+    function shouldReplaceCurrentHistory(url) {
+        if (currentHistoryIndex < 0 || !history[currentHistoryIndex]) {
+            return false;
+        }
+
+        try {
+            const currentUrl = new URL(history[currentHistoryIndex]);
+            const nextUrl = new URL(url);
+            return currentUrl.origin === nextUrl.origin && currentUrl.pathname === nextUrl.pathname;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function readTargetUrlFromIframe() {
         try {
             const iframeLocation = browserView.contentWindow.location;
-            const searchParams = new URLSearchParams(iframeLocation.search);
-            const currentProxyUrl = searchParams.get('url');
-            if (currentProxyUrl && currentProxyUrl !== urlInput.value) {
-                urlInput.value = currentProxyUrl;
-                
-                // Add to history silently
-                if (history[currentHistoryIndex] !== currentProxyUrl) {
-                    history = history.slice(0, currentHistoryIndex + 1);
-                    history.push(currentProxyUrl);
-                    currentHistoryIndex++;
-                }
+            if (iframeLocation.pathname !== '/api/proxy') {
+                return null;
             }
-        } catch(e) {
-             console.log("Iframe read restricted (expected for some strict CORS boundaries)");
+            const searchParams = new URLSearchParams(iframeLocation.search);
+            const targetUrl = searchParams.get('url');
+            if (!targetUrl) {
+                return null;
+            }
+
+            const resolvedUrl = new URL(targetUrl);
+            searchParams.forEach((value, key) => {
+                if (key !== 'url') {
+                    resolvedUrl.searchParams.append(key, value);
+                }
+            });
+
+            return resolvedUrl.toString();
+        } catch (error) {
+            return null;
         }
+    }
+
+    function readIframeLocationHref() {
+        try {
+            return browserView.contentWindow.location.href;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function syncFromIframe() {
+        const currentProxyUrl = readTargetUrlFromIframe();
+        if (!currentProxyUrl) {
+            return;
+        }
+
+        syncHistory(currentProxyUrl, shouldReplaceCurrentHistory(currentProxyUrl) ? 'replace' : 'push');
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.source !== browserView.contentWindow) return;
+        if (event.data?.type !== PROXY_EVENT || typeof event.data.url !== 'string') return;
+
+        loadingOverlay.classList.remove('active');
+        syncHistory(event.data.url, 'push');
     });
+
+    browserView.addEventListener('load', () => {
+        loadingOverlay.classList.remove('active');
+        lastObservedProxyLocation = readIframeLocationHref() || lastObservedProxyLocation;
+        syncFromIframe();
+    });
+
+    window.setInterval(() => {
+        const iframeLocationHref = readIframeLocationHref();
+        if (!iframeLocationHref || iframeLocationHref === lastObservedProxyLocation) {
+            return;
+        }
+
+        lastObservedProxyLocation = iframeLocationHref;
+        loadingOverlay.classList.remove('active');
+        syncFromIframe();
+    }, 250);
 });

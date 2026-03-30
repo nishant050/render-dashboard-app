@@ -1,7 +1,13 @@
-DietPlan Error: INFO:     Started server process [13376]
-INFO:     Waiting for application startup.
-
 [YT Downloader] ffmpeg probe failed: spawn ffmpeg.exe ENOENT
+DietPlan Error: INFO:     Started server process [24512]
+
+DietPlan Error: INFO:     Waiting for application startup.
+
 DietPlan Error: INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8005 (Press CTRL+C to quit)
 
+(node:2968) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2968) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+(node:2968) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+(node:2968) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
