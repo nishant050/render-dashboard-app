@@ -52,6 +52,74 @@ function normalizeAIMessage(message = {}) {
     };
 }
 
+let cachedSharedApiSettings = null;
+let cachedSharedApiSettingsAt = 0;
+
+function normalizeCrawlerModelSelection(modelString = '') {
+    let provider = String(modelString || '').trim();
+    let actualModel = String(modelString || '').trim();
+
+    if (actualModel.includes('|')) {
+        [provider, actualModel] = actualModel.split('|');
+    } else {
+        if (actualModel === 'groq') {
+            provider = 'groq';
+            actualModel = 'llama-3.3-70b-versatile';
+        } else if (actualModel === 'gemini') {
+            provider = 'openrouter';
+            actualModel = 'google/gemini-2.5-flash';
+        } else if (actualModel === 'openrouter') {
+            provider = 'openrouter';
+            actualModel = 'anthropic/claude-3.5-sonnet:beta';
+        } else {
+            provider = 'groq';
+        }
+    }
+
+    const normalizedModel = actualModel.toLowerCase().replace(/[\s_]+/g, '-');
+    if (provider === 'cerebras' && ['glm-4.7', 'glm4.7', 'z-ai/glm4.7', 'zai-glm-4.7'].includes(normalizedModel)) {
+        actualModel = 'zai-glm-4.7';
+    }
+    if (provider === 'nvidia' && ['glm-4.7', 'glm4.7', 'z-ai/glm4.7', 'zai-glm-4.7'].includes(normalizedModel)) {
+        actualModel = 'z-ai/glm4.7';
+    }
+
+    return { provider, actualModel };
+}
+
+async function getSharedApiSettings() {
+    const now = Date.now();
+    if (cachedSharedApiSettings && (now - cachedSharedApiSettingsAt) < 30000) {
+        return cachedSharedApiSettings;
+    }
+
+    try {
+        const db = mongoose.connection.db;
+        const newshuntDoc = await db.collection('newshuntdatas').findOne({});
+        cachedSharedApiSettings = newshuntDoc?.settings || {};
+        cachedSharedApiSettingsAt = now;
+        return cachedSharedApiSettings;
+    } catch (error) {
+        return {};
+    }
+}
+
+async function getProviderApiKey(provider) {
+    const envKeyMap = {
+        groq: process.env.GROQ_API_KEY,
+        openrouter: process.env.OPENROUTER_API_KEY,
+        cerebras: process.env.CEREBRAS_API_KEY,
+        nvidia: process.env.NVIDIA_API_KEY,
+        mistral: process.env.MISTRAL_API_KEY,
+        gemini: process.env.GEMINI_API_KEY
+    };
+
+    if (envKeyMap[provider]) return envKeyMap[provider];
+
+    const sharedSettings = await getSharedApiSettings();
+    return sharedSettings[`api_key_${provider}`] || sharedSettings.ai_api_key || '';
+}
+
 function getCrawlerRemoteBrowserEndpoints() {
     const endpoints = [];
 
@@ -186,17 +254,7 @@ async function launchCrawlerBrowser(log) {
 
 // --- Helper to call AI Models ---
 async function callAI(messages, modelString, tools = null) {
-    let provider = modelString;
-    let actualModel = modelString;
-    
-    if (modelString.includes('|')) {
-        [provider, actualModel] = modelString.split('|');
-    } else {
-        if (modelString === 'groq') { provider = 'groq'; actualModel = 'llama-3.3-70b-versatile'; }
-        else if (modelString === 'gemini') { provider = 'openrouter'; actualModel = 'google/gemini-2.5-flash'; }
-        else if (modelString === 'openrouter') { provider = 'openrouter'; actualModel = 'anthropic/claude-3.5-sonnet:beta'; }
-        else provider = 'groq';
-    }
+    const { provider, actualModel } = normalizeCrawlerModelSelection(modelString);
 
     let apiKey = '';
     let baseURL = '';
@@ -204,29 +262,34 @@ async function callAI(messages, modelString, tools = null) {
 
     switch (provider) {
         case 'groq':
-            apiKey = process.env.GROQ_API_KEY;
+            apiKey = await getProviderApiKey('groq');
             baseURL = 'https://api.groq.com/openai/v1/chat/completions';
             headers['Authorization'] = `Bearer ${apiKey}`;
             break;
         case 'openrouter':
-            apiKey = process.env.OPENROUTER_API_KEY;
+            apiKey = await getProviderApiKey('openrouter');
             baseURL = 'https://openrouter.ai/api/v1/chat/completions';
             headers['Authorization'] = `Bearer ${apiKey}`;
             headers['HTTP-Referer'] = 'http://localhost:3000';
             headers['X-Title'] = 'Dashboard Crawler';
             break;
+        case 'cerebras':
+            apiKey = await getProviderApiKey('cerebras');
+            baseURL = 'https://api.cerebras.ai/v1/chat/completions';
+            headers['Authorization'] = `Bearer ${apiKey}`;
+            break;
         case 'nvidia':
-            apiKey = process.env.NVIDIA_API_KEY;
+            apiKey = await getProviderApiKey('nvidia');
             baseURL = 'https://integrate.api.nvidia.com/v1/chat/completions';
             headers['Authorization'] = `Bearer ${apiKey}`;
             break;
         case 'mistral':
-            apiKey = process.env.MISTRAL_API_KEY;
+            apiKey = await getProviderApiKey('mistral');
             baseURL = 'https://api.mistral.ai/v1/chat/completions';
             headers['Authorization'] = `Bearer ${apiKey}`;
             break;
         case 'gemini':
-            apiKey = process.env.GEMINI_API_KEY;
+            apiKey = await getProviderApiKey('gemini');
             baseURL = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
             headers['Authorization'] = `Bearer ${apiKey}`;
             break;
