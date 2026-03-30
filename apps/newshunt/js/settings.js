@@ -86,6 +86,7 @@ const Settings = {
             <select class="input" id="add-provider">
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="cerebras">Cerebras</option>
               <option value="nvidia">NVIDIA</option>
               <option value="gemini">Google Gemini</option>
               <option value="mistral">Mistral</option>
@@ -117,6 +118,7 @@ const Settings = {
             <select class="input" id="model-provider">
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="cerebras">Cerebras</option>
               <option value="nvidia">NVIDIA</option>
               <option value="gemini">Google Gemini</option>
               <option value="mistral">Mistral</option>
@@ -125,13 +127,14 @@ const Settings = {
           <div class="input-group">
             <label class="input-group__label">Model Name</label>
             <input type="text" class="input" id="model-name" placeholder="e.g., llama-3.3-70b-versatile">
-            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; NVIDIA: nvidia/llama-3.1-nemotron-70b-instruct &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
+            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Cerebras: llama3.1-8b or qwen-3-235b-a22b-instruct-2507 &bull; NVIDIA: nvidia/llama-3.1-nemotron-70b-instruct &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
           </div>
           <div class="input-group">
             <label class="input-group__label">Display Label (optional)</label>
             <input type="text" class="input" id="model-label" placeholder="e.g., My Fast Model">
           </div>
         </div>
+        <p class="settings-card__desc" style="margin-top: var(--space-3)">Cerebras limits: <code>llama3.1-8b</code> (Production, 8,192 context, 30 req/min, 60,000 tok/min) and <code>qwen-3-235b-a22b-instruct-2507</code> (Preview, 65,536 context, 30 req/min, 30,000 tok/min).</p>
         <button class="btn btn--primary" onclick="Settings.addModel()" style="margin-top: var(--space-4)">
           ➕ Add Model
         </button>
@@ -166,11 +169,12 @@ const Settings = {
   async _renderSavedKeys(settings) {
     const groqKey = settings.api_key_groq;
     const openrouterKey = settings.api_key_openrouter;
+    const cerebrasKey = settings.api_key_cerebras;
     const nvidiaKey = settings.api_key_nvidia;
     const geminiKey = settings.api_key_gemini;
     const mistralKey = settings.api_key_mistral;
 
-    if (!groqKey && !openrouterKey && !nvidiaKey && !geminiKey && !mistralKey) {
+    if (!groqKey && !openrouterKey && !cerebrasKey && !nvidiaKey && !geminiKey && !mistralKey) {
       return '<p class="text-muted">No API keys saved yet.</p>';
     }
 
@@ -193,6 +197,16 @@ const Settings = {
             <span class="api-key-item__masked">••••••••${openrouterKey.slice(-6)}</span>
           </div>
           <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('openrouter')">🗑️</button>
+        </div>`;
+    }
+    if (cerebrasKey) {
+      html += `
+        <div class="api-key-item">
+          <div class="api-key-item__info">
+            <span class="api-key-item__provider">Cerebras</span>
+            <span class="api-key-item__masked">â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢${cerebrasKey.slice(-6)}</span>
+          </div>
+          <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('cerebras')">ðŸ—‘ï¸</button>
         </div>`;
     }
     if (geminiKey) {
@@ -263,6 +277,7 @@ const Settings = {
 
     let providerName = 'Groq';
     if (provider === 'openrouter') providerName = 'OpenRouter';
+    if (provider === 'cerebras') providerName = 'Cerebras';
     if (provider === 'nvidia') providerName = 'NVIDIA';
     if (provider === 'gemini') providerName = 'Google Gemini';
     if (provider === 'mistral') providerName = 'Mistral';

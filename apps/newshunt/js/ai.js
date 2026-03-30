@@ -1,5 +1,5 @@
 // ============================================
-// NewsHunt — AI Integration (Groq & OpenRouter)
+// NewsHunt - AI Integration
 // ============================================
 
 const AI = {
@@ -13,6 +13,11 @@ const AI = {
             name: 'OpenRouter',
             baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
             defaultModel: 'google/gemini-2.0-flash-001'
+        },
+        cerebras: {
+            name: 'Cerebras',
+            baseUrl: 'https://api.cerebras.ai/v1/chat/completions',
+            defaultModel: 'llama3.1-8b'
         },
         nvidia: {
             name: 'NVIDIA',

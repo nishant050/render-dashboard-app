@@ -1752,6 +1752,7 @@ app.get('/api/newshunt/ai-config', (req, res) => {
     const config = {};
     if (process.env.GROQ_API_KEY) config.groq = process.env.GROQ_API_KEY;
     if (process.env.OPENROUTER_API_KEY) config.openrouter = process.env.OPENROUTER_API_KEY;
+    if (process.env.CEREBRAS_API_KEY) config.cerebras = process.env.CEREBRAS_API_KEY;
     if (process.env.NVIDIA_API_KEY) config.nvidia = process.env.NVIDIA_API_KEY;
     if (process.env.GEMINI_API_KEY) config.gemini = process.env.GEMINI_API_KEY;
     if (process.env.MISTRAL_API_KEY) config.mistral = process.env.MISTRAL_API_KEY;

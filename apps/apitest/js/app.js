@@ -163,6 +163,7 @@ const App = {
             // Mirror NewsHunt behavior: use env keys as fallback without overwriting explicit saved keys.
             if (envKeys.groq && !this.settings.api_key_groq) this.settings.api_key_groq = envKeys.groq;
             if (envKeys.openrouter && !this.settings.api_key_openrouter) this.settings.api_key_openrouter = envKeys.openrouter;
+            if (envKeys.cerebras && !this.settings.api_key_cerebras) this.settings.api_key_cerebras = envKeys.cerebras;
             if (envKeys.nvidia && !this.settings.api_key_nvidia) this.settings.api_key_nvidia = envKeys.nvidia;
             if (envKeys.gemini && !this.settings.api_key_gemini) this.settings.api_key_gemini = envKeys.gemini;
             if (envKeys.mistral && !this.settings.api_key_mistral) this.settings.api_key_mistral = envKeys.mistral;
@@ -328,6 +329,7 @@ const App = {
         const baseUrlMap = {
             groq: 'https://api.groq.com/openai/v1/chat/completions',
             openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+            cerebras: 'https://api.cerebras.ai/v1/chat/completions',
             nvidia: '/api/ai/nvidia-proxy',
             mistral: 'https://api.mistral.ai/v1/chat/completions',
         };
