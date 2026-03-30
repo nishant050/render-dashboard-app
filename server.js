@@ -95,6 +95,7 @@ const crawlerRunSchema = new mongoose.Schema({
         name: String, 
         url: String 
     }],
+    activityLog: { type: [String], default: [] },
     error: { type: String, default: '' }
 }, { timestamps: true });
 const CrawlerRun = mongoose.model('CrawlerRun', crawlerRunSchema);
@@ -179,11 +180,21 @@ crawlerEngine.startBackgroundWorker();
 
 // --- Proxy Browser API ---
 app.use('/api/proxy', async (req, res) => {
-    const targetUrl = req.query.url;
+    let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send('URL is required');
 
     try {
         const parsedUrl = new URL(targetUrl);
+        
+        // When a native GET form submits, it clobbers the ?url= query param from the action string,
+        // so we inject it as a hidden input. The browser then submits it as a query param, alongside the
+        // form's actual inputs (which end up in req.query). We must append those form inputs back onto targetUrl.
+        for (const [key, value] of Object.entries(req.query)) {
+            if (key !== 'url') {
+                parsedUrl.searchParams.append(key, value);
+            }
+        }
+        targetUrl = parsedUrl.toString();
         const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
 
         const response = await axios({
@@ -239,7 +250,26 @@ app.use('/api/proxy', async (req, res) => {
             $('script').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
             $('iframe').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
             $('source').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('form').each((i, el) => { if ($(el).attr('action')) $(el).attr('action', rewriteUrl($(el).attr('action'))); });
+            $('form').each((i, el) => { 
+                const action = $(el).attr('action');
+                if (action) { 
+                    const rewritten = rewriteUrl(action);
+                    $(el).attr('action', rewritten); 
+                    
+                    // If it's a GET form, the browser will strip out the ?url= parameter from the action. 
+                    // Add it as a hidden input so the proxy still receives the destination!
+                    const method = ($(el).attr('method') || 'get').toLowerCase();
+                    if (method === 'get') {
+                        try {
+                            const params = new URL(rewritten, 'http://localhost').searchParams;
+                            const embeddedUrl = params.get('url');
+                            if (embeddedUrl) {
+                                $(el).prepend(`<input type="hidden" name="url" value="${embeddedUrl}">`);
+                            }
+                        } catch(e) {}
+                    }
+                } 
+            });
             
             // Rewrite URL in style attributes
             $('[style]').each((i, el) => {

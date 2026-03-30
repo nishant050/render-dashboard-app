@@ -3,6 +3,7 @@ const API_BASE = '/api/crawler';
 const App = {
     tasks: [],
     runs: [],
+    currentPollTimeout: null,
 
     init() {
         this.loadTasks();
@@ -18,6 +19,7 @@ const App = {
     },
 
     switchView(viewId) {
+        if (this.currentPollTimeout) { clearTimeout(this.currentPollTimeout); this.currentPollTimeout = null; }
         document.querySelectorAll('.view').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.sidebar__nav-item').forEach(el => el.classList.remove('sidebar__nav-item--active'));
         
@@ -112,6 +114,25 @@ const App = {
                 att.innerHTML = '<i>No attachments found.</i>';
             }
 
+            // Activity Console
+            const consoleBox = document.getElementById('detail-activity-log');
+            if (run.activityLog && run.activityLog.length > 0) {
+                consoleBox.innerText = run.activityLog.join('\n');
+            } else {
+                consoleBox.innerText = '> Waiting for agent startup...';
+            }
+            // Auto scroll to bottom only if already active view to reduce jitter
+            if (document.getElementById('run-detail-view').style.display !== 'none') {
+                 consoleBox.scrollTop = consoleBox.scrollHeight;
+            } else {
+                 setTimeout(() => consoleBox.scrollTop = consoleBox.scrollHeight, 50);
+            }
+
+            if (run.status === 'running') {
+                if (this.currentPollTimeout) clearTimeout(this.currentPollTimeout);
+                this.currentPollTimeout = setTimeout(() => this.viewRun(run._id), 3000);
+            }
+
             this.switchView('run-detail');
         } catch(err) {
             alert('Error loading run details: ' + err.message);
@@ -125,7 +146,10 @@ const App = {
             <div class="card" onclick="App.editTask('${t._id}')">
                 <div class="card-meta">
                      <span class="badge ${t.isActive ? 'status-active' : 'status-paused'}">${t.isActive ? 'ACTIVE' : 'PAUSED'}</span>
-                     <span>${t.primaryModel}</span>
+                     <span style="display:flex; align-items:center; gap:0.5rem">
+                         <span style="font-size:0.8rem">${t.primaryModel}</span>
+                         <button class="btn btn-sm btn-primary" style="padding: 0.1rem 0.5rem; font-size: 0.75rem;" onclick="App.runTaskNow('${t._id}', event)">▶ RUN</button>
+                     </span>
                 </div>
                 <div class="card-title">${t.name}</div>
                 <div style="font-size:0.875rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
@@ -166,6 +190,20 @@ const App = {
     updateTasksFilter() {
         const select = document.getElementById('task-filter');
         select.innerHTML = '<option value="">Select a Task</option>' + this.tasks.map(t => `<option value="${t._id}">${t.name}</option>`).join('');
+    },
+
+    async runTaskNow(taskId, e) {
+        if (e) e.stopPropagation();
+        if (!confirm('Execute this target task immediately?')) return;
+        try {
+            const res = await fetch(`${API_BASE}/tasks/${taskId}/run`, { method: 'POST' });
+            if (!res.ok) throw new Error(await res.text());
+            const run = await res.json();
+            // Trigger UI View
+            this.viewRun(run._id);
+        } catch(err) {
+            alert('Failed to execute task: ' + err.message);
+        }
     },
 
     // --- Storage ---

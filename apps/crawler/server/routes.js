@@ -52,6 +52,27 @@ router.delete('/tasks/:id', async (req, res) => {
     }
 });
 
+// Trigger a manual run
+router.post('/tasks/:id/run', async (req, res) => {
+    try {
+        const task = await CrawlerTask.findById(req.params.id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        
+        const run = new CrawlerRun({ taskId: task._id });
+        await run.save();
+        
+        // Import engine locally to avoid circular dependencies if any, or invoke it directly if required at top.
+        // Node requires engine.js from server.js already. So we safely lazy load. 
+        const crawlerEngine = require('./engine');
+        // Launch asynchronously
+        crawlerEngine.executeCrawlerRun(run._id).catch(err => console.error("Manual Run Error:", err));
+        
+        res.status(201).json(run);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Get runs for task
 router.get('/runs/:taskId', async (req, res) => {
     try {

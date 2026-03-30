@@ -164,21 +164,27 @@ async function executeCrawlerRun(runId) {
 
     let browser = null;
     try {
-        console.log(`\n\x1b[1;36m[Crawler 🕷️]\x1b[0m \x1b[33mStarting run ${run._id}\x1b[0m`);
-        console.log(`\x1b[36m[Task]\x1b[0m "${task.name}"`);
+        const log = (msg) => {
+            console.log(msg);
+            const plain = typeof msg === 'string' ? msg.replace(/\x1b\[[0-9;]*m/g, '') : msg;
+            CrawlerRun.findByIdAndUpdate(run._id, { $push: { activityLog: `[${new Date().toLocaleTimeString()}] ${plain}` } }).catch(()=>{});
+        };
+
+        log(`\n\x1b[1;36m[Crawler 🕷️]\x1b[0m \x1b[33mStarting run ${run._id}\x1b[0m`);
+        log(`\x1b[36m[Task]\x1b[0m "${task.name}"`);
         
         const targetUrls = task.startUrls && task.startUrls.length > 0 ? task.startUrls : (task.startUrl ? [task.startUrl] : []);
-        console.log(`\x1b[36m[Target URLs]\x1b[0m ${targetUrls.length}`);
+        log(`\x1b[36m[Target URLs]\x1b[0m ${targetUrls.length}`);
         
         if (targetUrls.length === 0) throw new Error("No start URLs provided for this task.");
 
-        console.log(`\x1b[90m[Browser]\x1b[0m Connecting...`);
+        log(`\x1b[90m[Browser]\x1b[0m Connecting...`);
         browser = await puppeteer.connect({
             browserWSEndpoint: `wss://browser.zenrows.com?apikey=${zenrowsKey}&proxy_region=global`
         });
         
         const page = await browser.newPage();
-        console.log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);
+        log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);
         await page.goto(targetUrls[0], { waitUntil: 'networkidle2', timeout: 60000 });
         
         run.visitedUrls.push(page.url());
@@ -197,15 +203,15 @@ async function executeCrawlerRun(runId) {
 
         while (!isFinished && loopCount < MAX_LOOPS) {
             loopCount++;
-            console.log(`\n\x1b[35m[Engine]\x1b[0m Loop ${loopCount}/${MAX_LOOPS}`);
+            log(`\n\x1b[35m[Engine]\x1b[0m Loop ${loopCount}/${MAX_LOOPS}`);
 
             let aiMessage;
             try {
-                console.log(`\x1b[90m[AI]\x1b[0m Thinking with primary model (${task.primaryModel})...`);
+                log(`\x1b[90m[AI]\x1b[0m Thinking with primary model (${task.primaryModel})...`);
                 aiMessage = await callAI(messages, task.primaryModel, CRAWLER_TOOLS);
             } catch (aiErr) {
                 console.warn(`\x1b[31m[AI Error]\x1b[0m ${aiErr.message}`);
-                console.log(`\x1b[33m[AI Fallback]\x1b[0m Swapping to ${task.fallbackModel}...`);
+                log(`\x1b[33m[AI Fallback]\x1b[0m Swapping to ${task.fallbackModel}...`);
                 aiMessage = await callAI(messages, task.fallbackModel, CRAWLER_TOOLS);
             }
 
@@ -217,13 +223,13 @@ async function executeCrawlerRun(runId) {
                     const args = JSON.parse(toolCall.function.arguments || '{}');
                     let toolResponse = "";
 
-                    console.log(`\x1b[92m[Agent => Tool]\x1b[0m \x1b[32m${funcName}\x1b[0m (${JSON.stringify(args).substring(0, 100)}...)`);
+                    log(`\x1b[92m[Agent => Tool]\x1b[0m \x1b[32m${funcName}\x1b[0m (${JSON.stringify(args).substring(0, 100)}...)`);
 
                     try {
                         if (funcName === 'get_page_content') {
                             const text = await page.evaluate(() => document.body.innerText);
                             toolResponse = text.substring(0, 40000); 
-                            console.log(`\x1b[90m[Tool]\x1b[0m Extracted ${toolResponse.length} characters.`);
+                            log(`\x1b[90m[Tool]\x1b[0m Extracted ${toolResponse.length} characters.`);
                         } 
                         else if (funcName === 'click') {
                             await Promise.all([
@@ -231,7 +237,7 @@ async function executeCrawlerRun(runId) {
                                 page.click(args.selector)
                             ]);
                             toolResponse = `Navigated. New URL: ${page.url()}. Run get_page_content.`;
-                            console.log(`\x1b[90m[Tool]\x1b[0m Navigated to ${page.url()}`);
+                            log(`\x1b[90m[Tool]\x1b[0m Navigated to ${page.url()}`);
                             
                             if (!run.visitedUrls.includes(page.url())) {
                                 run.visitedUrls.push(page.url());
@@ -241,7 +247,7 @@ async function executeCrawlerRun(runId) {
                         else if (funcName === 'goto_url') {
                             await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 60000 });
                             toolResponse = `Navigated to: ${page.url()}. Run get_page_content.`;
-                            console.log(`\x1b[90m[Tool]\x1b[0m Switched to ${page.url()}`);
+                            log(`\x1b[90m[Tool]\x1b[0m Switched to ${page.url()}`);
                             
                             if (!run.visitedUrls.includes(page.url())) {
                                 run.visitedUrls.push(page.url());
@@ -257,7 +263,7 @@ async function executeCrawlerRun(runId) {
                             const filePath = path.join(uploadsDir, fileName);
                             const relativeUrl = `/uploads/crawler/${fileName}`;
 
-                            console.log(`\x1b[90m[Tool]\x1b[0m Downloading attachment ${args.url}`);
+                            log(`\x1b[90m[Tool]\x1b[0m Downloading attachment ${args.url}`);
                             const fileRes = await axios.get(args.url, { responseType: 'stream' });
                             const writer = fs.createWriteStream(filePath);
                             fileRes.data.pipe(writer);
@@ -270,7 +276,7 @@ async function executeCrawlerRun(runId) {
                             run.attachments.push({ name: args.name, url: relativeUrl });
                             await run.save();
                             toolResponse = `Attachment saved as ${relativeUrl}`;
-                            console.log(`\x1b[90m[Tool]\x1b[0m Attachment saved.`);
+                            log(`\x1b[90m[Tool]\x1b[0m Attachment saved.`);
                         }
                         else if (funcName === 'finalize') {
                             run.finalSummary = args.summary_markdown;
@@ -279,12 +285,12 @@ async function executeCrawlerRun(runId) {
                             await run.save();
                             isFinished = true;
                             toolResponse = "Finalized.";
-                            console.log(`\x1b[92m[Success]\x1b[0m Crawler run complete.`);
+                            log(`\x1b[92m[Success]\x1b[0m Crawler run complete.`);
                             break; 
                         }
                     } catch (toolErr) {
                         toolResponse = `Error executing tool: ${toolErr.message}`;
-                        console.log(`\x1b[31m[Tool Error]\x1b[0m ${toolErr.message}`);
+                        log(`\x1b[31m[Tool Error]\x1b[0m ${toolErr.message}`);
                     }
 
                     messages.push({
@@ -295,7 +301,7 @@ async function executeCrawlerRun(runId) {
                     });
                 }
             } else {
-                console.log(`\x1b[33m[Agent Warning]\x1b[0m Wandering... no tool calls made.`);
+                log(`\x1b[33m[Agent Warning]\x1b[0m Wandering... no tool calls made.`);
                 messages.push({
                     role: 'user',
                     content: "Please use the 'finalize' tool to save the results, or another tool if you still need information."
@@ -304,7 +310,7 @@ async function executeCrawlerRun(runId) {
         }
 
         if (!isFinished) {
-            console.log(`\x1b[31m[Timeout]\x1b[0m Max loops reached without finalize.`);
+            log(`\x1b[31m[Timeout]\x1b[0m Max loops reached without finalize.`);
             run.status = 'failed';
             run.error = 'Max loops reached without finalize tool call.';
         }
@@ -316,7 +322,7 @@ async function executeCrawlerRun(runId) {
         run.endTime = new Date();
         await run.save();
         if (browser) await browser.close();
-        console.log(`\x1b[90m[Crawler Shutdown]\x1b[0m Resources cleaned up.`);
+        log(`\x1b[90m[Crawler Shutdown]\x1b[0m Resources cleaned up.`);
     }
 }
 
