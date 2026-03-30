@@ -2,6 +2,9 @@ const App = {
     settings: {},
     chatHistory: [],
     selectedModelId: null,
+    pendingMessageRenders: new Set(),
+    pendingScrollToBottom: false,
+    renderFrameId: null,
 
     isThinkingPart(part) {
         if (!part || typeof part !== 'object') return false;
@@ -420,7 +423,7 @@ const App = {
                     if (deltaReasoning) this.chatHistory[botIdx].reasoning += deltaReasoning;
                     if (deltaText) this.chatHistory[botIdx].content += deltaText;
                     
-                    if (deltaReasoning || deltaText) this.renderChatWindow();
+                    if (deltaReasoning || deltaText) this.scheduleMessageRender(botIdx, true);
                 } catch (e) {} // incomplete chunks
             }
         }
@@ -445,7 +448,7 @@ const App = {
                     const parts = this.extractGeminiParts(parsed?.candidates?.[0]?.content?.parts || []);
                     if (parts.reasoning) this.chatHistory[botIdx].reasoning += parts.reasoning;
                     if (parts.content) this.chatHistory[botIdx].content += parts.content;
-                    if (parts.reasoning || parts.content) this.renderChatWindow();
+                    if (parts.reasoning || parts.content) this.scheduleMessageRender(botIdx, true);
                 } catch (e) {}
             }
         }
@@ -463,36 +466,115 @@ const App = {
                 });
                 if (fullContent) this.chatHistory[botIdx].content += fullContent;
                 if (fullReasoning) this.chatHistory[botIdx].reasoning += fullReasoning;
-                this.renderChatWindow();
+                this.scheduleMessageRender(botIdx, true);
             }
         }catch(e){}
+    },
+
+    renderAssistantBubble(msg) {
+        let html = '';
+
+        if (msg.reasoning) {
+            html += `
+                <details class="thinking-content">
+                    <summary>Show model thinking</summary>
+                    <div class="thinking-content__body markdown-body">${this.renderMarkdown(msg.reasoning)}</div>
+                </details>
+            `;
+        }
+
+        const rawContent = msg.content || '...';
+        html += `<div class="markdown-body">${this.renderMarkdown(rawContent)}</div>`;
+        return html;
+    },
+
+    renderUserBubble(msg) {
+        return this.escapeHtml(msg.content || '').replace(/\n/g, '<br>');
+    },
+
+    renderMessageHtml(msg, index) {
+        const isUser = msg.role === 'user';
+        const bubbleHtml = isUser ? this.renderUserBubble(msg) : this.renderAssistantBubble(msg);
+
+        return `
+            <div class="chat-message ${isUser ? 'user' : 'bot'}" data-message-index="${index}">
+                <div class="chat-role-label">${isUser ? 'You' : 'Assistant'}</div>
+                <div class="chat-bubble">${bubbleHtml}</div>
+            </div>
+        `;
+    },
+
+    scheduleMessageRender(index, scrollToBottom = false) {
+        this.pendingMessageRenders.add(index);
+        this.pendingScrollToBottom = this.pendingScrollToBottom || scrollToBottom;
+
+        if (this.renderFrameId !== null) return;
+
+        this.renderFrameId = requestAnimationFrame(() => {
+            this.flushScheduledRenders();
+        });
+    },
+
+    flushScheduledRenders() {
+        const win = document.getElementById('chat-window');
+        if (!win) {
+            this.pendingMessageRenders.clear();
+            this.pendingScrollToBottom = false;
+            this.renderFrameId = null;
+            return;
+        }
+
+        for (const index of this.pendingMessageRenders) {
+            this.updateMessageElement(index);
+        }
+
+        if (this.pendingScrollToBottom) {
+            win.scrollTop = win.scrollHeight;
+        }
+
+        this.pendingMessageRenders.clear();
+        this.pendingScrollToBottom = false;
+        this.renderFrameId = null;
+    },
+
+    updateMessageElement(index) {
+        const win = document.getElementById('chat-window');
+        const msg = this.chatHistory[index];
+        if (!win || !msg) return;
+
+        const selector = `[data-message-index="${index}"]`;
+        const existing = win.querySelector(selector);
+
+        if (!existing) {
+            this.renderChatWindow();
+            return;
+        }
+
+        const bubble = existing.querySelector('.chat-bubble');
+        if (!bubble) {
+            this.renderChatWindow();
+            return;
+        }
+
+        if (msg.role === 'user') {
+            bubble.innerHTML = this.renderUserBubble(msg);
+            return;
+        }
+
+        const thinkingEl = bubble.querySelector('.thinking-content');
+        const wasOpen = Boolean(thinkingEl?.open);
+        bubble.innerHTML = this.renderAssistantBubble(msg);
+        if (wasOpen) {
+            bubble.querySelector('.thinking-content')?.setAttribute('open', '');
+        }
     },
 
     renderChatWindow() {
         const win = document.getElementById('chat-window');
         let html = '';
         
-        for (const msg of this.chatHistory) {
-            html += `<div class="chat-message ${msg.role === 'user' ? 'user' : 'bot'}">`;
-            html += `<div class="chat-role-label">${msg.role === 'user' ? 'You' : 'Assistant'}</div>`;
-            
-            html += `<div class="chat-bubble">`;
-            if (msg.reasoning) {
-                html += `
-                    <details class="thinking-content">
-                        <summary>Show model thinking</summary>
-                        <div class="thinking-content__body markdown-body">${this.renderMarkdown(msg.reasoning)}</div>
-                    </details>
-                `;
-            }
-            
-            const rawContent = msg.content || (msg.role === 'assistant' ? '...' : '');
-            if (window.marked && msg.role === 'assistant' && msg.content) {
-                html += `<div class="markdown-body">${this.renderMarkdown(rawContent)}</div>`;
-            } else {
-                html += this.escapeHtml(rawContent).replace(/\n/g, '<br>');
-            }
-            html += `</div></div>`;
+        for (let i = 0; i < this.chatHistory.length; i++) {
+            html += this.renderMessageHtml(this.chatHistory[i], i);
         }
         
         win.innerHTML = html;
@@ -501,6 +583,11 @@ const App = {
 
     clearChat() {
         this.chatHistory = [];
+        this.pendingMessageRenders.clear();
+        if (this.renderFrameId !== null) {
+            cancelAnimationFrame(this.renderFrameId);
+            this.renderFrameId = null;
+        }
         this.renderChatWindow();
     },
 
