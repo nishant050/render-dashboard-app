@@ -3,3 +3,8 @@ node_modules/
 
 # Uploaded files (Render will create this folder)
 uploads/
+
+# Local log files
+*.log
+*.out.log
+*.err.log
