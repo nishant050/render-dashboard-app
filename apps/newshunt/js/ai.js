@@ -16,7 +16,7 @@ const AI = {
         },
         nvidia: {
             name: 'NVIDIA',
-            baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions',
+            baseUrl: '/api/ai/nvidia-proxy',
             defaultModel: 'z-ai/glm4.7'
         },
         gemini: {

@@ -17,6 +17,19 @@ router.get('/tasks', async (req, res) => {
     }
 });
 
+// Sync models from NewsHunt
+router.get('/models', async (req, res) => {
+    try {
+        const db = mongoose.connection.db;
+        const newshuntDoc = await db.collection('newshuntdatas').findOne({});
+        const models = newshuntDoc?.settings?.ai_models || [];
+        res.json(models);
+    } catch (err) {
+        // Fallback gracefully on DB errors
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Create new task
 router.post('/tasks', async (req, res) => {
     try {

@@ -8,6 +8,7 @@ const App = {
     init() {
         this.loadTasks();
         this.loadStorage();
+        this.loadModels();
         
         // Setup marked options for safe markdown rendering
         if (window.marked) {
@@ -233,6 +234,54 @@ const App = {
         }
     },
 
+    async loadModels() {
+        try {
+            const res = await fetch(`${API_BASE}/models`);
+            let customModels = await res.json();
+            
+            if (!customModels || customModels.length === 0) {
+                customModels = [
+                    { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq (Llama 3.3 70B)' },
+                    { provider: 'openrouter', model: 'google/gemini-2.0-flash-001', label: 'OpenRouter (Gemini 2.0 Flash)' },
+                    { provider: 'nvidia', model: 'z-ai/glm4.7', label: 'NVIDIA (GLM 4.7)' },
+                    { provider: 'gemini', model: 'gemini-3.1-flash-lite-preview', label: 'Google Gemini (3.1 Flash Lite)' },
+                    { provider: 'mistral', model: 'mistral-small-2603', label: 'Mistral (Small)' }
+                ];
+            }
+            
+            this.aiModels = customModels;
+            this.updateModelSelects();
+        } catch (err) {
+            console.error('Failed to load shared models', err);
+        }
+    },
+
+    updateModelSelects() {
+        const primary = document.getElementById('task-primary-model');
+        const fallback = document.getElementById('task-fallback-model');
+        if (!primary || !fallback) return;
+
+        const escapeHtml = (unsafe) => {
+            return (unsafe||'').toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;");
+        };
+
+        const optionsHtml = this.aiModels.map(m => 
+            `<option value="${m.provider}|${m.model}">${escapeHtml(m.label || m.model)} (${m.provider})</option>`
+        ).join('');
+
+        const currentPrimaryVal = primary.value;
+        const currentFallbackVal = fallback.value;
+
+        primary.innerHTML = optionsHtml;
+        fallback.innerHTML = optionsHtml;
+
+        if (currentPrimaryVal) primary.value = currentPrimaryVal;
+        if (currentFallbackVal) fallback.value = currentFallbackVal;
+    },
+
     // --- Task Modal ---
     openTaskModal() {
         document.getElementById('task-id').value = '';
@@ -262,8 +311,20 @@ const App = {
         document.getElementById('task-freq-val').value = val;
         document.getElementById('task-freq-unit').value = unit;
         
-        document.getElementById('task-primary-model').value = task.primaryModel;
-        document.getElementById('task-fallback-model').value = task.fallbackModel;
+        const checkAndAddMissing = (selectElement, val) => {
+            if (!val) return;
+            let exists = Array.from(selectElement.options).some(opt => opt.value === val);
+            if (!exists) {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.text = val + ' (Deleted)';
+                selectElement.add(opt);
+            }
+            selectElement.value = val;
+        };
+
+        checkAndAddMissing(document.getElementById('task-primary-model'), task.primaryModel);
+        checkAndAddMissing(document.getElementById('task-fallback-model'), task.fallbackModel);
 
         document.getElementById('modal-title').innerText = 'Edit Task';
         document.getElementById('task-modal').classList.add('active');

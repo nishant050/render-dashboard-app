@@ -178,6 +178,29 @@ app.use('/uploads/crawler', express.static(path.join(__dirname, 'uploads', 'craw
 const crawlerEngine = require('./apps/crawler/server/engine');
 crawlerEngine.startBackgroundWorker();
 
+// --- AI Proxy for NVIDIA (CORS Bypass) ---
+app.post('/api/ai/nvidia-proxy', async (req, res) => {
+    try {
+        const response = await axios({
+            method: 'POST',
+            url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+            data: req.body,
+            headers: {
+                'Authorization': req.headers.authorization,
+                'Content-Type': 'application/json'
+            },
+            responseType: 'stream',
+            validateStatus: () => true
+        });
+
+        if (response.headers['content-type']) res.set('Content-Type', response.headers['content-type']);
+        res.status(response.status);
+        response.data.pipe(res);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Proxy Browser API ---
 app.use('/api/proxy', async (req, res) => {
     let targetUrl = req.query.url;
