@@ -16,12 +16,13 @@ class NewsHuntDB {
     this.isApplyingServerState = false;
     this.pollTimer = null;
     this.initPromise = null;
+    this.serverPullPauseCount = 0;
     this.eventListeners = []; // in case we want reactivity, though original didn't have events in DB
   }
 
   async init() {
     if (this.initPromise) return this.initPromise;
-    this.initPromise = this.syncFromServer().then(() => {
+    this.initPromise = this.syncFromServer({ force: true }).then(() => {
         this.pollTimer = setInterval(() => this.syncFromServer(), SERVER_POLL_INTERVAL_MS);
         return true;
     });
@@ -388,7 +389,23 @@ class NewsHuntDB {
     }
   }
 
-  async syncFromServer() {
+  pauseServerPulls() {
+    this.serverPullPauseCount += 1;
+  }
+
+  async resumeServerPulls(options = {}) {
+    this.serverPullPauseCount = Math.max(0, this.serverPullPauseCount - 1);
+    if (options.immediate && this.serverPullPauseCount === 0) {
+      return this.syncFromServer({ force: true });
+    }
+    return true;
+  }
+
+  async syncFromServer(options = {}) {
+    if (!options.force && this.serverPullPauseCount > 0) {
+      return false;
+    }
+
     try {
       this.isApplyingServerState = true;
       const response = await fetch('/api/newshunt/sync');

@@ -400,6 +400,7 @@ const App = {
 
         if (!isAuto) Components.showToast(`Categorizing ${uncategorized.length} articles...`, 'info');
         this._terminal('info', `${isAuto ? 'Automatic' : 'Manual'} categorization started for ${uncategorized.length} articles`);
+        db.pauseServerPulls();
 
         try {
             // PASS 1: Star ratings
@@ -445,6 +446,8 @@ const App = {
         } catch (error) {
             if (!isAuto) Components.showToast(`Categorization error: ${error.message}`, 'error');
             this._terminal('error', 'Categorization failed', error);
+        } finally {
+            await db.resumeServerPulls({ immediate: true });
         }
     },
 

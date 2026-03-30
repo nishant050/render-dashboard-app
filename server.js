@@ -1736,6 +1736,17 @@ const writeNewshuntData = async (data) => {
     return result;
 };
 
+const applyNewshuntUpdate = async (update = {}) => {
+    return NewsHuntData.updateOne(
+        {},
+        {
+            $setOnInsert: NEWSHUNT_DEFAULT_STATE,
+            ...update
+        },
+        { upsert: true, setDefaultsOnInsert: true }
+    );
+};
+
 // GET /api/newshunt/ai-config — provide API keys from environment variables
 app.get('/api/newshunt/ai-config', (req, res) => {
     const config = {};
@@ -1838,19 +1849,9 @@ app.post('/api/newshunt/settings', async (req, res) => {
         const { key, value } = req.body;
         if (!key) return res.status(400).json({ error: 'key is required' });
 
-        const existing = await NewsHuntData.findOne();
-        if (existing) {
-            // Atomic update to avoid race condition during burst saves
-            await NewsHuntData.updateOne(
-                { _id: existing._id },
-                { $set: { [`settings.${key}`]: value } }
-            );
-        } else {
-            // Fallback if no document exists yet
-            const defaultData = NEWSHUNT_DEFAULT_STATE;
-            defaultData.settings[key] = value;
-            await NewsHuntData.create(defaultData);
-        }
+        await applyNewshuntUpdate({
+            $set: { [`settings.${key}`]: value }
+        });
 
         res.json({ ok: true });
     } catch (error) {
@@ -1865,16 +1866,13 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
         const { guid } = req.body;
         if (!guid) return res.status(400).json({ error: 'guid is required' });
 
-        const data = await readNewshuntData();
-        const article = data.articles[guid];
-        if (!article) {
-            data.articles[guid] = { guid, isRead: true, readAt: Date.now() };
-        } else {
-            article.isRead = true;
-            article.readAt = article.readAt || Date.now();
-            data.articles[guid] = article;
-        }
-        await writeNewshuntData(data);
+        await applyNewshuntUpdate({
+            $set: {
+                [`articles.${guid}.guid`]: guid,
+                [`articles.${guid}.isRead`]: true,
+                [`articles.${guid}.readAt`]: Date.now()
+            }
+        });
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in POST /api/newshunt/mark-read:', error);
@@ -1886,10 +1884,11 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
 app.post('/api/newshunt/feeds', async (req, res) => {
     try {
         const { feeds } = req.body;
-        const data = await readNewshuntData();
-        data.feeds = normalizeNewshuntFeeds(feeds);
-        await writeNewshuntData(data);
-        res.json({ ok: true, count: data.feeds.length });
+        const normalizedFeeds = normalizeNewshuntFeeds(feeds);
+        await applyNewshuntUpdate({
+            $set: { feeds: normalizedFeeds }
+        });
+        res.json({ ok: true, count: normalizedFeeds.length });
     } catch (error) {
         console.error('Error in POST /api/newshunt/feeds:', error);
         res.status(500).json({ error: 'Failed to save feeds' });
@@ -1901,10 +1900,10 @@ app.post('/api/newshunt/article', async (req, res) => {
     try {
         const { article } = req.body;
         if (!article || !article.guid) return res.status(400).json({ error: 'article and article.guid required' });
-        
-        const data = await readNewshuntData();
-        data.articles[article.guid] = article; // Insert or overwrite
-        await writeNewshuntData(data);
+
+        await applyNewshuntUpdate({
+            $set: { [`articles.${article.guid}`]: article }
+        });
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in POST /api/newshunt/article:', error);
@@ -1917,14 +1916,19 @@ app.post('/api/newshunt/articles/batch', async (req, res) => {
     try {
         const { articles } = req.body; // array
         if (!Array.isArray(articles)) return res.status(400).json({ error: 'articles array required' });
-        
-        const data = await readNewshuntData();
+
+        const articleUpdates = {};
         for (const article of articles) {
             if (article && article.guid) {
-                data.articles[article.guid] = article;
+                articleUpdates[`articles.${article.guid}`] = article;
             }
         }
-        await writeNewshuntData(data);
+
+        if (Object.keys(articleUpdates).length > 0) {
+            await applyNewshuntUpdate({
+                $set: articleUpdates
+            });
+        }
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in POST /api/newshunt/articles/batch:', error);
@@ -1984,8 +1988,6 @@ app.post('/api/newshunt/chat', async (req, res) => {
     try {
         const { articleGuid, role, content = '', reasoning = '' } = req.body;
         if (!articleGuid || !role || (!content && !reasoning)) return res.status(400).json({ error: 'Missing chat params' });
-        
-        const data = await readNewshuntData();
         const newMessage = {
             id: Date.now() + Math.random().toString(36).substring(7),
             articleGuid,
@@ -1994,8 +1996,10 @@ app.post('/api/newshunt/chat', async (req, res) => {
             ...(reasoning ? { reasoning } : {}),
             timestamp: Date.now()
         };
-        data.chatHistory.push(newMessage);
-        await writeNewshuntData(data);
+
+        await applyNewshuntUpdate({
+            $push: { chatHistory: newMessage }
+        });
         res.json({ ok: true, id: newMessage.id });
     } catch (error) {
         console.error('Error in POST /api/newshunt/chat:', error);
@@ -2007,11 +2011,17 @@ app.post('/api/newshunt/chat', async (req, res) => {
 app.post('/api/newshunt/article-content', async (req, res) => {
     try {
         const { guid, content } = req.body;
-        if (!guid || !content) return res.status(400).json({ error: 'guid and content required' });
-        
-        const data = await readNewshuntData();
-        data.articleContent[guid] = content;
-        await writeNewshuntData(data);
+        if (!guid) return res.status(400).json({ error: 'guid is required' });
+
+        if (content === null || content === undefined || content === '') {
+            await applyNewshuntUpdate({
+                $unset: { [`articleContent.${guid}`]: '' }
+            });
+        } else {
+            await applyNewshuntUpdate({
+                $set: { [`articleContent.${guid}`]: content }
+            });
+        }
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in POST /api/newshunt/article-content:', error);
@@ -2022,9 +2032,9 @@ app.post('/api/newshunt/article-content', async (req, res) => {
 // POST /api/newshunt/article-content/clear
 app.post('/api/newshunt/article-content/clear', async (req, res) => {
     try {
-        const data = await readNewshuntData();
-        data.articleContent = {};
-        await writeNewshuntData(data);
+        await applyNewshuntUpdate({
+            $set: { articleContent: {} }
+        });
         res.json({ ok: true });
     } catch (error) {
         console.error('Error clearing article content:', error);
