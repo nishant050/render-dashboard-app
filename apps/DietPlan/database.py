@@ -25,7 +25,9 @@ async def init_db():
             serverSelectionTimeoutMS=10000,
         )
         await client.admin.command("ping")
+        # Global db links
         db = client[DB_NAME]
+        db.central = client["render-dashboard"]
         
     # Create indexes for performance and uniqueness
     await db.admin.create_index("username", unique=True)

@@ -272,21 +272,54 @@ class ParseAIError(RetryableAIError):
     """Signals that a response was received but unusable."""
 
 
-async def get_default_model():
+async def _get_global_settings() -> dict:
     db = await get_db()
-    model = await db.ai_models.find_one({"is_default": 1})
-    if not model:
-        model = await db.ai_models.find_one({})
-    return model
-
+    if not hasattr(db, 'central'):
+        return {}
+    doc = await db.central.newshuntdatas.find_one({})
+    if not doc or "settings" not in doc:
+        return {}
+    return doc["settings"]
 
 async def get_all_models():
-    db = await get_db()
-    cursor = db.ai_models.find({}).sort([("is_default", -1), ("created_at", -1)])
-    return await cursor.to_list(length=None)
+    settings = await _get_global_settings()
+    models = settings.get("ai_models", [])
+    if not models:
+        db = await get_db()
+        cursor = db.ai_models.find({}).sort([("is_default", -1), ("created_at", -1)])
+        return await cursor.to_list(length=None)
+    
+    formatted = []
+    for m in models:
+        provider = (m.get("provider") or "").lower()
+        key_name = f"api_key_{provider}"
+        api_key = settings.get(key_name, "")
+        formatted.append({
+            "provider": provider,
+            "model_id": m.get("model", ""),
+            "display_name": m.get("label", ""),
+            "api_key": api_key,
+            "is_default": 0,
+            "search_grounding": 1 if provider == "gemini" else 0,
+            "include_youtube": 1 if provider == "gemini" else 0,
+        })
+    return formatted
 
+async def get_default_model():
+    settings = await _get_global_settings()
+    models = await get_all_models()
+    default_obj = settings.get("ai_default_model")
+    if default_obj:
+        for m in models:
+            if m["model_id"] == default_obj.get("model"):
+                return m
+    return models[0] if models else None
 
 def get_api_key(model: dict) -> str:
+    key = model.get("api_key")
+    if key:
+        return key.strip()
+    
     provider = (model.get("provider") or "").lower()
     env_map = {
         "gemini": "GEMINI_API_KEY",
@@ -295,7 +328,7 @@ def get_api_key(model: dict) -> str:
         "nvidia": "NVIDIA_API_KEY",
     }
     env_name = env_map.get(provider, f"{provider.upper()}_API_KEY")
-    return (model.get("api_key") or os.environ.get(env_name, "")).strip()
+    return (os.environ.get(env_name, "")).strip()
 
 
 def has_configured_key(model: dict) -> bool:

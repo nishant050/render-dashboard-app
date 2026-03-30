@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test & Global Model Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation & Manager -->
+        <aside class="sidebar">
+            <div class="header">
+                <h1>API Test Hub</h1>
+                <a href="../../index.html" class="nav-back">← Dashboard</a>
+            </div>
+
+            <div class="section-title">Global API Keys</div>
+            <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">Changes instantly sync to NewsHunt, Crawler & DietPlan.</p>
+            
+            <div class="form-group">
+                <label>Provider</label>
+                <select id="key-provider" class="select">
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="nvidia">NVIDIA</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="mistral">Mistral</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="key-input" class="input" placeholder="Current or New API Key...">
+            </div>
+            <button class="btn btn-primary" onclick="App.saveKey()" style="width:100%">Save Universal Key</button>
+
+            <hr style="border:0; border-top:1px solid var(--border-glass); margin:2rem 0;">
+
+            <div class="section-title">Global AI Models</div>
+            <div class="model-list" id="models-list">
+                <!-- Populated dynamically -->
+            </div>
+            
+            <button class="btn btn-ghost" onclick="App.openModelModal()" style="width:100%; border-style:dashed;">+ Add Custom Model</button>
+            <br><br><br>
+        </aside>
+
+        <!-- Main Chat UI -->
+        <main class="main-chat">
+            
+            <!-- Chat Header Area -->
+            <div style="padding: 1rem 2rem; border-bottom: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; background: rgba(15,23,42,0.4); backdrop-filter: blur(10px);">
+                <div style="display:flex; gap:1rem; align-items:center;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green);"></div>
+                    <h2 style="font-size: 1.1rem; font-weight: 500;">Live Interaction Interface</h2>
+                </div>
+                
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">Target Model:</span>
+                    <select id="chat-model-select" class="select" style="width: 250px; padding: 0.4rem; font-size: 0.85rem;" onchange="App.selectChatModel(this.value)">
+                        <!-- Populated -->
+                    </select>
+                    <button class="btn btn-ghost" onclick="App.clearChat()" style="padding:0.4rem; margin-left:1rem; font-size:0.8rem;">🧹 Clear Chat</button>
+                </div>
+            </div>
+
+            <!-- Chat Message Window -->
+            <div class="chat-window" id="chat-window">
+                <div class="chat-message bot" style="align-self:center; opacity:0.6;">
+                    <div class="chat-role-label">System Note</div>
+                    <div class="chat-bubble">This sandbox is ephemeral. Chats vanish on reload. All key and model setting changes apply universally to your apps.</div>
+                </div>
+            </div>
+
+            <!-- Chat Input Area -->
+            <div class="chat-input-area">
+                <div class="chat-form">
+                    <textarea id="chat-input" class="chat-textarea" placeholder="Type a prompt to test the model..." onkeydown="App.handleKeyPress(event)"></textarea>
+                    <button class="chat-send-btn" onclick="App.sendMessage()">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay" id="add-model-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Add Universal AI Model</div>
+            </div>
+            
+            <div class="form-group">
+                <label>Provider Backbone</label>
+                <select id="new-model-provider" class="select">
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="nvidia">NVIDIA</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="mistral">Mistral</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>System Model ID</label>
+                <input type="text" id="new-model-id" class="input" placeholder="e.g. meta-llama/llama-3-70b-instruct">
+                <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:0.3rem;">Must exactly match the provider API strings.</div>
+            </div>
+            
+            <div class="form-group">
+                <label>Friendly Name</label>
+                <input type="text" id="new-model-label" class="input" placeholder="What should we call it?">
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="App.closeModals()">Cancel</button>
+                <button class="btn btn-primary" onclick="App.addModel()">Save Model</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" style="position:fixed; bottom:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px;"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
