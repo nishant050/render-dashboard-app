@@ -71,6 +71,34 @@ const fileHubEntrySchema = new mongoose.Schema({
 }, { timestamps: true });
 const FileHubEntry = mongoose.model('FileHubEntry', fileHubEntrySchema);
 
+// Crawler App
+const crawlerTaskSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    startUrl: { type: String, required: true },
+    goal: { type: String, required: true },
+    frequencyMinutes: { type: Number, required: true, default: 60 * 24 }, // Daily default
+    nextRunAt: { type: Date, default: Date.now },
+    isActive: { type: Boolean, default: true },
+    primaryModel: { type: String, default: 'groq' }, // Reference provider ID (e.g. 'groq', 'gemini')
+    fallbackModel: { type: String, default: 'gemini' }
+}, { timestamps: true });
+const CrawlerTask = mongoose.model('CrawlerTask', crawlerTaskSchema);
+
+const crawlerRunSchema = new mongoose.Schema({
+    taskId: { type: mongoose.Schema.Types.ObjectId, ref: 'CrawlerTask', required: true },
+    startTime: { type: Date, default: Date.now },
+    endTime: { type: Date },
+    status: { type: String, enum: ['running', 'success', 'failed'], default: 'running' },
+    finalSummary: { type: String, default: '' },
+    visitedUrls: { type: [String], default: [] },
+    attachments: [{ 
+        name: String, 
+        url: String 
+    }],
+    error: { type: String, default: '' }
+}, { timestamps: true });
+const CrawlerRun = mongoose.model('CrawlerRun', crawlerRunSchema);
+
 // Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
 // Default to user-provided key if not set, will fall back to manual links
 const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac053e55d17fb2bacb64a543d';
@@ -141,6 +169,13 @@ app.get('/api/finance-auth-check', (req, res) => {
         res.json({ authenticated: false });
     }
 });
+
+// --- Crawler API Routes ---
+const crawlerRoutes = require('./apps/crawler/server/routes');
+app.use('/api/crawler', crawlerRoutes);
+app.use('/uploads/crawler', express.static(path.join(__dirname, 'uploads', 'crawler')));
+const crawlerEngine = require('./apps/crawler/server/engine');
+crawlerEngine.startBackgroundWorker();
 
 // --- Finance API Routes (Protected) ---
 const financeRoutes = require('./apps/finance/server/routes');

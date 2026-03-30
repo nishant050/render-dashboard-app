@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard Crawler - Autonomous AI Web Scraper">
+    <title>Crawler Engine 🕷️</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕷️</text></svg>">
+</head>
+
+<body>
+    <div class="app">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar__logo">
+                <div class="sidebar__logo-icon">🕷️</div>
+                <span class="sidebar__logo-text">Crawler</span>
+            </div>
+
+            <nav class="sidebar__nav">
+                <button class="sidebar__nav-item sidebar__nav-item--active" onclick="App.switchView('tasks')">
+                    <span class="sidebar__nav-icon">📋</span>
+                    <span>Tasks</span>
+                </button>
+
+                <button class="sidebar__nav-item" onclick="App.switchView('runs')">
+                    <span class="sidebar__nav-icon">⚡</span>
+                    <span>History</span>
+                </button>
+            </nav>
+
+            <div class="sidebar__footer">
+                <a href="/" class="sidebar__nav-item" style="text-decoration: none">
+                    <span class="sidebar__nav-icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tasks View -->
+            <div class="view view--active" id="tasks-view">
+                <div class="header-action">
+                    <div>
+                        <h1>Active Spider Tasks</h1>
+                        <p>Configure recurring scraping missions.</p>
+                    </div>
+                    <div style="display:flex; gap:1rem; align-items:center;">
+                        <div id="storage-widget" class="storage-widget">
+                            <span class="storage-icon">💾</span>
+                            <div>
+                                <div class="storage-title">Storage Used</div>
+                                <div class="storage-size" id="storage-size">0 MB</div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" style="margin-left: 1rem;" onclick="App.clearStorage()">Clear Space</button>
+                        </div>
+                        <button class="btn btn-primary" onclick="App.openTaskModal()">+ New Task</button>
+                    </div>
+                </div>
+                <div id="tasks-list" class="grid-list">
+                    <!-- Tasks injected here -->
+                </div>
+            </div>
+
+            <!-- Runs View -->
+            <div class="view" id="runs-view" style="display: none;">
+                <div class="header-action">
+                    <div>
+                        <h1>Execution History</h1>
+                        <p>Results from completed autonomous runs.</p>
+                    </div>
+                </div>
+                <!-- Selection dropdown for filtering by task -->
+                <div class="filter-bar">
+                    <select id="task-filter" onchange="App.loadRuns()">
+                        <option value="">All Tasks</option>
+                    </select>
+                </div>
+                <div id="runs-list" class="grid-list">
+                    <!-- Runs injected here -->
+                </div>
+            </div>
+
+            <!-- Run Detail View -->
+            <div class="view" id="run-detail-view" style="display: none;">
+                <button class="btn btn-secondary back-btn" onclick="App.switchView('runs')">← Back to History</button>
+                <div class="run-detail-header">
+                    <h2 id="detail-task-name">Task Name</h2>
+                    <span id="detail-status" class="badge">Status</span>
+                </div>
+                <div class="run-stats">
+                    <div><strong>Start:</strong> <span id="detail-start"></span></div>
+                    <div><strong>End:</strong> <span id="detail-end"></span></div>
+                    <div><strong>URLs Visited:</strong> <span id="detail-urls-count"></span></div>
+                </div>
+                
+                <h3 class="section-title">Final Markdown Summary</h3>
+                <div class="summary-box markdown-body" id="detail-summary"></div>
+
+                <h3 class="section-title">Attachments</h3>
+                <div class="attachments-list" id="detail-attachments"></div>
+
+                <h3 class="section-title">Navigation Path</h3>
+                <ul class="urls-list" id="detail-urls"></ul>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="task-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">Create New Task</h2>
+            <form id="task-form" onsubmit="App.saveTask(event)">
+                <input type="hidden" id="task-id">
+                
+                <div class="form-group">
+                    <label>Task Name</label>
+                    <input type="text" id="task-name" required placeholder="e.g. Daily Tech News Summarizer">
+                </div>
+
+                <div class="form-group">
+                    <label>Start URL</label>
+                    <input type="url" id="task-url" required placeholder="https://example.com">
+                </div>
+
+                <div class="form-group">
+                    <label>Autonomous Goal / Prompt</label>
+                    <textarea id="task-goal" rows="4" required placeholder="What should the AI look for? E.g. Find the pricing page, click it, and summarize the business tier costs."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group" style="flex:2">
+                        <label>Frequency Definition</label>
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>Every</span>
+                            <input type="number" id="task-freq-val" required value="1" min="1" style="width:80px">
+                            <select id="task-freq-unit" style="flex:1">
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                                <option value="days" selected>Days</option>
+                                <option value="months">Months (30 Days)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Primary AI Model</label>
+                        <select id="task-primary-model">
+                            <option value="groq">Groq (Llama 3.3 70B)</option>
+                            <option value="gemini">Gemini 2.5 Flash</option>
+                            <option value="openrouter">OpenRouter (Claude 3.5 Sonnet)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Fallback AI Model</label>
+                        <select id="task-fallback-model">
+                            <option value="gemini">Gemini 2.5 Flash</option>
+                            <option value="groq">Groq (Llama 3.3 70B)</option>
+                            <option value="openrouter">OpenRouter (Claude 3.5 Sonnet)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeTaskModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,296 @@
+const puppeteer = require('puppeteer');
+const axios = require('axios');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+
+const CrawlerTask = mongoose.model('CrawlerTask');
+const CrawlerRun = mongoose.model('CrawlerRun');
+
+// --- Helper to call AI Models ---
+async function callAI(messages, modelId, tools = null) {
+    const isGroq = modelId.includes('llama') || modelId.includes('mixtral') || modelId.includes('gemma');
+    const apiKey = isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY;
+    const baseURL = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+    
+    // Default to a Groq model if string is just 'groq'
+    let actualModel = modelId;
+    if (modelId === 'groq') actualModel = 'llama-3.3-70b-versatile';
+    if (modelId === 'gemini') actualModel = 'google/gemini-2.5-flash';
+    if (modelId === 'openrouter') actualModel = 'anthropic/claude-3.5-sonnet:beta';
+    
+    if (!apiKey) throw new Error(`Missing API Key for model ${actualModel}`);
+
+    const payload = {
+        model: actualModel,
+        messages: messages,
+        temperature: 0.1,
+        max_tokens: 4000
+    };
+
+    if (tools) {
+        payload.tools = tools;
+        payload.tool_choice = 'auto'; // Force use tools if needed
+    }
+
+    const response = await axios.post(baseURL, payload, {
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'Dashboard Crawler'
+        }
+    });
+
+    return response.data.choices[0].message;
+}
+
+// --- The Agent Tool Schema ---
+const CRAWLER_TOOLS = [
+    {
+        type: "function",
+        function: {
+            name: "get_page_content",
+            description: "Extracts the text content from the current webpage.",
+            parameters: { type: "object", properties: {}, required: [] }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "click",
+            description: "Clicks on an element matching the given CSS selector, and waits for navigation.",
+            parameters: {
+                type: "object",
+                properties: {
+                    selector: { type: "string", description: "The CSS selector of the link or button to click." }
+                },
+                required: ["selector"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "save_attachment",
+            description: "Saves a relevant attachment URL (PDF, image, document) to the run record.",
+            parameters: {
+                type: "object",
+                properties: {
+                    name: { type: "string", description: "A readable name for the file." },
+                    url: { type: "string", description: "The direct URL to the file." }
+                },
+                required: ["name", "url"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "finalize",
+            description: "Ends the scraping task and provides the final formatted summary addressing the goal.",
+            parameters: {
+                type: "object",
+                properties: {
+                    summary_markdown: { type: "string", description: "The final extracted data, formatted in Markdown." }
+                },
+                required: ["summary_markdown"]
+            }
+        }
+    }
+];
+
+
+// --- Single Autonomous Run ---
+async function executeCrawlerRun(runId) {
+    const run = await CrawlerRun.findById(runId).populate('taskId');
+    if (!run || !run.taskId) return;
+
+    const task = run.taskId;
+    const zenrowsKey = process.env.ZENROWS_API_KEY;
+    
+    if (!zenrowsKey) {
+        run.status = 'failed';
+        run.error = 'ZENROWS_API_KEY is missing from environment.';
+        return await run.save();
+    }
+
+    let browser = null;
+    try {
+        console.log(`[Crawler] Starting run ${run._id} for task "${task.name}"`);
+        
+        // Connect to ZenRows Scraping Browser
+        browser = await puppeteer.connect({
+            browserWSEndpoint: `wss://browser.zenrows.com?apikey=${zenrowsKey}&proxy_region=global`
+        });
+        
+        const page = await browser.newPage();
+        await page.goto(task.startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        // Track visited URLs
+        run.visitedUrls.push(page.url());
+        await run.save();
+
+        let messages = [
+            {
+                role: 'system',
+                content: `You are an autonomous web extraction agent. Your goal is: ${task.goal}\n\nYou are currently at URL: ${page.url()}\nUse your tools to extract page content, click to navigate further if needed, save relevant attachments, and finalize when the goal is met. Always get_page_content first on a new page.`
+            }
+        ];
+
+        let isFinished = false;
+        let loopCount = 0;
+        const MAX_LOOPS = 15;
+
+        while (!isFinished && loopCount < MAX_LOOPS) {
+            loopCount++;
+            console.log(`[Crawler] Loop ${loopCount}/15...`);
+
+            // 1. Call AI
+            let aiMessage;
+            try {
+                aiMessage = await callAI(messages, task.primaryModel, CRAWLER_TOOLS);
+            } catch (aiErr) {
+                console.warn(`[Crawler] Primary model failed: ${aiErr.message}. Trying fallback: ${task.fallbackModel}`);
+                aiMessage = await callAI(messages, task.fallbackModel, CRAWLER_TOOLS);
+            }
+
+            messages.push(aiMessage);
+
+            // 2. Handle Tool Calls
+            if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
+                for (const toolCall of aiMessage.tool_calls) {
+                    const funcName = toolCall.function.name;
+                    const args = JSON.parse(toolCall.function.arguments);
+                    let toolResponse = "";
+
+                    console.log(`[Crawler] -> Tool Call: ${funcName}(${JSON.stringify(args)})`);
+
+                    try {
+                        if (funcName === 'get_page_content') {
+                            const text = await page.evaluate(() => document.body.innerText);
+                            // Truncate to avoid context window explosion
+                            toolResponse = text.substring(0, 40000); 
+                        } 
+                        else if (funcName === 'click') {
+                            await Promise.all([
+                                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}), // Ignore timeouts on click nav
+                                page.click(args.selector)
+                            ]);
+                            toolResponse = `Navigated. New URL: ${page.url()}. Run get_page_content to read it.`;
+                            
+                            if (!run.visitedUrls.includes(page.url())) {
+                                run.visitedUrls.push(page.url());
+                                await run.save();
+                            }
+                        }
+                        else if (funcName === 'save_attachment') {
+                            // Download the file instead of just saving link
+                            const uploadsDir = path.join(process.cwd(), 'uploads', 'crawler');
+                            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+                            
+                            const safeName = args.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                            const fileName = `${Date.now()}_${safeName}`;
+                            const filePath = path.join(uploadsDir, fileName);
+                            const relativeUrl = `/uploads/crawler/${fileName}`;
+
+                            const fileRes = await axios.get(args.url, { responseType: 'stream' });
+                            const writer = fs.createWriteStream(filePath);
+                            fileRes.data.pipe(writer);
+                            
+                            await new Promise((resolve, reject) => {
+                                writer.on('finish', resolve);
+                                writer.on('error', reject);
+                            });
+
+                            run.attachments.push({ name: args.name, url: relativeUrl });
+                            await run.save();
+                            toolResponse = `Attachment downloaded to server and saved as ${relativeUrl}`;
+                        }
+                        else if (funcName === 'finalize') {
+                            run.finalSummary = args.summary_markdown;
+                            run.status = 'success';
+                            run.endTime = new Date();
+                            await run.save();
+                            isFinished = true;
+                            toolResponse = "Finalized.";
+                            break; 
+                        }
+                    } catch (toolErr) {
+                        toolResponse = `Error executing tool: ${toolErr.message}`;
+                    }
+
+                    messages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        name: funcName,
+                        content: toolResponse
+                    });
+                }
+            } else {
+                // If the AI didn't use a tool, prompt it to use finalize
+                messages.push({
+                    role: 'user',
+                    content: "Please use the 'finalize' tool to save the results, or another tool if you still need information."
+                });
+            }
+        }
+
+        if (!isFinished) {
+            run.status = 'failed';
+            run.error = 'Max loops reached without finalize tool call.';
+        }
+    } catch (err) {
+        console.error(`[Crawler] Run error:`, err);
+        run.status = 'failed';
+        run.error = err.message || JSON.stringify(err);
+    } finally {
+        run.endTime = new Date();
+        await run.save();
+        if (browser) await browser.close();
+    }
+}
+
+// --- Background Worker Loop ---
+let isWorkerRunning = false;
+
+async function crawlerWorkerLoop() {
+    if (isWorkerRunning) return;
+    isWorkerRunning = true;
+
+    try {
+        const now = new Date();
+        // Find tasks that are due and active
+        const dueTasks = await CrawlerTask.find({ 
+            isActive: true, 
+            nextRunAt: { $lte: now } 
+        });
+
+        for (const task of dueTasks) {
+            // Update nextRunAt immediately so duplicate workers don't pick it up
+            task.nextRunAt = new Date(now.getTime() + task.frequencyMinutes * 60000);
+            await task.save();
+
+            // Create a run record
+            const run = new CrawlerRun({ taskId: task._id });
+            await run.save();
+
+            // Run asynchronously in background
+            executeCrawlerRun(run._id);
+        }
+    } catch (err) {
+        console.error('[CrawlerWorker] Error checking tasks:', err);
+    } finally {
+        isWorkerRunning = false;
+    }
+}
+
+function startBackgroundWorker() {
+    setInterval(crawlerWorkerLoop, 60000); // Check every minute
+    console.log('[CrawlerWorker] Started background polling loop (60s)');
+}
+
+module.exports = {
+    startBackgroundWorker,
+    executeCrawlerRun
+};
