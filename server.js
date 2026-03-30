@@ -1497,6 +1497,7 @@ app.get('/api/newshunt/ai-config', (req, res) => {
     if (process.env.OPENROUTER_API_KEY) config.openrouter = process.env.OPENROUTER_API_KEY;
     if (process.env.NVIDIA_API_KEY) config.nvidia = process.env.NVIDIA_API_KEY;
     if (process.env.GEMINI_API_KEY) config.gemini = process.env.GEMINI_API_KEY;
+    if (process.env.MISTRAL_API_KEY) config.mistral = process.env.MISTRAL_API_KEY;
     res.json(config);
 });
 
@@ -1735,8 +1736,8 @@ app.post('/api/newshunt/articles/purge', async (req, res) => {
 // POST /api/newshunt/chat — add chat message
 app.post('/api/newshunt/chat', async (req, res) => {
     try {
-        const { articleGuid, role, content } = req.body;
-        if (!articleGuid || !role || !content) return res.status(400).json({ error: 'Missing chat params' });
+        const { articleGuid, role, content = '', reasoning = '' } = req.body;
+        if (!articleGuid || !role || (!content && !reasoning)) return res.status(400).json({ error: 'Missing chat params' });
         
         const data = await readNewshuntData();
         const newMessage = {
@@ -1744,6 +1745,7 @@ app.post('/api/newshunt/chat', async (req, res) => {
             articleGuid,
             role,
             content,
+            ...(reasoning ? { reasoning } : {}),
             timestamp: Date.now()
         };
         data.chatHistory.push(newMessage);

@@ -3,12 +3,129 @@ const App = {
     chatHistory: [],
     selectedModelId: null,
 
+    isThinkingPart(part) {
+        if (!part || typeof part !== 'object') return false;
+        const type = String(part.type || '').toLowerCase();
+        const role = String(part.role || '').toLowerCase();
+        return part.thought === true
+            || type === 'reasoning'
+            || type === 'reasoning_content'
+            || type === 'thinking'
+            || type === 'thought'
+            || role === 'thought';
+    },
+
+    extractOpenAIContentParts(value) {
+        let content = '';
+        let reasoning = '';
+        const parts = Array.isArray(value) ? value : [value];
+
+        for (const part of parts) {
+            if (typeof part === 'string') {
+                content += part;
+                continue;
+            }
+            if (!part || typeof part !== 'object') continue;
+
+            const text = typeof part.text === 'string'
+                ? part.text
+                : (typeof part.content === 'string' ? part.content : '');
+
+            if (!text) continue;
+
+            if (this.isThinkingPart(part)) reasoning += text;
+            else content += text;
+        }
+
+        return { content, reasoning };
+    },
+
+    flattenOpenAIText(value) {
+        const parts = this.extractOpenAIContentParts(value);
+        return `${parts.content}${parts.reasoning}`;
+    },
+
+    extractOpenAIMessageParts(message = {}) {
+        const contentParts = this.extractOpenAIContentParts(message.content);
+        return {
+            content: contentParts.content,
+            reasoning: [
+                this.flattenOpenAIText(message.reasoning_content),
+                this.flattenOpenAIText(message.reasoning),
+                contentParts.reasoning
+            ].filter(Boolean).join('')
+        };
+    },
+
+    extractGeminiParts(parts = []) {
+        let content = '';
+        let reasoning = '';
+
+        for (const part of parts) {
+            if (!part || typeof part !== 'object') continue;
+            const text = typeof part.text === 'string' ? part.text : '';
+            if (!text) continue;
+
+            if (this.isThinkingPart(part)) reasoning += text;
+            else content += text;
+        }
+
+        return { content, reasoning };
+    },
+
+    extractJsonObjects(buffer) {
+        const objects = [];
+        let start = -1;
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (let i = 0; i < buffer.length; i++) {
+            const ch = buffer[i];
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch === '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+
+            if (ch === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (ch === '}') {
+                depth--;
+                if (depth === 0 && start !== -1) {
+                    objects.push(buffer.slice(start, i + 1));
+                    start = -1;
+                }
+            }
+        }
+
+        return {
+            objects,
+            remainder: depth > 0 && start !== -1 ? buffer.slice(start) : ''
+        };
+    },
+
     init() {
         this.fetchGlobalConfig();
         
         // Setup marked compiler if available
         if (window.marked) {
-            marked.setOptions({ breaks: true, gfm: true });
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false
+            });
         }
 
         // Add provider select change listener to pre-fill known keys
@@ -22,12 +139,30 @@ const App = {
     // --- State Management ---
     async fetchGlobalConfig() {
         try {
-            const res = await fetch('/api/newshunt/sync');
-            if (!res.ok) throw new Error("Failed to load global config");
-            const data = await res.json();
+            const [syncRes, envRes] = await Promise.all([
+                fetch('/api/newshunt/sync'),
+                fetch('/api/newshunt/ai-config').catch(() => null)
+            ]);
+
+            if (!syncRes.ok) throw new Error("Failed to load global config");
+            const data = await syncRes.json();
+            const envKeys = envRes && envRes.ok ? await envRes.json() : {};
             
             this.settings = data.settings || {};
             if (!this.settings.ai_models) this.settings.ai_models = [];
+
+            // Backfill missing model ids so older shared configs still work in the selector.
+            this.settings.ai_models = this.settings.ai_models.map((model, idx) => ({
+                ...model,
+                id: model.id || `legacy_${model.provider || 'model'}_${idx}_${Date.now()}`
+            }));
+
+            // Mirror NewsHunt behavior: use env keys as fallback without overwriting explicit saved keys.
+            if (envKeys.groq && !this.settings.api_key_groq) this.settings.api_key_groq = envKeys.groq;
+            if (envKeys.openrouter && !this.settings.api_key_openrouter) this.settings.api_key_openrouter = envKeys.openrouter;
+            if (envKeys.nvidia && !this.settings.api_key_nvidia) this.settings.api_key_nvidia = envKeys.nvidia;
+            if (envKeys.gemini && !this.settings.api_key_gemini) this.settings.api_key_gemini = envKeys.gemini;
+            if (envKeys.mistral && !this.settings.api_key_mistral) this.settings.api_key_mistral = envKeys.mistral;
             
             this.renderModels();
             
@@ -246,6 +381,14 @@ const App = {
             } else {
                 await this.handleOpenAIStream(response, botIdx);
             }
+
+            const finalMessage = this.chatHistory[botIdx];
+            if (!finalMessage.content.trim()) {
+                finalMessage.content = finalMessage.reasoning.trim()
+                    ? '_This model returned hidden reasoning but no final answer text._'
+                    : '_No visible text was returned by the model. Check the API key, model id, or provider response format._';
+                this.renderChatWindow();
+            }
         } catch (e) {
             this.chatHistory[botIdx].content = `**Network Error:** ${e.message}`;
             this.renderChatWindow();
@@ -262,7 +405,7 @@ const App = {
             if (done) break;
             
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\\n');
+            const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             
             for (const line of lines) {
@@ -272,8 +415,7 @@ const App = {
                 
                 try {
                     const parsed = JSON.parse(trimmed.substring(6));
-                    const deltaText = parsed.choices?.[0]?.delta?.content || '';
-                    const deltaReasoning = parsed.choices?.[0]?.delta?.reasoning_content || '';
+                    const { content: deltaText, reasoning: deltaReasoning } = this.extractOpenAIMessageParts(parsed.choices?.[0]?.delta || {});
                     
                     if (deltaReasoning) this.chatHistory[botIdx].reasoning += deltaReasoning;
                     if (deltaText) this.chatHistory[botIdx].content += deltaText;
@@ -294,32 +436,33 @@ const App = {
             if (done) break;
             
             buffer += decoder.decode(value, { stream: true });
-            try {
-                // Gemini returns JSON array streams in a weird chunked bracket format,
-                // but we can parse incrementally by hunting for "text"
-                const textMatches = [...buffer.matchAll(/"text"\s*:\s*"([^"]+)"/g)];
-                if (textMatches.length > 0) {
-                     // Unescape string properly
-                     const rawTexts = textMatches.map(m => m[1]
-                         .replace(/\\\\n/g, '\\n')
-                         .replace(/\\\\"/g, '"')
-                         .replace(/\\\\t/g, '\\t'));
-                     
-                     this.chatHistory[botIdx].content = rawTexts.join('');
-                     this.renderChatWindow();
-                }
-            } catch(e){}
+            const { objects, remainder } = this.extractJsonObjects(buffer);
+            buffer = remainder;
+
+            for (const objectText of objects) {
+                try {
+                    const parsed = JSON.parse(objectText);
+                    const parts = this.extractGeminiParts(parsed?.candidates?.[0]?.content?.parts || []);
+                    if (parts.reasoning) this.chatHistory[botIdx].reasoning += parts.reasoning;
+                    if (parts.content) this.chatHistory[botIdx].content += parts.content;
+                    if (parts.reasoning || parts.content) this.renderChatWindow();
+                } catch (e) {}
+            }
         }
         
-        // Final fallback block parsing for valid JSON stream if chunks were split poorly
         try {
-            const arr = JSON.parse(buffer);
-            if (Array.isArray(arr)) {
-                let full = '';
+            const parsed = JSON.parse(buffer);
+            const arr = Array.isArray(parsed) ? parsed : [parsed];
+            if (arr.length > 0) {
+                let fullContent = '';
+                let fullReasoning = '';
                 arr.forEach(c => {
-                    full += c.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    const parts = this.extractGeminiParts(c?.candidates?.[0]?.content?.parts || []);
+                    fullContent += parts.content;
+                    fullReasoning += parts.reasoning;
                 });
-                if(full) this.chatHistory[botIdx].content = full;
+                if (fullContent) this.chatHistory[botIdx].content += fullContent;
+                if (fullReasoning) this.chatHistory[botIdx].reasoning += fullReasoning;
                 this.renderChatWindow();
             }
         }catch(e){}
@@ -335,14 +478,19 @@ const App = {
             
             html += `<div class="chat-bubble">`;
             if (msg.reasoning) {
-                html += `<div class="thinking-content">${this.escapeHtml(msg.reasoning)}</div>`;
+                html += `
+                    <details class="thinking-content">
+                        <summary>Show model thinking</summary>
+                        <div class="thinking-content__body markdown-body">${this.renderMarkdown(msg.reasoning)}</div>
+                    </details>
+                `;
             }
             
             const rawContent = msg.content || (msg.role === 'assistant' ? '...' : '');
             if (window.marked && msg.role === 'assistant' && msg.content) {
-                html += marked.parse(rawContent);
+                html += `<div class="markdown-body">${this.renderMarkdown(rawContent)}</div>`;
             } else {
-                html += this.escapeHtml(rawContent).replace(/\\n/g, '<br>');
+                html += this.escapeHtml(rawContent).replace(/\n/g, '<br>');
             }
             html += `</div></div>`;
         }
@@ -354,6 +502,14 @@ const App = {
     clearChat() {
         this.chatHistory = [];
         this.renderChatWindow();
+    },
+
+    renderMarkdown(text) {
+        const markdown = (text || '').toString();
+        if (window.marked) {
+            return marked.parse(markdown);
+        }
+        return this.escapeHtml(markdown).replace(/\n/g, '<br>');
     },
 
     // --- UI Helpers ---

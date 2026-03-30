@@ -633,6 +633,48 @@
     border-left-color: var(--color-border-hover);
 }
 
+.chat-message__thinking {
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: rgba(15, 23, 42, 0.35);
+    overflow: hidden;
+}
+
+.chat-message__thinking summary {
+    cursor: pointer;
+    list-style: none;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-message__thinking summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-message__thinking summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: var(--space-2);
+    transition: transform var(--transition-fast);
+}
+
+.chat-message__thinking[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.chat-message__thinking-body {
+    padding: var(--space-3);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-tertiary);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    word-break: break-word;
+}
+
 .chat-message__role {
     font-size: var(--text-xs);
     color: var(--color-text-tertiary);

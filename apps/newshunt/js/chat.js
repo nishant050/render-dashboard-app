@@ -155,7 +155,7 @@ const Chat = {
     `;
 
     messages.forEach(msg => {
-      this._appendMessage(msg.role, msg.content, false);
+      this._appendMessage(msg.role, msg.content, false, false, msg.reasoning || '');
     });
 
     container.scrollTop = container.scrollHeight;
@@ -203,23 +203,35 @@ ${cachedContent || article.description || 'No content available.'}
     });
     messages.push({ role: 'user', content: question });
 
-    const loadingEl = this._appendMessage('ai', '...', false, true);
+    const loadingEl = this._appendMessage('ai', '', false, true);
 
     try {
       let aiResponse = '';
+      let aiReasoning = '';
       await AI.callStreaming(
         messages,
         (chunk, accumulated) => {
           aiResponse = accumulated;
           const bubble = loadingEl.querySelector('.chat-message__bubble');
-          if (bubble) bubble.innerHTML = Utils.renderMarkdown(accumulated);
+          if (bubble) bubble.innerHTML = this._renderBubbleContent('assistant', accumulated, false, aiReasoning);
           const container = document.getElementById('chat-messages');
           if (container) container.scrollTop = container.scrollHeight;
         },
-        { temperature: 0.6, max_tokens: 2048, task: 'chat' }
+        {
+          temperature: 0.6,
+          max_tokens: 2048,
+          task: 'chat',
+          onReasoningChunk: (chunk, accumulated) => {
+            aiReasoning = accumulated;
+            const bubble = loadingEl.querySelector('.chat-message__bubble');
+            if (bubble) bubble.innerHTML = this._renderBubbleContent('assistant', aiResponse, false, aiReasoning);
+            const container = document.getElementById('chat-messages');
+            if (container) container.scrollTop = container.scrollHeight;
+          }
+        }
       );
 
-      await db.addChatMessage(this.currentGuid, 'assistant', aiResponse);
+      await db.addChatMessage(this.currentGuid, 'assistant', aiResponse, { reasoning: aiReasoning });
     } catch (error) {
       const bubble = loadingEl.querySelector('.chat-message__bubble');
       if (bubble) bubble.innerHTML = `<p style="color: var(--color-error)">Error: ${Utils.escapeHtml(error.message)}</p>`;
@@ -230,7 +242,31 @@ ${cachedContent || article.description || 'No content available.'}
   },
 
   // Append a message to the chat
-  _appendMessage(role, content, scroll = true, isLoading = false) {
+  _renderThinkingDisclosure(reasoning) {
+    if (!reasoning) return '';
+
+    return `
+      <details class="chat-message__thinking">
+        <summary>Show model thinking</summary>
+        <div class="chat-message__thinking-body">${Utils.escapeHtml(reasoning).replace(/\n/g, '<br>')}</div>
+      </details>
+    `;
+  },
+
+  _renderBubbleContent(role, content, isLoading = false, reasoning = '') {
+    if (isLoading) {
+      return '<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:4px 0;"></div>';
+    }
+
+    if (role === 'user') {
+      return `<p>${Utils.escapeHtml(content)}</p>`;
+    }
+
+    const answerHtml = content ? Utils.renderMarkdown(content) : '<p>...</p>';
+    return `${this._renderThinkingDisclosure(reasoning)}${answerHtml}`;
+  },
+
+  _appendMessage(role, content, scroll = true, isLoading = false, reasoning = '') {
     const container = document.getElementById('chat-messages');
     if (!container) return null;
 
@@ -238,9 +274,7 @@ ${cachedContent || article.description || 'No content available.'}
     const el = document.createElement('div');
     el.className = `chat-message chat-message--${isUser ? 'user' : 'ai'}`;
 
-    const renderedContent = isLoading
-      ? '<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:4px 0;"></div>'
-      : (isUser ? `<p>${Utils.escapeHtml(content)}</p>` : Utils.renderMarkdown(content));
+    const renderedContent = this._renderBubbleContent(isUser ? 'user' : 'assistant', content, isLoading, reasoning);
 
     const avatar = isUser ? '👤' : '🤖';
 

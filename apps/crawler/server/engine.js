@@ -7,6 +7,51 @@ const path = require('path');
 const CrawlerTask = mongoose.model('CrawlerTask');
 const CrawlerRun = mongoose.model('CrawlerRun');
 
+function isThinkingPart(part) {
+    if (!part || typeof part !== 'object') return false;
+    const type = String(part.type || '').toLowerCase();
+    const role = String(part.role || '').toLowerCase();
+    return part.thought === true
+        || type === 'reasoning'
+        || type === 'reasoning_content'
+        || type === 'thinking'
+        || type === 'thought'
+        || role === 'thought';
+}
+
+function extractOpenAIContentParts(value) {
+    let content = '';
+    let reasoning = '';
+    const parts = Array.isArray(value) ? value : [value];
+
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            content += part;
+            continue;
+        }
+        if (!part || typeof part !== 'object') continue;
+
+        const text = typeof part.text === 'string'
+            ? part.text
+            : (typeof part.content === 'string' ? part.content : '');
+
+        if (!text) continue;
+
+        if (isThinkingPart(part)) reasoning += text;
+        else content += text;
+    }
+
+    return { content, reasoning };
+}
+
+function normalizeAIMessage(message = {}) {
+    const contentParts = extractOpenAIContentParts(message.content);
+    return {
+        ...message,
+        content: contentParts.content
+    };
+}
+
 // --- Helper to call AI Models ---
 async function callAI(messages, modelString, tools = null) {
     let provider = modelString;
@@ -76,7 +121,7 @@ async function callAI(messages, modelString, tools = null) {
     }
 
     const response = await axios.post(baseURL, payload, { headers, timeout: 60000 });
-    return response.data.choices[0].message;
+    return normalizeAIMessage(response.data.choices[0].message || {});
 }
 
 // --- The Agent Tool Schema ---

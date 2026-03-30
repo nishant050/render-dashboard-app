@@ -592,10 +592,48 @@ Rules for recommendations:
 def extract_text_from_parts(parts: list[dict] | None) -> str:
     text_parts = []
     for part in parts or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("thought") is True:
+            continue
+        part_type = str(part.get("type") or "").lower()
+        if part_type in {"reasoning", "reasoning_content", "thinking", "thought"}:
+            continue
         text = part.get("text")
         if text:
             text_parts.append(str(text))
     return "\n".join(text_parts).strip()
+
+
+def extract_openai_content_parts(value: Any) -> tuple[str, str]:
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    parts = value if isinstance(value, list) else [value]
+
+    for part in parts:
+        if isinstance(part, str):
+            content_parts.append(part)
+            continue
+        if not isinstance(part, dict):
+            continue
+
+        text = part.get("text") or part.get("content") or ""
+        if not text:
+            continue
+
+        part_type = str(part.get("type") or "").lower()
+        is_reasoning = (
+            part.get("thought") is True
+            or part_type in {"reasoning", "reasoning_content", "thinking", "thought"}
+            or str(part.get("role") or "").lower() == "thought"
+        )
+
+        if is_reasoning:
+            reasoning_parts.append(str(text))
+        else:
+            content_parts.append(str(text))
+
+    return "".join(content_parts).strip(), "".join(reasoning_parts).strip()
 
 
 def extract_grounding_links(candidate: dict) -> list[dict]:
@@ -1248,21 +1286,8 @@ def extract_model_text(model: dict, data: dict) -> str:
     if not choices:
         raise ParseAIError("empty choices")
     message = choices[0].get("message") or {}
-    content = message.get("content", "")
-    reasoning = message.get("reasoning_content", "")
-    if isinstance(content, list):
-        content = "\n".join(
-            item.get("text", "")
-            for item in content
-            if isinstance(item, dict) and item.get("text")
-        )
-    
-    final_text = str(content or "").strip()
-    reasoning_text = str(reasoning or "").strip()
-    
-    if reasoning_text:
-        return f"{reasoning_text}\n{final_text}".strip()
-    return final_text
+    content, _ = extract_openai_content_parts(message.get("content", ""))
+    return content.strip()
 
 
 async def call_model(

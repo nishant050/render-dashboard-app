@@ -88,6 +88,135 @@ const AI = {
         return !!(config.apiKey && config.model);
     },
 
+    _isThinkingPart(part) {
+        if (!part || typeof part !== 'object') return false;
+        const type = String(part.type || '').toLowerCase();
+        const role = String(part.role || '').toLowerCase();
+        return part.thought === true
+            || type === 'reasoning'
+            || type === 'reasoning_content'
+            || type === 'thinking'
+            || type === 'thought'
+            || role === 'thought';
+    },
+
+    _extractOpenAIContentParts(value) {
+        let content = '';
+        let reasoning = '';
+        const parts = Array.isArray(value) ? value : [value];
+
+        for (const part of parts) {
+            if (typeof part === 'string') {
+                content += part;
+                continue;
+            }
+
+            if (!part || typeof part !== 'object') continue;
+
+            const text = typeof part.text === 'string'
+                ? part.text
+                : (typeof part.content === 'string' ? part.content : '');
+
+            if (!text) continue;
+
+            if (this._isThinkingPart(part)) {
+                reasoning += text;
+            } else {
+                content += text;
+            }
+        }
+
+        return { content, reasoning };
+    },
+
+    _flattenOpenAIText(value) {
+        const parts = this._extractOpenAIContentParts(value);
+        return `${parts.content}${parts.reasoning}`;
+    },
+
+    _extractOpenAIMessageParts(message = {}) {
+        const contentParts = this._extractOpenAIContentParts(message.content);
+        const reasoning = [
+            this._flattenOpenAIText(message.reasoning_content),
+            this._flattenOpenAIText(message.reasoning),
+            contentParts.reasoning
+        ].filter(Boolean).join('');
+
+        return {
+            content: contentParts.content,
+            reasoning
+        };
+    },
+
+    _extractGeminiParts(parts = []) {
+        let content = '';
+        let reasoning = '';
+
+        for (const part of parts) {
+            if (!part || typeof part !== 'object') continue;
+            const text = typeof part.text === 'string' ? part.text : '';
+            if (!text) continue;
+
+            if (this._isThinkingPart(part)) {
+                reasoning += text;
+            } else {
+                content += text;
+            }
+        }
+
+        return { content, reasoning };
+    },
+
+    _extractGeminiCandidateParts(payload = {}) {
+        const candidate = payload?.candidates?.[0] || {};
+        return this._extractGeminiParts(candidate?.content?.parts || []);
+    },
+
+    _extractJsonObjects(buffer) {
+        const objects = [];
+        let start = -1;
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (let i = 0; i < buffer.length; i++) {
+            const ch = buffer[i];
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (ch === '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString) continue;
+
+            if (ch === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (ch === '}') {
+                depth--;
+                if (depth === 0 && start !== -1) {
+                    objects.push(buffer.slice(start, i + 1));
+                    start = -1;
+                }
+            }
+        }
+
+        return {
+            objects,
+            remainder: depth > 0 && start !== -1 ? buffer.slice(start) : ''
+        };
+    },
+
     // ==========================================
     // GEMINI SPECIFIC HELPERS
     // ==========================================
@@ -140,7 +269,7 @@ const AI = {
         }
 
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return this._extractGeminiCandidateParts(data).content;
     },
 
     async _callGeminiStreaming(config, messages, onChunk, options) {
@@ -172,57 +301,45 @@ const AI = {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let fullReasoning = '';
         let buffer = '';
+
+        const emitGeminiPayload = (payload) => {
+            const { content, reasoning } = this._extractGeminiCandidateParts(payload);
+
+            if (reasoning) {
+                fullReasoning += reasoning;
+                options.onReasoningChunk?.(reasoning, fullReasoning);
+            }
+
+            if (content) {
+                fullContent += content;
+                onChunk(content, fullContent);
+            }
+        };
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
+            const { objects, remainder } = this._extractJsonObjects(buffer);
+            buffer = remainder;
 
-            // Try to parse complete JSON arrays from the buffer
-            // Gemini streams look like: [\n{...},\n{...}\n]
-            try {
-                // A very simple hack to extract the text from the raw buffer string
-                // since parsing the incomplete JSON array stream natively is complex.
-                // We'll look for "text": "..." within the buffer.
-                // This is a naive but effective approach for a simple client.
-
-                // Let's use a regex to find all "text" values in this chunk
-                const textRegex = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
-                let match;
-                let chunkText = '';
-
-                while ((match = textRegex.exec(buffer)) !== null) {
-                    // Unescape the JSON string
-                    try {
-                        const parsedStr = JSON.parse(`"${match[1]}"`);
-                        chunkText += parsedStr;
-                    } catch (e) { }
+            for (const objectText of objects) {
+                try {
+                    emitGeminiPayload(JSON.parse(objectText));
+                } catch (e) {
+                    // Ignore malformed chunks
                 }
-
-                if (chunkText) {
-                    fullContent += chunkText;
-                    onChunk(chunkText, fullContent);
-                }
-
-                // Keep the last bit of the buffer in case a string was cut off
-                const lastBrace = buffer.lastIndexOf('}');
-                if (lastBrace > -1) {
-                    buffer = buffer.substring(lastBrace + 1);
-                }
-
-            } catch (e) {
-                // Ignore parsing errors on incomplete chunks
             }
         }
 
-        // If the regex stream parsing failed, fallback to the final parsed response
-        if (!fullContent) {
+        if (buffer.trim()) {
             try {
                 const fullParse = JSON.parse(buffer);
-                fullContent = fullParse.map(c => c.candidates?.[0]?.content?.parts?.[0]?.text || '').join('');
-                if (fullContent) onChunk(fullContent, fullContent);
+                const payloads = Array.isArray(fullParse) ? fullParse : [fullParse];
+                payloads.forEach(emitGeminiPayload);
             } catch (e) { }
         }
 
@@ -233,33 +350,7 @@ const AI = {
     // MISTRAL SPECIFIC HELPERS
     // ==========================================
     _formatMistralMessages(messages) {
-        return messages.map(msg => {
-            if (msg.role === 'system') {
-                return {
-                    role: 'system',
-                    content: [
-                        {
-                            type: 'text',
-                            text: '# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:'
-                        },
-                        {
-                            type: 'thinking',
-                            thinking: [
-                                {
-                                    type: 'text',
-                                    text: 'Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.'
-                                }
-                            ]
-                        },
-                        {
-                            type: 'text',
-                            text: msg.content
-                        }
-                    ]
-                };
-            }
-            return msg;
-        });
+        return messages;
     },
 
     // ==========================================
@@ -318,7 +409,7 @@ const AI = {
         }
 
         const data = await response.json();
-        return data.choices[0]?.message?.content || '';
+        return this._extractOpenAIMessageParts(data.choices?.[0]?.message || {}).content;
     },
 
     // Make a streaming API call
@@ -374,6 +465,7 @@ const AI = {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let fullReasoning = '';
         let buffer = '';
 
         while (true) {
@@ -392,12 +484,14 @@ const AI = {
 
                 try {
                     const parsed = JSON.parse(data);
-                    const delta = parsed.choices?.[0]?.delta?.content || '';
-                    const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || '';
-                    const textChunk = reasoning + delta;
-                    if (textChunk) {
-                        fullContent += textChunk;
-                        onChunk(textChunk, fullContent);
+                    const { content, reasoning } = this._extractOpenAIMessageParts(parsed.choices?.[0]?.delta || {});
+                    if (reasoning) {
+                        fullReasoning += reasoning;
+                        options.onReasoningChunk?.(reasoning, fullReasoning);
+                    }
+                    if (content) {
+                        fullContent += content;
+                        onChunk(content, fullContent);
                     }
                 } catch (e) {
                     // Skip malformed chunks
