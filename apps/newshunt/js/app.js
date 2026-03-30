@@ -731,7 +731,7 @@ ${articlesText}`;
                 (chunk, fullContent) => {
                     contentEl.innerHTML = marked.parse(fullContent);
                 },
-                { temperature: 0.3, max_tokens: 2000 }
+                { temperature: 0.3, max_tokens: 2000, task: 'summarize' }
             );
         } catch (error) {
             contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;
@@ -827,7 +827,7 @@ ${articlesText}`;
                 (chunk, fullContent) => {
                     contentEl.innerHTML = marked.parse(fullContent);
                 },
-                { temperature: 0.3, max_tokens: 2000 }
+                { temperature: 0.3, max_tokens: 2000, task: 'summarize' }
             );
         } catch (error) {
             contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;

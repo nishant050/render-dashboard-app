@@ -32,9 +32,33 @@ const AI = {
         }
     },
 
+    // Task types that can have individual model assignments
+    TASK_TYPES: {
+        categorize: { label: 'Categorize & Rate', icon: '⭐', desc: 'Star-rating articles' },
+        group:      { label: 'Group & Tag', icon: '🏷️', desc: 'Grouping duplicates, assigning topics' },
+        reader:     { label: 'Reader (Rewrite)', icon: '📖', desc: 'AI article rewriting & explanations' },
+        chat:       { label: 'Chat', icon: '💬', desc: 'Chatting about articles' },
+        summarize:  { label: 'Summarize', icon: '📝', desc: 'Topic & group summaries' }
+    },
+
     // Get current provider config from settings
-    async getConfig() {
-        // Prefer the explicit default model object (set via Settings UI)
+    // Accepts an optional `task` to use a task-specific model override
+    async getConfig(task) {
+        // 1. Check for task-specific model assignment
+        if (task) {
+            const taskModel = await db.getSetting(`task_model_${task}`);
+            if (taskModel && taskModel.provider && taskModel.model) {
+                const apiKey = await db.getSetting(`api_key_${taskModel.provider}`) || await db.getSetting('ai_api_key') || '';
+                return {
+                    provider: taskModel.provider,
+                    apiKey,
+                    model: taskModel.model,
+                    baseUrl: this.PROVIDERS[taskModel.provider]?.baseUrl || ''
+                };
+            }
+        }
+
+        // 2. Prefer the explicit default model object (set via Settings UI)
         const defaultModel = await db.getSetting('ai_default_model');
         
         let provider, model, apiKey;
@@ -42,10 +66,9 @@ const AI = {
         if (defaultModel && defaultModel.provider && defaultModel.model) {
             provider = defaultModel.provider;
             model = defaultModel.model;
-            // Get the provider-specific key first, fall back to legacy ai_api_key
             apiKey = await db.getSetting(`api_key_${provider}`) || await db.getSetting('ai_api_key') || '';
         } else {
-            // Fall back to legacy flat settings
+            // 3. Fall back to legacy flat settings
             provider = await db.getSetting('ai_provider') || 'groq';
             model = await db.getSetting('ai_model') || this.PROVIDERS[provider]?.defaultModel || '';
             apiKey = await db.getSetting('ai_api_key') || '';
@@ -245,7 +268,7 @@ const AI = {
 
     // Make a non-streaming API call
     async call(messages, options = {}) {
-        const config = await this.getConfig();
+        const config = await this.getConfig(options.task);
         if (!config.apiKey) throw new Error('API key not configured. Please go to Settings.');
 
         if (config.provider === 'gemini') {
@@ -293,7 +316,7 @@ const AI = {
 
     // Make a streaming API call
     async callStreaming(messages, onChunk, options = {}) {
-        const config = await this.getConfig();
+        const config = await this.getConfig(options.task);
         if (!config.apiKey) throw new Error('API key not configured. Please go to Settings.');
 
         if (config.provider === 'gemini') {

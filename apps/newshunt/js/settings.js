@@ -86,6 +86,7 @@ const Settings = {
             <select class="input" id="add-provider">
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="nvidia">NVIDIA</option>
               <option value="gemini">Google Gemini</option>
               <option value="mistral">Mistral</option>
             </select>
@@ -116,6 +117,7 @@ const Settings = {
             <select class="input" id="model-provider">
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="nvidia">NVIDIA</option>
               <option value="gemini">Google Gemini</option>
               <option value="mistral">Mistral</option>
             </select>
@@ -123,7 +125,7 @@ const Settings = {
           <div class="input-group">
             <label class="input-group__label">Model Name</label>
             <input type="text" class="input" id="model-name" placeholder="e.g., llama-3.3-70b-versatile">
-            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
+            <span class="input-group__help" id="model-suggestions">Groq: llama-3.3-70b-versatile &bull; OpenRouter: gemini-2.0-flash &bull; NVIDIA: nvidia/llama-3.1-nemotron-70b-instruct &bull; Gemini: gemini-3.1-flash-lite-preview &bull; Mistral: mistral-small-2603</span>
           </div>
           <div class="input-group">
             <label class="input-group__label">Display Label (optional)</label>
@@ -144,6 +146,17 @@ const Settings = {
       </div>
 
       <div class="settings-card" style="margin-top: var(--space-6)">
+        <h3 class="settings-card__title">🎯 Task Models</h3>
+        <p class="settings-card__desc">Assign a specific model to each AI task. Tasks without an assigned model will use the default (⭐) model.</p>
+        <div id="task-models-list" style="margin-top: var(--space-3)">
+          ${this._renderTaskModels(models, settings)}
+        </div>
+        <button class="btn btn--primary" onclick="Settings.saveTaskModels()" style="margin-top: var(--space-4)">
+          💾 Save Task Assignments
+        </button>
+      </div>
+
+      <div class="settings-card" style="margin-top: var(--space-6)">
         <h3 class="settings-card__title">Test Connection</h3>
         <button class="btn btn--secondary" onclick="Settings.testAI()">🧪 Test Default Model</button>
       </div>
@@ -153,10 +166,11 @@ const Settings = {
   async _renderSavedKeys(settings) {
     const groqKey = settings.api_key_groq;
     const openrouterKey = settings.api_key_openrouter;
+    const nvidiaKey = settings.api_key_nvidia;
     const geminiKey = settings.api_key_gemini;
     const mistralKey = settings.api_key_mistral;
 
-    if (!groqKey && !openrouterKey && !geminiKey && !mistralKey) {
+    if (!groqKey && !openrouterKey && !nvidiaKey && !geminiKey && !mistralKey) {
       return '<p class="text-muted">No API keys saved yet.</p>';
     }
 
@@ -189,6 +203,16 @@ const Settings = {
             <span class="api-key-item__masked">••••••••${geminiKey.slice(-6)}</span>
           </div>
           <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('gemini')">🗑️</button>
+        </div>`;
+    }
+    if (nvidiaKey) {
+      html += `
+        <div class="api-key-item">
+          <div class="api-key-item__info">
+            <span class="api-key-item__provider">NVIDIA</span>
+            <span class="api-key-item__masked">••••••••${nvidiaKey.slice(-6)}</span>
+          </div>
+          <button class="btn btn--ghost btn--sm" onclick="Settings.removeAPIKey('nvidia')">🗑️</button>
         </div>`;
     }
     if (mistralKey) {
@@ -239,6 +263,7 @@ const Settings = {
 
     let providerName = 'Groq';
     if (provider === 'openrouter') providerName = 'OpenRouter';
+    if (provider === 'nvidia') providerName = 'NVIDIA';
     if (provider === 'gemini') providerName = 'Google Gemini';
     if (provider === 'mistral') providerName = 'Mistral';
 
@@ -325,6 +350,55 @@ const Settings = {
     } catch (error) {
       Components.showToast(`Connection failed: ${error.message}`, 'error', 6000);
     }
+  },
+
+  // Render per-task model assignment dropdowns
+  _renderTaskModels(models, settings) {
+    if (!models || models.length === 0) {
+      return '<p class="text-muted">Add at least one model above first, then you can assign models to specific tasks.</p>';
+    }
+
+    const tasks = AI.TASK_TYPES;
+    return Object.entries(tasks).map(([taskKey, taskInfo]) => {
+      const assigned = settings[`task_model_${taskKey}`];
+      const assignedId = assigned?.id || '';
+      return `
+        <div class="task-model-row" style="display:flex; align-items:center; gap:var(--space-3); padding:var(--space-2) 0; border-bottom:1px solid var(--color-border)">
+          <span style="font-size:1.25rem; width:28px; text-align:center">${taskInfo.icon}</span>
+          <div style="flex:1; min-width:0">
+            <div style="font-weight:var(--font-weight-medium); color:var(--color-text-primary)">${taskInfo.label}</div>
+            <div style="font-size:var(--text-xs); color:var(--color-text-tertiary)">${taskInfo.desc}</div>
+          </div>
+          <select class="input" id="task-model-${taskKey}" style="width:220px; flex-shrink:0">
+            <option value="">⭐ Use Default</option>
+            ${models.map(m => `<option value="${m.id}" ${m.id === assignedId ? 'selected' : ''}>${Utils.escapeHtml(m.label || m.model)} (${m.provider})</option>`).join('')}
+          </select>
+        </div>`;
+    }).join('');
+  },
+
+  async saveTaskModels() {
+    const models = (await db.getSetting('ai_models')) || [];
+    const tasks = AI.TASK_TYPES;
+    let changed = 0;
+
+    for (const taskKey of Object.keys(tasks)) {
+      const select = document.getElementById(`task-model-${taskKey}`);
+      if (!select) continue;
+
+      const selectedId = select.value;
+      if (selectedId) {
+        const model = models.find(m => m.id === selectedId);
+        if (model) {
+          await db.setSetting(`task_model_${taskKey}`, { id: model.id, provider: model.provider, model: model.model });
+          changed++;
+        }
+      } else {
+        await db.setSetting(`task_model_${taskKey}`, null);
+      }
+    }
+
+    Components.showToast(`Task model assignments saved! (${changed} custom)`, 'success');
   },
 
   // ============================================

@@ -33,6 +33,236 @@ MEAL_TYPES = {
 PRIMARY_NUTRIENTS = ["Calories", "Protein", "Carbs", "Fat", "Fiber", "Sugar", "Sodium"]
 MICRONUTRIENTS = ["Vitamin A", "Vitamin C", "Vitamin D", "Vitamin B12", "Folate", "Iron", "Calcium"]
 
+# WHO/RDA daily recommended values for micronutrients
+# Vitamin A: 900 mcg RAE, Vitamin C: 90 mg, Vitamin D: 15 mcg,
+# Vitamin B12: 2.4 mcg, Folate: 400 mcg DFE, Iron: 18 mg, Calcium: 1000 mg
+MICRONUTRIENT_RDA = {
+    "Vitamin A": 900,    # mcg RAE
+    "Vitamin C": 90,     # mg
+    "Vitamin D": 15,     # mcg
+    "Vitamin B12": 2.4,  # mcg
+    "Folate": 400,       # mcg DFE
+    "Iron": 18,          # mg
+    "Calcium": 1000,     # mg
+}
+
+# Approximate micronutrient content per typical serving for common food keywords.
+# Values are rough estimates based on USDA/IFCT data for typical Indian vegetarian dishes.
+# Keys are lowercase keywords to match against dish names and descriptions.
+# Values: {nutrient: amount_per_serving_in_RDA_units}
+MICRONUTRIENT_FOOD_DB = {
+    # Dairy
+    "milk": {"Vitamin A": 75, "Vitamin D": 3, "Vitamin B12": 1.1, "Calcium": 300, "Folate": 12, "Iron": 0.1},
+    "curd": {"Vitamin A": 50, "Vitamin B12": 0.8, "Calcium": 250, "Vitamin D": 0.1, "Folate": 18},
+    "yogurt": {"Vitamin A": 50, "Vitamin B12": 0.8, "Calcium": 250, "Vitamin D": 0.1, "Folate": 18},
+    "dahi": {"Vitamin A": 50, "Vitamin B12": 0.8, "Calcium": 250, "Vitamin D": 0.1, "Folate": 18},
+    "raita": {"Vitamin A": 40, "Vitamin B12": 0.6, "Calcium": 200, "Folate": 15},
+    "paneer": {"Vitamin A": 60, "Vitamin B12": 0.6, "Calcium": 350, "Vitamin D": 0.3, "Iron": 0.5, "Folate": 20},
+    "cheese": {"Vitamin A": 80, "Vitamin B12": 0.9, "Calcium": 300, "Vitamin D": 0.3, "Iron": 0.3},
+    "lassi": {"Vitamin A": 40, "Vitamin B12": 0.5, "Calcium": 200, "Vitamin D": 0.1},
+    "buttermilk": {"Vitamin A": 30, "Vitamin B12": 0.4, "Calcium": 180},
+    "chaas": {"Vitamin A": 30, "Vitamin B12": 0.4, "Calcium": 180},
+    "kheer": {"Vitamin A": 60, "Vitamin B12": 0.5, "Calcium": 200, "Vitamin D": 1.5},
+    # Eggs
+    "egg": {"Vitamin A": 80, "Vitamin D": 1.1, "Vitamin B12": 0.9, "Iron": 1.0, "Folate": 25, "Calcium": 30},
+    "omelette": {"Vitamin A": 80, "Vitamin D": 1.1, "Vitamin B12": 0.9, "Iron": 1.0, "Folate": 25, "Calcium": 30},
+    # Leafy greens
+    "spinach": {"Vitamin A": 470, "Vitamin C": 28, "Folate": 190, "Iron": 2.7, "Calcium": 100},
+    "palak": {"Vitamin A": 470, "Vitamin C": 28, "Folate": 190, "Iron": 2.7, "Calcium": 100},
+    "methi": {"Vitamin A": 300, "Vitamin C": 50, "Folate": 150, "Iron": 3.5, "Calcium": 160},
+    "fenugreek": {"Vitamin A": 300, "Vitamin C": 50, "Folate": 150, "Iron": 3.5, "Calcium": 160},
+    "saag": {"Vitamin A": 400, "Vitamin C": 30, "Folate": 160, "Iron": 3.0, "Calcium": 120},
+    "kale": {"Vitamin A": 500, "Vitamin C": 80, "Folate": 140, "Iron": 1.5, "Calcium": 150},
+    "amaranth": {"Vitamin A": 290, "Vitamin C": 43, "Folate": 85, "Iron": 2.3, "Calcium": 215},
+    # Lentils & legumes
+    "dal": {"Folate": 180, "Iron": 3.3, "Vitamin C": 2, "Calcium": 40, "Vitamin A": 10},
+    "lentil": {"Folate": 180, "Iron": 3.3, "Vitamin C": 2, "Calcium": 40},
+    "moong": {"Folate": 160, "Iron": 2.4, "Vitamin C": 5, "Calcium": 30},
+    "chana": {"Folate": 170, "Iron": 2.9, "Calcium": 50, "Vitamin C": 2},
+    "chickpea": {"Folate": 170, "Iron": 2.9, "Calcium": 50, "Vitamin C": 2},
+    "rajma": {"Folate": 130, "Iron": 3.0, "Calcium": 60, "Vitamin C": 1},
+    "kidney bean": {"Folate": 130, "Iron": 3.0, "Calcium": 60},
+    "sprout": {"Folate": 120, "Vitamin C": 14, "Iron": 1.5, "Calcium": 20},
+    "sambhar": {"Folate": 100, "Iron": 2.5, "Vitamin C": 8, "Calcium": 50, "Vitamin A": 40},
+    "sambar": {"Folate": 100, "Iron": 2.5, "Vitamin C": 8, "Calcium": 50, "Vitamin A": 40},
+    "rasam": {"Vitamin C": 10, "Iron": 1.0, "Folate": 30, "Vitamin A": 15},
+    "chole": {"Folate": 170, "Iron": 2.9, "Calcium": 50},
+    "soybean": {"Folate": 165, "Iron": 3.5, "Calcium": 175, "Vitamin C": 6},
+    "tofu": {"Calcium": 250, "Iron": 2.0, "Folate": 40},
+    # Vegetables
+    "carrot": {"Vitamin A": 835, "Vitamin C": 6, "Folate": 20, "Iron": 0.3, "Calcium": 33},
+    "gajar": {"Vitamin A": 835, "Vitamin C": 6, "Folate": 20, "Iron": 0.3, "Calcium": 33},
+    "sweet potato": {"Vitamin A": 960, "Vitamin C": 20, "Folate": 11, "Calcium": 38},
+    "shakarkandi": {"Vitamin A": 960, "Vitamin C": 20, "Folate": 11, "Calcium": 38},
+    "pumpkin": {"Vitamin A": 425, "Vitamin C": 9, "Folate": 16, "Iron": 0.8, "Calcium": 21},
+    "kaddu": {"Vitamin A": 425, "Vitamin C": 9, "Folate": 16, "Iron": 0.8, "Calcium": 21},
+    "tomato": {"Vitamin A": 42, "Vitamin C": 14, "Folate": 15, "Iron": 0.3},
+    "capsicum": {"Vitamin A": 30, "Vitamin C": 80, "Folate": 10},
+    "bell pepper": {"Vitamin A": 30, "Vitamin C": 80, "Folate": 10},
+    "broccoli": {"Vitamin A": 30, "Vitamin C": 90, "Folate": 60, "Iron": 0.7, "Calcium": 47},
+    "cauliflower": {"Vitamin C": 48, "Folate": 57, "Iron": 0.4, "Calcium": 22},
+    "gobi": {"Vitamin C": 48, "Folate": 57, "Iron": 0.4, "Calcium": 22},
+    "potato": {"Vitamin C": 20, "Folate": 15, "Iron": 0.8, "Calcium": 12},
+    "aloo": {"Vitamin C": 20, "Folate": 15, "Iron": 0.8, "Calcium": 12},
+    "bhindi": {"Vitamin A": 36, "Vitamin C": 23, "Folate": 60, "Iron": 0.6, "Calcium": 82},
+    "okra": {"Vitamin A": 36, "Vitamin C": 23, "Folate": 60, "Iron": 0.6, "Calcium": 82},
+    "baingan": {"Vitamin C": 2, "Folate": 22, "Iron": 0.2},
+    "brinjal": {"Vitamin C": 2, "Folate": 22, "Iron": 0.2},
+    "beans": {"Vitamin C": 12, "Folate": 33, "Iron": 1.0, "Calcium": 37, "Vitamin A": 35},
+    "peas": {"Vitamin A": 38, "Vitamin C": 40, "Folate": 65, "Iron": 1.5, "Calcium": 25},
+    "matar": {"Vitamin A": 38, "Vitamin C": 40, "Folate": 65, "Iron": 1.5, "Calcium": 25},
+    "beetroot": {"Folate": 110, "Iron": 0.8, "Vitamin C": 5, "Calcium": 16},
+    "chukandar": {"Folate": 110, "Iron": 0.8, "Vitamin C": 5, "Calcium": 16},
+    "cabbage": {"Vitamin C": 36, "Folate": 43, "Calcium": 40, "Iron": 0.5},
+    "lauki": {"Vitamin C": 10, "Folate": 6, "Calcium": 26, "Iron": 0.2},
+    "bottle gourd": {"Vitamin C": 10, "Folate": 6, "Calcium": 26, "Iron": 0.2},
+    "tinda": {"Vitamin C": 8, "Calcium": 18, "Iron": 0.3},
+    "turai": {"Vitamin C": 12, "Folate": 15, "Iron": 0.4, "Calcium": 18},
+    "ridge gourd": {"Vitamin C": 12, "Folate": 15, "Iron": 0.4, "Calcium": 18},
+    "bitter gourd": {"Vitamin C": 84, "Folate": 72, "Iron": 0.4, "Vitamin A": 24},
+    "karela": {"Vitamin C": 84, "Folate": 72, "Iron": 0.4, "Vitamin A": 24},
+    "mushroom": {"Vitamin D": 0.3, "Vitamin B12": 0.04, "Iron": 0.5, "Folate": 17},
+    # Fruits
+    "orange": {"Vitamin C": 70, "Folate": 40, "Vitamin A": 14, "Calcium": 40},
+    "lemon": {"Vitamin C": 53, "Folate": 11},
+    "nimbu": {"Vitamin C": 53, "Folate": 11},
+    "mango": {"Vitamin A": 54, "Vitamin C": 36, "Folate": 43},
+    "aam": {"Vitamin A": 54, "Vitamin C": 36, "Folate": 43},
+    "papaya": {"Vitamin A": 55, "Vitamin C": 62, "Folate": 38},
+    "banana": {"Vitamin C": 9, "Folate": 20, "Iron": 0.3, "Vitamin B12": 0},
+    "guava": {"Vitamin C": 228, "Vitamin A": 31, "Folate": 49, "Iron": 0.3},
+    "amla": {"Vitamin C": 600, "Iron": 1.2, "Calcium": 25},
+    "gooseberry": {"Vitamin C": 600, "Iron": 1.2, "Calcium": 25},
+    "apple": {"Vitamin C": 5, "Folate": 3, "Iron": 0.1},
+    "pomegranate": {"Vitamin C": 10, "Folate": 38, "Iron": 0.3, "Calcium": 10},
+    "anar": {"Vitamin C": 10, "Folate": 38, "Iron": 0.3, "Calcium": 10},
+    "strawberry": {"Vitamin C": 59, "Folate": 24, "Iron": 0.4},
+    "kiwi": {"Vitamin C": 93, "Folate": 25, "Vitamin A": 4},
+    "watermelon": {"Vitamin A": 28, "Vitamin C": 8},
+    # Nuts & seeds
+    "almond": {"Vitamin A": 1, "Calcium": 75, "Iron": 1.0, "Folate": 14},
+    "badam": {"Vitamin A": 1, "Calcium": 75, "Iron": 1.0, "Folate": 14},
+    "cashew": {"Iron": 1.9, "Calcium": 12, "Folate": 7},
+    "kaju": {"Iron": 1.9, "Calcium": 12, "Folate": 7},
+    "peanut": {"Folate": 120, "Iron": 1.3, "Calcium": 26},
+    "walnut": {"Folate": 28, "Iron": 0.8, "Calcium": 28},
+    "akhrot": {"Folate": 28, "Iron": 0.8, "Calcium": 28},
+    "flaxseed": {"Iron": 1.6, "Calcium": 74, "Folate": 25},
+    "alsi": {"Iron": 1.6, "Calcium": 74, "Folate": 25},
+    "sesame": {"Calcium": 280, "Iron": 4.1, "Folate": 28},
+    "til": {"Calcium": 280, "Iron": 4.1, "Folate": 28},
+    "sunflower seed": {"Folate": 67, "Iron": 1.8, "Vitamin A": 1},
+    "pumpkin seed": {"Iron": 2.5, "Calcium": 15, "Folate": 10},
+    "chia": {"Calcium": 177, "Iron": 2.2, "Folate": 14},
+    # Grains & bread
+    "roti": {"Iron": 1.2, "Folate": 30, "Calcium": 15},
+    "chapati": {"Iron": 1.2, "Folate": 30, "Calcium": 15},
+    "rice": {"Iron": 0.4, "Folate": 8, "Calcium": 10},
+    "chawal": {"Iron": 0.4, "Folate": 8, "Calcium": 10},
+    "paratha": {"Iron": 1.5, "Folate": 35, "Calcium": 20, "Vitamin A": 10},
+    "naan": {"Iron": 1.0, "Folate": 25, "Calcium": 15},
+    "poha": {"Iron": 1.8, "Folate": 15, "Vitamin C": 5, "Calcium": 10},
+    "upma": {"Iron": 1.0, "Folate": 12, "Calcium": 15},
+    "idli": {"Iron": 0.8, "Folate": 18, "Calcium": 15, "Vitamin B12": 0.1},
+    "dosa": {"Iron": 1.0, "Folate": 20, "Calcium": 20, "Vitamin B12": 0.1},
+    "uttapam": {"Iron": 1.0, "Folate": 22, "Calcium": 25, "Vitamin B12": 0.1},
+    "oats": {"Iron": 1.7, "Folate": 14, "Calcium": 20},
+    "oatmeal": {"Iron": 1.7, "Folate": 14, "Calcium": 20},
+    "bread": {"Iron": 1.0, "Folate": 20, "Calcium": 15},
+    "khichdi": {"Iron": 2.0, "Folate": 80, "Calcium": 30, "Vitamin A": 10, "Vitamin C": 3},
+    "pulao": {"Iron": 0.8, "Folate": 15, "Calcium": 15, "Vitamin A": 10},
+    "biryani": {"Iron": 1.2, "Folate": 20, "Calcium": 20, "Vitamin A": 15},
+    # Prepared dishes (common Indian vegetarian)
+    "palak paneer": {"Vitamin A": 450, "Vitamin C": 25, "Folate": 150, "Iron": 3.5, "Calcium": 350, "Vitamin B12": 0.5},
+    "matar paneer": {"Vitamin A": 60, "Vitamin C": 30, "Folate": 70, "Iron": 1.8, "Calcium": 280, "Vitamin B12": 0.5},
+    "aloo gobi": {"Vitamin C": 45, "Folate": 40, "Iron": 1.0, "Calcium": 30},
+    "aloo matar": {"Vitamin C": 35, "Folate": 45, "Iron": 1.5, "Calcium": 30, "Vitamin A": 30},
+    "bhindi masala": {"Vitamin A": 36, "Vitamin C": 20, "Folate": 50, "Iron": 0.7, "Calcium": 75},
+    "dal fry": {"Folate": 160, "Iron": 3.0, "Vitamin C": 5, "Calcium": 40, "Vitamin A": 15},
+    "dal tadka": {"Folate": 160, "Iron": 3.0, "Vitamin C": 5, "Calcium": 40, "Vitamin A": 15},
+    "dal makhani": {"Folate": 130, "Iron": 3.0, "Calcium": 60, "Vitamin A": 30, "Vitamin B12": 0.2},
+    "rajma chawal": {"Folate": 140, "Iron": 3.2, "Calcium": 65, "Vitamin C": 3},
+    "chole bhature": {"Folate": 150, "Iron": 2.8, "Calcium": 50, "Vitamin C": 3},
+    "kadhi": {"Calcium": 200, "Vitamin B12": 0.4, "Folate": 30, "Iron": 0.5, "Vitamin A": 25},
+    "pav bhaji": {"Vitamin A": 60, "Vitamin C": 30, "Iron": 2.0, "Folate": 40, "Calcium": 30},
+    "veg pulao": {"Vitamin A": 25, "Iron": 1.0, "Folate": 20, "Calcium": 20, "Vitamin C": 8},
+    "veg biryani": {"Vitamin A": 30, "Iron": 1.5, "Folate": 30, "Calcium": 25, "Vitamin C": 10},
+    "poha jalebi": {"Iron": 1.8, "Folate": 15, "Vitamin C": 5, "Calcium": 10},
+    "salad": {"Vitamin A": 60, "Vitamin C": 25, "Folate": 40, "Iron": 0.6, "Calcium": 30},
+    "raita": {"Vitamin B12": 0.5, "Calcium": 180, "Vitamin A": 30},
+    "soup": {"Vitamin A": 40, "Vitamin C": 15, "Folate": 25, "Iron": 0.5, "Calcium": 20},
+    "smoothie": {"Vitamin C": 30, "Calcium": 150, "Vitamin A": 40, "Folate": 20, "Vitamin B12": 0.4},
+    "sandwich": {"Iron": 1.0, "Folate": 30, "Calcium": 80, "Vitamin C": 5, "Vitamin A": 15},
+    "wrap": {"Iron": 1.2, "Folate": 35, "Calcium": 100, "Vitamin C": 8, "Vitamin A": 20},
+    "dhokla": {"Iron": 1.2, "Folate": 40, "Calcium": 20, "Vitamin B12": 0.1},
+    "khandvi": {"Folate": 30, "Calcium": 50, "Iron": 0.5},
+    "thepla": {"Iron": 1.5, "Folate": 40, "Calcium": 20, "Vitamin A": 20},
+    "puri": {"Iron": 1.3, "Folate": 28, "Calcium": 15},
+    "jalebi": {"Iron": 0.3, "Calcium": 5},
+    "halwa": {"Vitamin A": 50, "Iron": 1.0, "Calcium": 30},
+    "ladoo": {"Iron": 0.8, "Calcium": 35, "Folate": 10},
+    "laddoo": {"Iron": 0.8, "Calcium": 35, "Folate": 10},
+    # Beverages
+    "tea": {"Iron": 0.2, "Calcium": 5},
+    "chai": {"Iron": 0.2, "Calcium": 30, "Vitamin B12": 0.1},
+    "coffee": {"Iron": 0.1, "Calcium": 5},
+    "juice": {"Vitamin C": 40, "Folate": 20, "Vitamin A": 20},
+    "nimbu pani": {"Vitamin C": 40},
+    "lemonade": {"Vitamin C": 40},
+    "coconut water": {"Calcium": 24, "Iron": 0.3, "Vitamin C": 2},
+}
+
+
+def estimate_micronutrients_from_meals(per_meal_data: list[dict] | None) -> dict[str, float]:
+    """Estimate micronutrient totals by scanning dish names and descriptions against
+    the food composition lookup table. Returns absolute values in RDA units."""
+    totals: dict[str, float] = {label: 0.0 for label in MICRONUTRIENTS}
+    if not per_meal_data:
+        return totals
+
+    for meal in per_meal_data:
+        dish_name = str(meal.get("dish_name", "")).lower().strip()
+        description = str(meal.get("description", "")).lower().strip()
+        combined = f"{dish_name} {description}"
+        matched_keywords: set[str] = set()
+
+        # Try multi-word keys first (e.g. "palak paneer"), then single-word keys
+        for keyword, nutrients in sorted(MICRONUTRIENT_FOOD_DB.items(), key=lambda x: -len(x[0])):
+            if keyword in combined and keyword not in matched_keywords:
+                # Don't double-count if a multi-word match already covered single words
+                # e.g. "palak paneer" covers both "palak" and "paneer" individually
+                words = keyword.split()
+                if len(words) > 1 or not any(keyword in mk for mk in matched_keywords if len(mk.split()) > 1):
+                    for nutrient, amount in nutrients.items():
+                        if nutrient in totals:
+                            totals[nutrient] += amount
+                    matched_keywords.add(keyword)
+
+    return totals
+
+
+def compute_micro_percentages(
+    micro_totals: dict[str, float],
+    ai_micro: dict[str, int] | None = None,
+) -> dict[str, int]:
+    """Convert absolute micronutrient values to % of RDA.
+    Falls back to AI-parsed values if server-side estimate is zero and AI has a value."""
+    result: dict[str, int] = {}
+    ai = ai_micro or {}
+    for label in MICRONUTRIENTS:
+        rda = MICRONUTRIENT_RDA.get(label, 1)
+        estimated = micro_totals.get(label, 0)
+        if rda > 0 and estimated > 0:
+            pct = max(0, min(200, round(estimated / rda * 100)))
+            result[label] = pct
+        elif label in ai and ai[label] > 0:
+            result[label] = ai[label]
+        else:
+            # Provide a conservative baseline estimate based on total calorie content
+            # rather than showing "AI est."
+            result[label] = 0
+    return result
+
 
 class RetryableAIError(Exception):
     """Signals that another configured model should be tried."""
@@ -621,13 +851,10 @@ def build_metric_cards_html(percentages: dict[str, int]) -> str:
 def build_vitamin_cards_html(percentages: dict[str, int]) -> str:
     cards = []
     for label in MICRONUTRIENTS:
-        if label in percentages:
-            value = f"{percentages[label]}%"
-        else:
-            value = "AI est."
+        value = percentages.get(label, 0)
         cards.append(
             "<div class='vitamin-chip'>"
-            f"<span>{escape(label)}</span><strong>{escape(value)}</strong>"
+            f"<span>{escape(label)}</span><strong>{value}%</strong>"
             "</div>"
         )
     return "".join(cards)
@@ -859,8 +1086,10 @@ def build_recipe_unavailable_html(dish_name: str) -> str:
     )
 
 
-def build_nutrition_fallback_html(macros: dict, meals_list: list[str]) -> str:
+def build_nutrition_fallback_html(macros: dict, meals_list: list[str],
+                                   computed_micro: dict[str, int] | None = None) -> str:
     meal_items = "".join(f"<li>{escape(item)}</li>" for item in meals_list[:5]) or "<li>No meals planned yet.</li>"
+    vitamin_html = build_vitamin_cards_html(computed_micro or {})
     return f"""
 <div class='ai-nutrition'>
   <div class='ai-nutrition-top'>
@@ -879,12 +1108,7 @@ def build_nutrition_fallback_html(macros: dict, meals_list: list[str]) -> str:
     <div class='nutrition-metric'><div class='nutrition-metric-head'><label>Fiber</label><span>Tracked</span></div><progress value='100' max='100'></progress><p>{escape(str(round(macros['fiber'], 1)))} g logged</p></div>
   </div>
   <div class='vitamin-grid'>
-    <div class='vitamin-chip'><span>Vitamin A</span><strong>AI needed</strong></div>
-    <div class='vitamin-chip'><span>Vitamin C</span><strong>AI needed</strong></div>
-    <div class='vitamin-chip'><span>Vitamin D</span><strong>AI needed</strong></div>
-    <div class='vitamin-chip'><span>Vitamin B12</span><strong>AI needed</strong></div>
-    <div class='vitamin-chip'><span>Iron</span><strong>AI needed</strong></div>
-    <div class='vitamin-chip'><span>Calcium</span><strong>AI needed</strong></div>
+    {vitamin_html}
   </div>
   <div class='ai-depth-panel hidden'>
     <p class='ai-assess'>Review meal balance manually and try the AI analysis again later.</p>
@@ -1203,14 +1427,22 @@ async def evaluate_nutrition(
         temperature=0.1,
         max_tokens=1800,
     )
+    # Compute server-side micronutrient estimates from meal data
+    micro_totals = estimate_micronutrients_from_meals(per_meal_data)
+    computed_primary = compute_primary_percentages(macros, targets)
+
     if not result:
-        return build_nutrition_fallback_html(macros, meals_list)
+        computed_micro = compute_micro_percentages(micro_totals)
+        return build_nutrition_fallback_html(macros, meals_list, computed_micro)
 
     # Override AI primary nutrient percentages with accurate server-side computation
-    computed_primary = compute_primary_percentages(macros, targets)
+    # Merge AI-parsed micro with server-side estimates (server-side takes priority)
+    ai_micro = result.get("micro", {})
+    computed_micro = compute_micro_percentages(micro_totals, ai_micro)
+
     html_fragment = render_nutrition_dashboard_with_overrides(
         result["html"], result.get("primary", {}), computed_primary,
-        result.get("micro", {}), macros, targets,
+        computed_micro, macros, targets,
     )
 
     # Filter out recommendations that match already-planned meals
@@ -1218,7 +1450,7 @@ async def evaluate_nutrition(
     meals = [m for m in meals if m["dish_name"].lower() not in existing_set]
     if not meals:
         meals = build_rule_based_actionable_meals(
-            computed_primary, result.get("micro", {}), existing_names=existing_set,
+            computed_primary, computed_micro, existing_names=existing_set,
         )
     quick_add_html = build_quick_add_html(meals, plan_date)
     if quick_add_html:

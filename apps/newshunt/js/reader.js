@@ -289,7 +289,7 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
           fullContent = accumulated;
           contentEl.innerHTML = Utils.renderMarkdown(accumulated) + '<span class="reader__streaming-cursor"></span>';
         },
-        { temperature: 0.5, max_tokens: 8192 }
+        { temperature: 0.5, max_tokens: 8192, task: 'reader' }
       );
 
       this._renderContent(fullContent);
@@ -427,7 +427,7 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
       const response = await AI.call([
         { role: 'system', content: 'You are a helpful explainer. Explain the selected text from a news article in 2-4 sentences. Use simple language. Be concise and informative. Format in markdown if helpful.' },
         { role: 'user', content: `Explain this in the context of the article "${this.currentArticle?.title || 'current article'}":\n\n"${text}"` }
-      ], { max_tokens: 300, temperature: 0.4 });
+      ], { max_tokens: 300, temperature: 0.4, task: 'reader' });
 
       this._showExplainPopup(text, response);
     } catch (error) {
@@ -444,7 +444,7 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
       const response = await AI.call([
         { role: 'system', content: 'You are a dictionary/encyclopedia. Define the given word or phrase in 1-3 sentences. If it is a name, explain who/what it is. Be concise.' },
         { role: 'user', content: `Define: "${text}"` }
-      ], { max_tokens: 200, temperature: 0.2 });
+      ], { max_tokens: 200, temperature: 0.2, task: 'reader' });
 
       this._showExplainPopup(text, response);
     } catch (error) {

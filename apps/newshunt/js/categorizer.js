@@ -88,7 +88,8 @@ Respond ONLY with a valid JSON array. Each element:
                 { role: 'user', content: prompt }
             ], {
                 temperature: 0.15,
-                max_tokens: 2048
+                max_tokens: 2048,
+                task: 'categorize'
             });
 
             let jsonStr = response.trim();
@@ -230,7 +231,7 @@ Rules:
                 const response = await AI.call([
                     { role: 'system', content: 'You are a precise news grouping assistant. Always respond with valid JSON only. No markdown, no extra text.' },
                     { role: 'user', content: prompt }
-                ], { temperature: 0.1, max_tokens: 4096 });
+                ], { temperature: 0.1, max_tokens: 4096, task: 'group' });
 
                 let jsonStr = response.trim();
                 if (jsonStr.startsWith('```')) {
@@ -325,7 +326,7 @@ IMPORTANT:
             const response = await AI.call([
                 { role: 'system', content: 'You are a precise data deduplication assistant. Output ONLY valid JSON array.' },
                 { role: 'user', content: prompt }
-            ], { temperature: 0.0, max_tokens: 2000 });
+            ], { temperature: 0.0, max_tokens: 2000, task: 'group' });
 
             let jsonStr = response.trim();
             if (jsonStr.startsWith('```')) {

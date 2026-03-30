@@ -216,7 +216,7 @@ ${cachedContent || article.description || 'No content available.'}
           const container = document.getElementById('chat-messages');
           if (container) container.scrollTop = container.scrollHeight;
         },
-        { temperature: 0.6, max_tokens: 2048 }
+        { temperature: 0.6, max_tokens: 2048, task: 'chat' }
       );
 
       await db.addChatMessage(this.currentGuid, 'assistant', aiResponse);
