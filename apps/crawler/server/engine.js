@@ -54,6 +54,7 @@ function normalizeAIMessage(message = {}) {
 
 let cachedSharedApiSettings = null;
 let cachedSharedApiSettingsAt = 0;
+const stopRequests = new Map();
 
 function normalizeCrawlerModelSelection(modelString = '') {
     let provider = String(modelString || '').trim();
@@ -158,6 +159,78 @@ async function buildRecoverySummary(task, visitedUrls, pageSnapshots, primaryMod
 
     const response = await callAIWithFallback(recoveryMessages, primaryModel, fallbackModel, null, log, 'Recovery AI');
     return response?.content || response || null;
+}
+
+async function buildWorkingSummary(task, visitedUrls, pageSnapshots, currentSummary, primaryModel, fallbackModel, log) {
+    const snapshotEntries = Array.from(pageSnapshots.entries());
+    if (snapshotEntries.length === 0) {
+        return currentSummary || null;
+    }
+
+    const latestPages = snapshotEntries.slice(-3).map(([url, text], index) => {
+        return `## Recent Page ${index + 1}\nURL: ${url}\n${String(text || '').slice(0, 8000)}`;
+    }).join('\n\n');
+
+    const workingMessages = [
+        {
+            role: 'system',
+            content: 'You are maintaining a live draft summary for an in-progress web crawl. Update the markdown summary with newly discovered findings while preserving useful earlier findings that still appear valid. Be concise, organized, and factual. Make clear that the crawl is still in progress only if needed.'
+        },
+        {
+            role: 'user',
+            content: `Task: ${task.name}\nGoal: ${task.goal}\nVisited URLs so far:\n${visitedUrls.join('\n')}\n\nExisting working summary:\n${currentSummary || 'None yet.'}\n\nNewest page notes:\n${latestPages}\n\nReturn an updated working markdown summary with sections for Current Findings, Sources Covered, and Pending Gaps if applicable.`
+        }
+    ];
+
+    const response = await callAIWithFallback(workingMessages, primaryModel, fallbackModel, null, log, 'Summary AI');
+    return response?.content || response || currentSummary || null;
+}
+
+function requestStopRun(runId) {
+    stopRequests.set(String(runId), {
+        requestedAt: new Date()
+    });
+}
+
+function consumeStopRequest(runId) {
+    const key = String(runId);
+    const request = stopRequests.get(key) || null;
+    if (request) {
+        stopRequests.delete(key);
+    }
+    return request;
+}
+
+function hasStopRequest(runId) {
+    return stopRequests.has(String(runId));
+}
+
+async function finalizeStoppedRun(run, task, pageSnapshots, workingSummary, primaryModel, fallbackModel, log, reason = 'Stopped by user.') {
+    let finalSummary = workingSummary || '';
+
+    if (pageSnapshots.size > 0) {
+        try {
+            const recoveredSummary = await buildRecoverySummary(task, run.visitedUrls || [], pageSnapshots, primaryModel, fallbackModel, log);
+            if (recoveredSummary) {
+                finalSummary = recoveredSummary;
+            }
+        } catch (error) {
+            log(`\x1b[33m[Stop Warning]\x1b[0m ${error.message}`);
+        }
+    }
+
+    if (!finalSummary) {
+        finalSummary = `# Crawl Stopped\n\n${reason}\n\nNo page content was summarized before the run was stopped.`;
+    } else {
+        finalSummary = `${finalSummary}\n\n---\n\n_Stopped early: ${reason}_`;
+    }
+
+    run.finalSummary = finalSummary;
+    run.status = 'stopped';
+    run.error = '';
+    run.endTime = new Date();
+    await run.save();
+    log(`\x1b[33m[Stopped]\x1b[0m ${reason}`);
 }
 
 function getCrawlerRemoteBrowserEndpoints() {
@@ -433,6 +506,9 @@ async function executeCrawlerRun(runId) {
     const pageSnapshots = new Map();
     const toolFailureCounts = new Map();
     const MAX_REPEAT_FAILURES_BEFORE_RECOVERY = 5;
+    let workingSummary = run.finalSummary || '';
+    let summaryVersion = 0;
+    let lastSummarizedVersion = 0;
 
     let browser = null;
     let log = console.log;
@@ -474,12 +550,24 @@ async function executeCrawlerRun(runId) {
         const MAX_LOOPS = 25;
 
         while (!isFinished && loopCount < MAX_LOOPS) {
+            if (hasStopRequest(run._id)) {
+                await finalizeStoppedRun(run, task, pageSnapshots, workingSummary, task.primaryModel, task.fallbackModel, log, 'Stop requested before next loop.');
+                isFinished = true;
+                break;
+            }
+
             loopCount++;
             log(`\n\x1b[35m[Engine]\x1b[0m Loop ${loopCount}/${MAX_LOOPS}`);
 
             const aiMessage = await callAIWithFallback(messages, task.primaryModel, task.fallbackModel, CRAWLER_TOOLS, log, 'AI');
 
             messages.push(aiMessage);
+
+            if (hasStopRequest(run._id)) {
+                await finalizeStoppedRun(run, task, pageSnapshots, workingSummary, task.primaryModel, task.fallbackModel, log, 'Stop requested after AI planning.');
+                isFinished = true;
+                break;
+            }
 
             if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
                 for (const toolCall of aiMessage.tool_calls) {
@@ -493,10 +581,39 @@ async function executeCrawlerRun(runId) {
                     try {
                         if (funcName === 'get_page_content') {
                             const text = await page.evaluate(() => document.body.innerText);
-                            toolResponse = text.substring(0, 40000); 
-                            pageSnapshots.set(page.url(), text.substring(0, 15000));
+                            toolResponse = text.substring(0, 40000);
+                            const snapshotText = text.substring(0, 15000);
+                            const previousSnapshot = pageSnapshots.get(page.url()) || '';
+                            pageSnapshots.set(page.url(), snapshotText);
+                            if (snapshotText !== previousSnapshot) {
+                                summaryVersion++;
+                            }
                             toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Extracted ${toolResponse.length} characters.`);
+
+                            if (summaryVersion > lastSummarizedVersion) {
+                                try {
+                                    log(`\x1b[90m[Summary]\x1b[0m Updating working summary...`);
+                                    const updatedSummary = await buildWorkingSummary(
+                                        task,
+                                        run.visitedUrls || [],
+                                        pageSnapshots,
+                                        workingSummary,
+                                        task.primaryModel,
+                                        task.fallbackModel,
+                                        log
+                                    );
+                                    if (updatedSummary) {
+                                        workingSummary = updatedSummary;
+                                        run.finalSummary = updatedSummary;
+                                        await run.save();
+                                        lastSummarizedVersion = summaryVersion;
+                                        log(`\x1b[90m[Summary]\x1b[0m Working summary updated.`);
+                                    }
+                                } catch (summaryErr) {
+                                    log(`\x1b[33m[Summary Warning]\x1b[0m ${summaryErr.message}`);
+                                }
+                            }
                         } 
                         else if (funcName === 'click') {
                             await Promise.all([
@@ -550,6 +667,7 @@ async function executeCrawlerRun(runId) {
                         }
                         else if (funcName === 'finalize') {
                             run.finalSummary = args.summary_markdown;
+                            workingSummary = args.summary_markdown;
                             run.status = 'success';
                             run.endTime = new Date();
                             await run.save();
@@ -576,6 +694,7 @@ async function executeCrawlerRun(runId) {
                             const recoveredSummary = await buildRecoverySummary(task, run.visitedUrls || [], pageSnapshots, task.primaryModel, task.fallbackModel, log);
                             if (recoveredSummary) {
                                 run.finalSummary = recoveredSummary;
+                                workingSummary = recoveredSummary;
                                 run.status = 'success';
                                 run.endTime = new Date();
                                 await run.save();
@@ -591,6 +710,18 @@ async function executeCrawlerRun(runId) {
                                 break;
                             }
                         }
+                    }
+
+                    if (!isFinished && hasStopRequest(run._id)) {
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: funcName,
+                            content: toolResponse
+                        });
+                        await finalizeStoppedRun(run, task, pageSnapshots, workingSummary, task.primaryModel, task.fallbackModel, log, `Stop requested after ${funcName}.`);
+                        isFinished = true;
+                        break;
                     }
 
                     messages.push({
@@ -614,6 +745,7 @@ async function executeCrawlerRun(runId) {
             const recoveredSummary = await buildRecoverySummary(task, run.visitedUrls || [], pageSnapshots, task.primaryModel, task.fallbackModel, log);
             if (recoveredSummary) {
                 run.finalSummary = recoveredSummary;
+                workingSummary = recoveredSummary;
                 run.status = 'success';
                 log(`\x1b[92m[Recovery]\x1b[0m Timeout summary generated from collected pages.`);
             } else {
@@ -626,6 +758,7 @@ async function executeCrawlerRun(runId) {
         run.status = 'failed';
         run.error = err.message || JSON.stringify(err);
     } finally {
+        consumeStopRequest(run._id);
         run.endTime = new Date();
         await run.save();
         if (browser) await browser.close();
@@ -670,5 +803,6 @@ function startBackgroundWorker() {
 
 module.exports = {
     startBackgroundWorker,
-    executeCrawlerRun
+    executeCrawlerRun,
+    requestStopRun
 };

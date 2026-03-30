@@ -109,6 +109,28 @@ router.get('/runs/detail/:id', async (req, res) => {
     }
 });
 
+// Request a running run to stop and finalize its partial summary
+router.post('/runs/:id/stop', async (req, res) => {
+    try {
+        const run = await CrawlerRun.findById(req.params.id);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+        if (run.status !== 'running') {
+            return res.status(409).json({ error: `Run is already ${run.status}` });
+        }
+
+        const crawlerEngine = require('./engine');
+        crawlerEngine.requestStopRun(run._id);
+
+        await CrawlerRun.findByIdAndUpdate(run._id, {
+            $push: { activityLog: `[${new Date().toLocaleTimeString()}] [Stop Requested] User asked to stop this run and keep a partial summary.` }
+        });
+
+        res.json({ ok: true, message: 'Stop requested. The crawler will finalize a partial summary shortly.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- Storage API Endpoints ---
 const fs = require('fs');
 const path = require('path');

@@ -96,6 +96,12 @@ const App = {
             document.getElementById('detail-task-name').innerText = task.name;
             document.getElementById('detail-status').innerText = run.status.toUpperCase();
             document.getElementById('detail-status').className = `badge status-${run.status}`;
+            const stopBtn = document.getElementById('detail-stop-btn');
+            if (stopBtn) {
+                stopBtn.style.display = run.status === 'running' ? 'inline-flex' : 'none';
+                stopBtn.disabled = false;
+                stopBtn.innerText = 'Stop & Summarize';
+            }
             
             document.getElementById('detail-start').innerText = new Date(run.startTime).toLocaleString();
             document.getElementById('detail-end').innerText = run.endTime ? new Date(run.endTime).toLocaleString() : 'In Progress';
@@ -201,7 +207,7 @@ const App = {
                     <span>📎 ${r.attachments?.length || 0} files</span>
                 </div>
                 <div style="margin-top:1rem; font-size: 0.8rem; height: 40px; overflow:hidden; text-overflow:ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: var(--text-muted);">
-                    ${r.status === 'success' ? (r.finalSummary ? r.finalSummary.replace(/<[^>]*>?/gm, '') : 'Finalized.') : (r.error || 'Processing...')}
+                    ${r.finalSummary ? r.finalSummary.replace(/<[^>]*>?/gm, '') : (r.status === 'running' ? 'Processing...' : (r.error || 'No summary available.'))}
                 </div>
             </div>
         `).join('');
@@ -223,6 +229,33 @@ const App = {
             this.viewRun(run._id);
         } catch(err) {
             alert('Failed to execute task: ' + err.message);
+        }
+    },
+
+    async stopCurrentRun() {
+        if (!this.currentRunId) return;
+        if (!confirm('Stop this running task and finalize a summary from the progress so far?')) return;
+
+        const stopBtn = document.getElementById('detail-stop-btn');
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.innerText = 'Stopping...';
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/runs/${this.currentRunId}/stop`, { method: 'POST' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(result.error || 'Failed to stop run');
+            }
+
+            await this.viewRun(this.currentRunId);
+        } catch (err) {
+            if (stopBtn) {
+                stopBtn.disabled = false;
+                stopBtn.innerText = 'Stop & Summarize';
+            }
+            alert('Failed to stop run: ' + err.message);
         }
     },
 

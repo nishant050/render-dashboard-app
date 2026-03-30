@@ -88,7 +88,7 @@ const crawlerRunSchema = new mongoose.Schema({
     taskId: { type: mongoose.Schema.Types.ObjectId, ref: 'CrawlerTask', required: true },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
-    status: { type: String, enum: ['running', 'success', 'failed'], default: 'running' },
+    status: { type: String, enum: ['running', 'success', 'failed', 'stopped'], default: 'running' },
     finalSummary: { type: String, default: '' },
     visitedUrls: { type: [String], default: [] },
     attachments: [{ 
