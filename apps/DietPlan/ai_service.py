@@ -1185,7 +1185,7 @@ def build_payload(
             payload["tools"] = [{"google_search": {}}]
         return payload
 
-    return {
+    payload = {
         "model": model["model_id"],
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -1194,6 +1194,14 @@ def build_payload(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+
+    if model["provider"] == "nvidia":
+        payload["chat_template_kwargs"] = {
+            "enable_thinking": True,
+            "clear_thinking": False
+        }
+
+    return payload
 
 
 def extract_model_text(model: dict, data: dict) -> str:
@@ -1208,13 +1216,20 @@ def extract_model_text(model: dict, data: dict) -> str:
         raise ParseAIError("empty choices")
     message = choices[0].get("message") or {}
     content = message.get("content", "")
+    reasoning = message.get("reasoning_content", "")
     if isinstance(content, list):
         content = "\n".join(
             item.get("text", "")
             for item in content
             if isinstance(item, dict) and item.get("text")
         )
-    return str(content or "").strip()
+    
+    final_text = str(content or "").strip()
+    reasoning_text = str(reasoning or "").strip()
+    
+    if reasoning_text:
+        return f"{reasoning_text}\n{final_text}".strip()
+    return final_text
 
 
 async def call_model(

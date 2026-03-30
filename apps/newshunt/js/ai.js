@@ -299,6 +299,13 @@ const AI = {
             ...(options.response_format && { response_format: options.response_format })
         };
 
+        if (config.provider === 'nvidia') {
+            body.chat_template_kwargs = {
+                enable_thinking: true,
+                clear_thinking: false
+            };
+        }
+
         const response = await fetch(config.baseUrl, {
             method: 'POST',
             headers,
@@ -346,6 +353,13 @@ const AI = {
             stream: true
         };
 
+        if (config.provider === 'nvidia') {
+            body.chat_template_kwargs = {
+                enable_thinking: true,
+                clear_thinking: false
+            };
+        }
+
         const response = await fetch(config.baseUrl, {
             method: 'POST',
             headers,
@@ -379,9 +393,11 @@ const AI = {
                 try {
                     const parsed = JSON.parse(data);
                     const delta = parsed.choices?.[0]?.delta?.content || '';
-                    if (delta) {
-                        fullContent += delta;
-                        onChunk(delta, fullContent);
+                    const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || '';
+                    const textChunk = reasoning + delta;
+                    if (textChunk) {
+                        fullContent += textChunk;
+                        onChunk(textChunk, fullContent);
                     }
                 } catch (e) {
                     // Skip malformed chunks
