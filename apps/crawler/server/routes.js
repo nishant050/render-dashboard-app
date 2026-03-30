@@ -44,7 +44,7 @@ router.post('/tasks', async (req, res) => {
 // Update task
 router.put('/tasks/:id', async (req, res) => {
     try {
-        const task = await CrawlerTask.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const task = await CrawlerTask.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
         if (!task) return res.status(404).json({ error: 'Task not found' });
         res.json(task);
     } catch (err) {

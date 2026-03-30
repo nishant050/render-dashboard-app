@@ -4,6 +4,7 @@ const App = {
     tasks: [],
     runs: [],
     currentPollTimeout: null,
+    currentRunId: null,
 
     init() {
         this.loadTasks();
@@ -20,7 +21,13 @@ const App = {
     },
 
     switchView(viewId) {
-        if (this.currentPollTimeout) { clearTimeout(this.currentPollTimeout); this.currentPollTimeout = null; }
+        if (viewId !== 'run-detail' && this.currentPollTimeout) {
+            clearTimeout(this.currentPollTimeout);
+            this.currentPollTimeout = null;
+        }
+        if (viewId !== 'run-detail') {
+            this.currentRunId = null;
+        }
         document.querySelectorAll('.view').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.sidebar__nav-item').forEach(el => el.classList.remove('sidebar__nav-item--active'));
         
@@ -80,6 +87,7 @@ const App = {
 
     async viewRun(id) {
         try {
+            this.currentRunId = id;
             const res = await fetch(`${API_BASE}/runs/detail/${id}`);
             const run = await res.json();
             
@@ -129,12 +137,23 @@ const App = {
                  setTimeout(() => consoleBox.scrollTop = consoleBox.scrollHeight, 50);
             }
 
-            if (run.status === 'running') {
-                if (this.currentPollTimeout) clearTimeout(this.currentPollTimeout);
-                this.currentPollTimeout = setTimeout(() => this.viewRun(run._id), 3000);
+            this.switchView('run-detail');
+
+            if (this.currentPollTimeout) {
+                clearTimeout(this.currentPollTimeout);
+                this.currentPollTimeout = null;
             }
 
-            this.switchView('run-detail');
+            if (run.status === 'running' && this.currentRunId === run._id) {
+                this.currentPollTimeout = setTimeout(async () => {
+                    await this.viewRun(run._id);
+                    if (document.getElementById('runs-view').style.display !== 'none') {
+                        this.loadRuns();
+                    }
+                }, 3000);
+            } else {
+                this.loadRuns();
+            }
         } catch(err) {
             alert('Error loading run details: ' + err.message);
         }

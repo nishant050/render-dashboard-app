@@ -792,7 +792,7 @@ const ensureFileHubFolderExists = async (folderPath = '') => {
                     content: null
                 }
             },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
     }
 };
@@ -814,7 +814,7 @@ const saveFileHubFile = async ({ filePath, name, buffer, mimeType }) => {
                 content: buffer
             }
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 };
 
@@ -1731,7 +1731,7 @@ const writeNewshuntData = async (data) => {
                 articleContent: normalized.articleContent
             }
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
     return result;
 };

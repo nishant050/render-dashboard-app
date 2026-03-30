@@ -75,7 +75,7 @@ router.put('/transactions/:id', async (req, res) => {
             }
         }
 
-        const transaction = await Transaction.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const transaction = await Transaction.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
 
         // Apply new account balance change
         if (transaction.accountId) {
@@ -218,7 +218,7 @@ router.post('/budgets', async (req, res) => {
         const budget = await Budget.findOneAndUpdate(
             { month, year },
             { month, year, ...data },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
         res.json(budget);
     } catch (error) {
@@ -241,7 +241,7 @@ router.post('/budgets/copy', async (req, res) => {
                 totalBudget: sourceBudget.totalBudget,
                 categories: sourceBudget.categories
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
         res.json(newBudget);
     } catch (error) {
@@ -332,7 +332,7 @@ router.post('/bills', async (req, res) => {
 // PUT /bills/:id - Update bill
 router.put('/bills/:id', async (req, res) => {
     try {
-        const bill = await Bill.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const bill = await Bill.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
         if (!bill) return res.status(404).json({ error: 'Bill not found' });
         res.json(bill);
     } catch (error) {
@@ -474,7 +474,7 @@ router.post('/goals', async (req, res) => {
 // PUT /goals/:id - Update goal
 router.put('/goals/:id', async (req, res) => {
     try {
-        const goal = await Goal.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const goal = await Goal.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
         if (!goal) return res.status(404).json({ error: 'Goal not found' });
         res.json(goal);
     } catch (error) {
@@ -596,7 +596,7 @@ router.post('/accounts', async (req, res) => {
 // PUT /accounts/:id - Update account
 router.put('/accounts/:id', async (req, res) => {
     try {
-        const account = await Account.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const account = await Account.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
         if (!account) return res.status(404).json({ error: 'Account not found' });
         res.json(account);
     } catch (error) {
@@ -850,7 +850,7 @@ router.put('/settings', async (req, res) => {
         if (!settings) {
             settings = await Settings.create(req.body);
         } else {
-            settings = await Settings.findOneAndUpdate({}, req.body, { new: true });
+            settings = await Settings.findOneAndUpdate({}, req.body, { returnDocument: 'after' });
         }
         res.json(settings);
     } catch (error) {

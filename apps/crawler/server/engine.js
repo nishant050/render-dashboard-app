@@ -87,6 +87,55 @@ function formatBrowserConnectError(error) {
     return message;
 }
 
+function getLocalBrowserExecutableCandidates() {
+    const candidates = [
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        process.env.CHROME_BIN,
+        process.env.EDGE_BIN,
+        process.env.GOOGLE_CHROME_BIN
+    ].filter(Boolean);
+
+    if (process.platform === 'win32') {
+        const localAppData = process.env.LOCALAPPDATA;
+        candidates.push(
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+            'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+        );
+        if (localAppData) {
+            candidates.push(
+                path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+                path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+            );
+        }
+    } else if (process.platform === 'darwin') {
+        candidates.push(
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+        );
+    } else {
+        candidates.push(
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/microsoft-edge'
+        );
+    }
+
+    return [...new Set(candidates)];
+}
+
+function resolveLocalBrowserExecutablePath() {
+    for (const candidate of getLocalBrowserExecutableCandidates()) {
+        if (candidate && fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
 async function launchCrawlerBrowser(log) {
     const remoteEndpoints = getCrawlerRemoteBrowserEndpoints();
     const errors = [];
@@ -108,9 +157,15 @@ async function launchCrawlerBrowser(log) {
 
     try {
         log(`\x1b[90m[Browser]\x1b[0m Launching local Chromium fallback...`);
+        const executablePath = resolveLocalBrowserExecutablePath();
+        if (executablePath) {
+            log(`\x1b[90m[Browser]\x1b[0m Using local browser at ${executablePath}`);
+        }
+
         const browser = await puppeteer.launch({
             headless: true,
             protocolTimeout: 60000,
+            ...(executablePath ? { executablePath } : {}),
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -121,7 +176,10 @@ async function launchCrawlerBrowser(log) {
         return { browser, mode: 'Local Chromium' };
     } catch (error) {
         const formatted = formatBrowserConnectError(error);
-        errors.push(`Local Chromium: ${formatted}`);
+        const installHint = resolveLocalBrowserExecutablePath()
+            ? formatted
+            : `${formatted}. Set PUPPETEER_EXECUTABLE_PATH/CHROME_BIN/EDGE_BIN or install a supported browser.`;
+        errors.push(`Local Chromium: ${installHint}`);
         throw new Error(`Unable to start crawler browser. ${errors.join(' | ')}`);
     }
 }
