@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "logs:clean": "powershell -ExecutionPolicy Bypass -File scripts/clean-logs.ps1",
-    "render:build": "npm ci && python -m pip install --upgrade pip && pip install -r requirements.txt && pip install -r apps/DietPlan/requirements.txt && (command -v ffmpeg >/dev/null 2>&1 || (apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*)) && ffmpeg -version",
+    "render:build": "bash scripts/render-build.sh",
+    "browsers:install": "npx puppeteer browsers install chrome --install-deps",
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

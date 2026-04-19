@@ -208,7 +208,10 @@ const App = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key, value })
             });
-            if (!res.ok) throw new Error("Failed to sync DB " + key);
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(errorText || "Failed to sync DB " + key);
+            }
         } catch (err) {
             this.showToast('Network sync error: ' + err.message, 'error');
             throw err;
@@ -270,7 +273,7 @@ const App = {
         
         if (!modelStr) return this.showToast('Model ID is required.', 'error');
         
-        const models = this.settings.ai_models || [];
+        const models = [...(this.settings.ai_models || [])];
         const newModel = {
             id: 'm_' + Date.now() + Math.random().toString(36).substr(2, 5),
             provider: provider,
@@ -282,6 +285,14 @@ const App = {
         
         try {
             await this.pushDbSetting('ai_models', models);
+            if (!this.settings.ai_default_model) {
+                await this.pushDbSetting('ai_default_model', newModel);
+                await this.pushDbSetting('ai_provider', newModel.provider);
+                await this.pushDbSetting('ai_model', newModel.model);
+                this.settings.ai_default_model = newModel;
+                this.settings.ai_provider = newModel.provider;
+                this.settings.ai_model = newModel.model;
+            }
             this.settings.ai_models = models;
             this.renderModels();
             this.closeModals();
@@ -294,13 +305,30 @@ const App = {
     async deleteModel(index) {
         if (!confirm('Globally remove this model from all applications?')) return;
         
-        const models = this.settings.ai_models || [];
+        const models = [...(this.settings.ai_models || [])];
         const removed = models.splice(index, 1)[0];
-        
-        if (this.selectedModelId === removed.id) this.selectedModelId = null;
+        if (!removed) return;
         
         try {
             await this.pushDbSetting('ai_models', models);
+            if (this.settings.ai_default_model?.id === removed.id) {
+                const newDefault = models[0] || null;
+                await this.pushDbSetting('ai_default_model', newDefault);
+                this.settings.ai_default_model = newDefault;
+
+                if (newDefault) {
+                    await this.pushDbSetting('ai_provider', newDefault.provider);
+                    await this.pushDbSetting('ai_model', newDefault.model);
+                    this.settings.ai_provider = newDefault.provider;
+                    this.settings.ai_model = newDefault.model;
+                } else {
+                    await this.pushDbSetting('ai_model', null);
+                    await this.pushDbSetting('ai_api_key', null);
+                    this.settings.ai_model = null;
+                    this.settings.ai_api_key = null;
+                }
+            }
+            if (this.selectedModelId === removed.id) this.selectedModelId = null;
             this.settings.ai_models = models;
             this.renderModels();
             this.showToast(`Deleted ${removed.label}.`, 'success');

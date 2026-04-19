@@ -86,6 +86,38 @@ router.post('/tasks/:id/run', async (req, res) => {
     }
 });
 
+// Get all runs
+router.get('/runs', async (req, res) => {
+    try {
+        const runs = await CrawlerRun.find({})
+            .sort({ startTime: -1 })
+            .limit(100);
+        res.json(runs);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Clear run history. Running jobs are kept so an active crawl is not orphaned.
+router.delete('/runs', async (req, res) => {
+    try {
+        const filter = { status: { $ne: 'running' } };
+        if (req.query.taskId) {
+            filter.taskId = req.query.taskId;
+        }
+
+        const result = await CrawlerRun.deleteMany(filter);
+        res.json({
+            message: req.query.taskId
+                ? 'History cleared for the selected task.'
+                : 'History cleared for all tasks.',
+            deletedCount: result.deletedCount || 0
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Get runs for task
 router.get('/runs/:taskId', async (req, res) => {
     try {

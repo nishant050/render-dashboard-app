@@ -262,6 +262,9 @@ function getCrawlerRemoteBrowserEndpoints() {
 
 function formatBrowserConnectError(error) {
     const message = error?.message || String(error);
+    if (message.includes('Unexpected server response: 402')) {
+        return `${message}. The remote browser account rejected the session, usually because quota, billing, or plan access is exhausted. The crawler will fall back to local Chrome when it is installed.`;
+    }
     if (message.includes('Unexpected server response: 400')) {
         return `${message}. The remote browser rejected the websocket handshake. Check the browser endpoint, API key, and service quota/access.`;
     }
@@ -275,6 +278,12 @@ function getLocalBrowserExecutableCandidates() {
         process.env.EDGE_BIN,
         process.env.GOOGLE_CHROME_BIN
     ].filter(Boolean);
+
+    try {
+        candidates.push(puppeteer.executablePath());
+    } catch (error) {
+        // Puppeteer throws here when its managed browser has not been installed yet.
+    }
 
     if (process.platform === 'win32') {
         const localAppData = process.env.LOCALAPPDATA;

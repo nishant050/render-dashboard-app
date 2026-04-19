@@ -64,20 +64,10 @@ const App = {
     async loadRuns() {
         try {
             const filterMap = document.getElementById('task-filter').value;
-            let url = `${API_BASE}/runs/${filterMap}`;
-            if (!filterMap) {
-                // To fetch all runs we would need an endpoint. For now, if no filter, try fetching all runs by omitting taskId...
-                // But our API endpoint requires taskId. Let's adjust backend or fetch the first task runs.
-                if (this.tasks.length > 0) {
-                    document.getElementById('task-filter').value = this.tasks[0]._id;
-                    url = `${API_BASE}/runs/${this.tasks[0]._id}`;
-                } else {
-                    this.renderRuns([]);
-                    return;
-                }
-            }
+            const url = filterMap ? `${API_BASE}/runs/${filterMap}` : `${API_BASE}/runs`;
             
             const res = await fetch(url);
+            if (!res.ok) throw new Error(await res.text());
             this.runs = await res.json();
             this.renderRuns();
         } catch (err) {
@@ -215,7 +205,9 @@ const App = {
 
     updateTasksFilter() {
         const select = document.getElementById('task-filter');
-        select.innerHTML = '<option value="">Select a Task</option>' + this.tasks.map(t => `<option value="${t._id}">${t.name}</option>`).join('');
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">All Tasks</option>' + this.tasks.map(t => `<option value="${t._id}">${t.name}</option>`).join('');
+        select.value = currentValue;
     },
 
     async runTaskNow(taskId, e) {
@@ -283,6 +275,26 @@ const App = {
             }
         } catch(err) {
             alert('Failed to clear storage: ' + err.message);
+        }
+    },
+
+    async clearHistory() {
+        const selectedTaskId = document.getElementById('task-filter').value;
+        const scope = selectedTaskId ? 'the selected task' : 'all tasks';
+        if (!confirm(`Delete finished run history for ${scope}? Running jobs will be kept.`)) return;
+
+        try {
+            const url = selectedTaskId
+                ? `${API_BASE}/runs?taskId=${encodeURIComponent(selectedTaskId)}`
+                : `${API_BASE}/runs`;
+            const res = await fetch(url, { method: 'DELETE' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Failed to clear history');
+
+            alert(`${result.message} Deleted ${result.deletedCount || 0} run${result.deletedCount === 1 ? '' : 's'}.`);
+            await this.loadRuns();
+        } catch(err) {
+            alert('Failed to clear history: ' + err.message);
         }
     },
 

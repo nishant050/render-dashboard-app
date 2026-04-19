@@ -301,7 +301,7 @@ const Settings = {
       return;
     }
 
-    const models = (await db.getSetting('ai_models')) || [];
+    const models = [...((await db.getSetting('ai_models')) || [])];
     const newModel = {
       id: Utils.hashString(provider + model + Date.now()),
       provider,
@@ -309,16 +309,21 @@ const Settings = {
       label: label || model
     };
     models.push(newModel);
-    await db.setSetting('ai_models', models);
 
-    // Auto-set as default if first model
-    if (models.length === 1) {
-      await db.setSetting('ai_default_model', newModel);
-      await this._syncDefaultToLegacy(newModel);
+    try {
+      await db.setSetting('ai_models', models);
+
+      // Auto-set as default if first model
+      if (models.length === 1) {
+        await db.setSetting('ai_default_model', newModel);
+        await this._syncDefaultToLegacy(newModel);
+      }
+
+      Components.showToast(`Model "${newModel.label}" added!`, 'success');
+      await this._renderPage('api');
+    } catch (error) {
+      Components.showToast(`Failed to add model: ${error.message}`, 'error', 6000);
     }
-
-    Components.showToast(`Model "${newModel.label}" added!`, 'success');
-    await this._renderPage('api');
   },
 
   async setDefaultModel(index) {
@@ -341,18 +346,28 @@ const Settings = {
   },
 
   async removeModel(index) {
-    const models = (await db.getSetting('ai_models')) || [];
+    const models = [...((await db.getSetting('ai_models')) || [])];
     const defaultModel = await db.getSetting('ai_default_model');
     const removed = models.splice(index, 1)[0];
-    await db.setSetting('ai_models', models);
+    if (!removed) return;
 
-    if (defaultModel && defaultModel.id === removed.id) {
-      const newDefault = models[0] || null;
-      await db.setSetting('ai_default_model', newDefault);
-      if (newDefault) await this._syncDefaultToLegacy(newDefault);
+    try {
+      await db.setSetting('ai_models', models);
+
+      if (defaultModel && defaultModel.id === removed.id) {
+        const newDefault = models[0] || null;
+        await db.setSetting('ai_default_model', newDefault);
+        if (newDefault) await this._syncDefaultToLegacy(newDefault);
+        else {
+          await db.setSetting('ai_model', null);
+          await db.setSetting('ai_api_key', null);
+        }
+      }
+      Components.showToast('Model removed', 'success');
+      await this._renderPage('api');
+    } catch (error) {
+      Components.showToast(`Failed to remove model: ${error.message}`, 'error', 6000);
     }
-    Components.showToast('Model removed', 'success');
-    await this._renderPage('api');
   },
 
   async testAI() {

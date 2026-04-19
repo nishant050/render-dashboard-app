@@ -207,7 +207,7 @@ class NewsHuntDB {
   async setSetting(key, value, options = {}) {
     this.data.settings[key] = value;
     if (!options.skipSync) {
-        this.syncSetting(key, value);
+        await this.syncSetting(key, value);
     }
   }
 
@@ -220,11 +220,18 @@ class NewsHuntDB {
   }
 
   async syncSetting(key, value) {
-    return fetch('/api/newshunt/settings', {
+    const response = await fetch('/api/newshunt/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value })
-    }).catch(e => console.warn('Sync failed', e));
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Failed to save setting "${key}"`);
+    }
+
+    return response.json();
   }
 
   // ============================================

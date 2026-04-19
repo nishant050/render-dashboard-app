@@ -411,12 +411,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Upload each file with progress tracking
+        const failedUploads = [];
         for (const item of uploadItems) {
-            await uploadFileWithProgress(item.id, item.file, targetPath);
+            try {
+                await uploadFileWithProgress(item.id, item.file, targetPath);
+            } catch (error) {
+                failedUploads.push({ file: item.file, error });
+            }
         }
 
         // Refresh file list after all uploads complete
         renderFiles();
+
+        if (failedUploads.length > 0) {
+            const firstError = failedUploads[0].error?.message || 'Upload failed';
+            showNotification(`${failedUploads.length} upload${failedUploads.length === 1 ? '' : 's'} failed: ${firstError}`, 'error');
+        }
     };
 
     // --- Create Upload Item Element ---
@@ -478,24 +488,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusEl.innerHTML = '<i class="fas fa-check"></i> Completed';
                     resolve();
                 } else {
+                    const errorMessage = xhr.responseText || `Upload failed with status ${xhr.status}`;
                     statusEl.className = 'upload-item-status error';
                     statusEl.innerHTML = '<i class="fas fa-times"></i> Error';
-                    reject(new Error('Upload failed'));
+                    statusEl.title = errorMessage;
+                    reject(new Error(errorMessage));
                 }
             });
 
             // Error event
             xhr.addEventListener('error', () => {
+                const errorMessage = 'Network error while uploading';
                 statusEl.className = 'upload-item-status error';
                 statusEl.innerHTML = '<i class="fas fa-times"></i> Error';
-                reject(new Error('Upload failed'));
+                statusEl.title = errorMessage;
+                reject(new Error(errorMessage));
             });
 
             // Abort event
             xhr.addEventListener('abort', () => {
+                const errorMessage = 'Upload cancelled';
                 statusEl.className = 'upload-item-status error';
                 statusEl.innerHTML = '<i class="fas fa-times"></i> Cancelled';
-                reject(new Error('Upload cancelled'));
+                statusEl.title = errorMessage;
+                reject(new Error(errorMessage));
             });
 
             xhr.open('POST', '/api/upload');

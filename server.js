@@ -8,6 +8,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const https = require('https');
 const { spawn } = require('child_process');
+const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
@@ -67,6 +68,8 @@ const fileHubEntrySchema = new mongoose.Schema({
     isDirectory: { type: Boolean, default: false },
     mimeType: { type: String, default: 'application/octet-stream' },
     size: { type: Number, default: 0 },
+    storageType: { type: String, enum: ['gridfs', 'inline'], default: 'inline' },
+    gridFsFileId: { type: mongoose.Schema.Types.ObjectId, default: null },
     content: { type: Buffer, default: null }
 }, { timestamps: true });
 const FileHubEntry = mongoose.model('FileHubEntry', fileHubEntrySchema);
@@ -714,7 +717,18 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
 }
-const upload = multer({ storage: multer.memoryStorage() });
+const fileHubTempUploadDir = path.join(os.tmpdir(), 'render-dashboard-filehub-uploads');
+fs.mkdirSync(fileHubTempUploadDir, { recursive: true });
+
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: fileHubTempUploadDir,
+        filename: (req, file, cb) => {
+            const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${path.basename(file.originalname)}`;
+            cb(null, uniqueName);
+        }
+    })
+});
 
 const normalizeFileHubPath = (input = '') => String(input || '')
     .replace(/\\/g, '/')
@@ -797,11 +811,78 @@ const ensureFileHubFolderExists = async (folderPath = '') => {
     }
 };
 
-const saveFileHubFile = async ({ filePath, name, buffer, mimeType }) => {
-    const normalizedPath = normalizeFileHubPath(filePath);
-    await ensureFileHubFolderExists(getFileHubParentPath(normalizedPath));
+let fileHubGridFsBucket;
+const waitForMongoConnection = async () => {
+    if (mongoose.connection.readyState === 1) return;
+    await mongoose.connection.asPromise();
+};
 
-    return FileHubEntry.findOneAndUpdate(
+const getFileHubGridFsBucket = () => {
+    if (!mongoose.connection.db) {
+        throw new Error('MongoDB connection is not ready.');
+    }
+
+    if (!fileHubGridFsBucket) {
+        fileHubGridFsBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+            bucketName: 'filehubFiles'
+        });
+    }
+
+    return fileHubGridFsBucket;
+};
+
+const deleteFileHubGridFsFile = async (fileId) => {
+    if (!fileId) return;
+
+    try {
+        await waitForMongoConnection();
+        await getFileHubGridFsBucket().delete(fileId);
+    } catch (error) {
+        if (error?.codeName !== 'FileNotFound' && !String(error?.message || '').includes('FileNotFound')) {
+            throw error;
+        }
+    }
+};
+
+const uploadFileHubDiskFileToGridFs = async ({ sourcePath, filePath, name, mimeType }) => {
+    await waitForMongoConnection();
+    const bucket = getFileHubGridFsBucket();
+    const uploadStream = bucket.openUploadStream(filePath, {
+        metadata: {
+            fileHubPath: filePath,
+            originalName: name,
+            mimeType
+        }
+    });
+
+    await pipeline(fs.createReadStream(sourcePath), uploadStream);
+    return uploadStream.id;
+};
+
+const uploadFileHubBufferToGridFs = async ({ buffer, filePath, name, mimeType }) => {
+    await waitForMongoConnection();
+    const bucket = getFileHubGridFsBucket();
+
+    return new Promise((resolve, reject) => {
+        const uploadStream = bucket.openUploadStream(filePath, {
+            metadata: {
+                fileHubPath: filePath,
+                originalName: name,
+                mimeType
+            }
+        });
+
+        uploadStream.on('error', reject);
+        uploadStream.on('finish', () => resolve(uploadStream.id));
+        uploadStream.end(buffer);
+    });
+};
+
+const updateFileHubFileMetadata = async ({ filePath, name, size, mimeType, gridFsFileId }) => {
+    const normalizedPath = normalizeFileHubPath(filePath);
+    const existing = await FileHubEntry.findOne({ path: normalizedPath }).select('gridFsFileId');
+
+    const savedEntry = await FileHubEntry.findOneAndUpdate(
         { path: normalizedPath },
         {
             $set: {
@@ -810,12 +891,72 @@ const saveFileHubFile = async ({ filePath, name, buffer, mimeType }) => {
                 name,
                 isDirectory: false,
                 mimeType: mimeType || getFileHubMimeType(name),
-                size: buffer.length,
-                content: buffer
+                size,
+                storageType: 'gridfs',
+                gridFsFileId,
+                content: null
             }
         },
         { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
+
+    if (existing?.gridFsFileId && !existing.gridFsFileId.equals(gridFsFileId)) {
+        await deleteFileHubGridFsFile(existing.gridFsFileId);
+    }
+
+    return savedEntry;
+};
+
+const saveFileHubFileFromDisk = async ({ filePath, name, sourcePath, size, mimeType }) => {
+    const normalizedPath = normalizeFileHubPath(filePath);
+    await ensureFileHubFolderExists(getFileHubParentPath(normalizedPath));
+
+    let gridFsFileId;
+    try {
+        gridFsFileId = await uploadFileHubDiskFileToGridFs({
+            sourcePath,
+            filePath: normalizedPath,
+            name,
+            mimeType: mimeType || getFileHubMimeType(name)
+        });
+
+        return await updateFileHubFileMetadata({
+            filePath: normalizedPath,
+            name,
+            size,
+            mimeType,
+            gridFsFileId
+        });
+    } catch (error) {
+        await deleteFileHubGridFsFile(gridFsFileId);
+        throw error;
+    }
+};
+
+const saveFileHubFile = async ({ filePath, name, buffer, mimeType }) => {
+    const normalizedPath = normalizeFileHubPath(filePath);
+    await ensureFileHubFolderExists(getFileHubParentPath(normalizedPath));
+
+    let gridFsFileId;
+    try {
+        gridFsFileId = await uploadFileHubBufferToGridFs({
+            buffer,
+            filePath: normalizedPath,
+            name,
+            mimeType: mimeType || getFileHubMimeType(name)
+        });
+
+        return await updateFileHubFileMetadata({
+            filePath: normalizedPath,
+            name,
+            size: buffer.length,
+            mimeType,
+            gridFsFileId
+        });
+    } catch (error) {
+        await deleteFileHubGridFsFile(gridFsFileId);
+        throw error;
+    }
 };
 
 const renameFileHubEntryTree = async (sourcePath, targetPath, targetName) => {
@@ -887,10 +1028,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         const currentPath = normalizeFileHubPath(req.body.path);
         const filePath = joinFileHubPath(currentPath, req.file.originalname);
 
-        await saveFileHubFile({
+        await saveFileHubFileFromDisk({
             filePath,
             name: req.file.originalname,
-            buffer: req.file.buffer,
+            sourcePath: req.file.path,
+            size: req.file.size,
             mimeType: req.file.mimetype || getFileHubMimeType(req.file.originalname)
         });
 
@@ -898,6 +1040,10 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     } catch (error) {
         console.error('Error uploading file:', error);
         res.status(500).send('Server error while uploading file.');
+    } finally {
+        if (req.file?.path) {
+            fsPromises.unlink(req.file.path).catch(() => {});
+        }
     }
 });
 
@@ -938,6 +1084,15 @@ app.delete('/api/delete', async (req, res) => {
         if (!item) {
             return res.status(404).send('Item not found.');
         }
+
+        const entriesToDelete = item.isDirectory
+            ? await FileHubEntry.find({ path: { $regex: fileHubPathRegex(itemPath) } }).select('gridFsFileId')
+            : [item];
+
+        await Promise.all(entriesToDelete
+            .map(entry => entry.gridFsFileId)
+            .filter(Boolean)
+            .map(deleteFileHubGridFsFile));
 
         if (item.isDirectory) {
             await FileHubEntry.deleteMany({ path: { $regex: fileHubPathRegex(itemPath) } });
@@ -1062,6 +1217,13 @@ app.put('/api/move', async (req, res) => {
 // 8. CLEAR ALL files and folders
 app.delete('/api/clear-all', async (req, res) => {
     try {
+        try {
+            await getFileHubGridFsBucket().drop();
+        } catch (error) {
+            if (error?.codeName !== 'NamespaceNotFound') {
+                throw error;
+            }
+        }
         await FileHubEntry.deleteMany({});
         res.json({ message: 'All files and folders have been cleared.' });
     } catch (error) {
@@ -1085,19 +1247,52 @@ app.get('/api/storage-info', async (req, res) => {
     }
 });
 
+const getFileHubEntryBuffer = async (entry) => {
+    if (!entry?.gridFsFileId) {
+        return entry?.content || Buffer.alloc(0);
+    }
+
+    await waitForMongoConnection();
+
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const downloadStream = getFileHubGridFsBucket().openDownloadStream(entry.gridFsFileId);
+        downloadStream.on('data', chunk => chunks.push(chunk));
+        downloadStream.on('error', reject);
+        downloadStream.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+};
+
 // 10. FILE CONTENT AND ZIP DOWNLOAD
-const sendFileHubEntryContent = (entry, res) => {
-    const content = entry.content || Buffer.alloc(0);
+const sendFileHubEntryContent = async (entry, res) => {
     res.set('Content-Type', entry.mimeType || getFileHubMimeType(entry.name));
-    res.set('Content-Length', entry.size || content.length);
+    res.set('Content-Length', entry.size || 0);
     res.set('Cache-Control', 'no-store');
+
+    if (entry.gridFsFileId) {
+        await waitForMongoConnection();
+        const downloadStream = getFileHubGridFsBucket().openDownloadStream(entry.gridFsFileId);
+        downloadStream.on('error', error => {
+            console.error('Error streaming File Hub content:', error);
+            if (!res.headersSent) {
+                res.status(500).send('Server error while streaming file content.');
+            } else {
+                res.destroy(error);
+            }
+        });
+        downloadStream.pipe(res);
+        return;
+    }
+
+    const content = entry.content || Buffer.alloc(0);
+    res.set('Content-Length', entry.size || content.length);
     res.send(content);
 };
 
 app.head('/api/file-content', async (req, res) => {
     try {
         const filePath = normalizeFileHubPath(req.query.path);
-        const entry = await FileHubEntry.findOne({ path: filePath, isDirectory: false });
+        const entry = await FileHubEntry.findOne({ path: filePath, isDirectory: false }).select('-content');
 
         if (!entry) {
             return res.status(404).send('File not found.');
@@ -1122,7 +1317,7 @@ app.get('/api/file-content', async (req, res) => {
             return res.status(404).send('File not found.');
         }
 
-        sendFileHubEntryContent(entry, res);
+        await sendFileHubEntryContent(entry, res);
     } catch (error) {
         console.error('Error fetching file content:', error);
         res.status(500).send('Server error while fetching file content.');
@@ -1154,12 +1349,12 @@ app.get('/api/download-zip', async (req, res) => {
             }
         }
 
-        files.forEach(file => {
+        for (const file of files) {
             const relativePath = currentPath && file.path.startsWith(`${currentPath}/`)
                 ? file.path.slice(currentPath.length + 1)
                 : file.name;
-            zip.addFile(relativePath || file.name, file.content || Buffer.alloc(0));
-        });
+            zip.addFile(relativePath || file.name, await getFileHubEntryBuffer(file));
+        }
 
         const zipBuffer = zip.toBuffer();
 
@@ -1196,7 +1391,7 @@ app.post('/api/extract-zip', async (req, res) => {
 
         await ensureFileHubFolderExists(extractPath);
 
-        const zip = new AdmZip(zipEntry.content);
+        const zip = new AdmZip(await getFileHubEntryBuffer(zipEntry));
         for (const entry of zip.getEntries()) {
             const entryPath = normalizeFileHubPath(entry.entryName);
             if (!entryPath) continue;
@@ -1737,13 +1932,10 @@ const writeNewshuntData = async (data) => {
 };
 
 const applyNewshuntUpdate = async (update = {}) => {
+    await ensureNewshuntDocument();
     return NewsHuntData.updateOne(
         {},
-        {
-            $setOnInsert: NEWSHUNT_DEFAULT_STATE,
-            ...update
-        },
-        { upsert: true, setDefaultsOnInsert: true }
+        update
     );
 };
 
