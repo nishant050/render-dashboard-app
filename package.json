@@ -5,7 +5,7 @@
   "scripts": {
     "logs:clean": "powershell -ExecutionPolicy Bypass -File scripts/clean-logs.ps1",
     "render:build": "bash scripts/render-build.sh",
-    "browsers:install": "npx puppeteer browsers install chrome --install-deps",
+    "browsers:install": "npx puppeteer browsers install chrome",
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
