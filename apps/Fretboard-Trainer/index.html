@@ -414,8 +414,13 @@ input[type=range]::-webkit-slider-thumb {
   const OPEN_MIDI = {6:40, 5:45, 4:50, 3:55, 2:59, 1:64}; // E2, A2, D3, G3, B3, E4
   const OPEN_NOTES = {6:'E2', 5:'A2', 4:'D3', 3:'G3', 2:'B3', 1:'E4'};
   const COLORS = {6:'#e8a030',5:'#d4763a',4:'#c45a5a',3:'#7a9fc4',2:'#6ab87a',1:'#b07acc'};
-  const MATCH_FRAMES_REQUIRED = 5;
+  const MATCH_SCORE_REQUIRED = 8;
   const CENT_TOLERANCE = 35;
+  const LOOSE_CENT_TOLERANCE = 55;
+  const MAX_MASTERY = 8;
+  const RECENT_CARD_LIMIT = 8;
+  const PROGRESS_STORAGE_KEY = 'fretboard-trainer-progress-v1';
+  const PROGRESS_API_PATH = '/api/fretboard-trainer/progress';
 
   const els = {
     fretFrom: document.getElementById('fretFrom'),
@@ -474,7 +479,14 @@ input[type=range]::-webkit-slider-thumb {
     pausedTimer: false,
     streak: 0,
     bestStreak: 0,
+    practiceProgress: { cards: {}, sequenceCursor: 0, totalAnswered: 0, correctAnswered: 0 },
+    sessionRecentCards: [],
+    detectedHistory: [],
   };
+
+  let progressSyncTimer = null;
+  let progressSyncInFlight = null;
+  let progressSyncQueued = false;
 
   function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
@@ -513,6 +525,37 @@ input[type=range]::-webkit-slider-thumb {
     const cents = (midiFloat - midiRounded) * 100;
     const { name, full, octave, midi } = noteNameFromMidi(midiRounded, state.notation === 'sharp');
     return { name, full, octave, midi, cents, midiFloat };
+  }
+
+  function smoothDetectedNote(note) {
+    const history = state.detectedHistory;
+    const last = history[history.length - 1];
+    if (last && Math.abs(last.midi - note.midi) > 2) history.length = 0;
+
+    history.push(note);
+    while (history.length > 5) history.shift();
+
+    const buckets = new Map();
+    history.forEach((entry, index) => {
+      const bucket = buckets.get(entry.midi) || { count: 0, cents: 0, latest: entry, latestIndex: -1 };
+      bucket.count += 1;
+      bucket.cents += entry.cents;
+      if (index > bucket.latestIndex) {
+        bucket.latest = entry;
+        bucket.latestIndex = index;
+      }
+      buckets.set(entry.midi, bucket);
+    });
+
+    let best = null;
+    buckets.forEach(bucket => {
+      if (!best || bucket.count > best.count || (bucket.count === best.count && bucket.latestIndex > best.latestIndex)) {
+        best = bucket;
+      }
+    });
+
+    if (!best || best.count < 2) return note;
+    return { ...best.latest, cents: best.cents / best.count };
   }
 
   function rmsOfBuffer(buf) {
@@ -601,6 +644,151 @@ input[type=range]::-webkit-slider-thumb {
     els.correctCount.textContent = state.correct;
     els.wrongCount.textContent = state.wrong;
     els.noteCount.textContent = state.total;
+  }
+
+  function cardKey(string, fret) {
+    return `${string}:${fret}`;
+  }
+
+  function defaultCardStats() {
+    return { asked: 0, correct: 0, wrong: 0, skipped: 0, streak: 0, mastery: 0, lastSeen: 0, lastAnswered: 0 };
+  }
+
+  function readCardStats(key) {
+    return state.practiceProgress.cards[key] || defaultCardStats();
+  }
+
+  function ensureCardStats(key) {
+    if (!state.practiceProgress.cards[key]) state.practiceProgress.cards[key] = defaultCardStats();
+    return state.practiceProgress.cards[key];
+  }
+
+  function getPracticePool() {
+    const from = Math.min(state.fretFrom, state.fretTo);
+    const to = Math.max(state.fretFrom, state.fretTo);
+    const strings = [...state.activeStrings].sort((a, b) => b - a);
+    const pool = [];
+
+    strings.forEach(string => {
+      for (let fret = from; fret <= to; fret++) {
+        pool.push({ string, fret, key: cardKey(string, fret) });
+      }
+    });
+
+    return pool;
+  }
+
+  function progressComplexity(pool) {
+    if (!pool.length) return 0;
+    const masterySum = pool.reduce((sum, card) => sum + readCardStats(card.key).mastery, 0);
+    const savedBoost = masterySum / (pool.length * MAX_MASTERY);
+    const sessionBoost = clamp(state.correct / Math.max(8, Math.ceil(pool.length * 0.25)), 0, 1);
+    return clamp(savedBoost * 0.6 + sessionBoost * 0.4, 0, 1);
+  }
+
+  function weightedCardChoice(cards) {
+    if (!cards.length) return null;
+    const recent = new Set(state.sessionRecentCards);
+    const now = Date.now();
+    const weighted = cards.map(card => {
+      const stats = readCardStats(card.key);
+      const weakness = MAX_MASTERY - stats.mastery;
+      const dueBoost = stats.lastAnswered ? Math.min(3, (now - stats.lastAnswered) / 300000) : 3;
+      const recentPenalty = recent.has(card.key) && cards.length > RECENT_CARD_LIMIT ? 0.25 : 1;
+      return { card, weight: Math.max(0.1, (1 + weakness + dueBoost) * recentPenalty) };
+    });
+    const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
+    let roll = Math.random() * totalWeight;
+
+    for (const item of weighted) {
+      roll -= item.weight;
+      if (roll <= 0) return item.card;
+    }
+
+    return weighted[weighted.length - 1].card;
+  }
+
+  function nextSequentialCard(pool, candidateLimit) {
+    if (!pool.length) return null;
+    const limit = clamp(candidateLimit, 1, pool.length);
+    let cursor = clamp(state.practiceProgress.sequenceCursor || 0, 0, Math.max(0, pool.length - 1));
+
+    for (let tries = 0; tries < pool.length; tries++) {
+      const index = cursor % pool.length;
+      cursor = (cursor + 1) % pool.length;
+      if (index < limit) {
+        state.practiceProgress.sequenceCursor = cursor;
+        saveProgress();
+        return pool[index];
+      }
+    }
+
+    state.practiceProgress.sequenceCursor = 1 % pool.length;
+    saveProgress();
+    return pool[0];
+  }
+
+  function chooseNextPracticeCard() {
+    const pool = getPracticePool();
+    if (!pool.length) return null;
+
+    const complexity = progressComplexity(pool);
+    const minWindow = Math.min(4, pool.length);
+    const candidateLimit = clamp(Math.ceil(minWindow + complexity * (pool.length - minWindow)), minWindow, pool.length);
+    const candidatePool = pool.slice(0, candidateLimit);
+    const weakCards = candidatePool.filter(card => {
+      const stats = readCardStats(card.key);
+      return stats.asked > 0 && stats.mastery < Math.min(4, MAX_MASTERY);
+    });
+    const warmupCount = Math.min(6, pool.length);
+
+    if (state.correct < warmupCount && complexity <= 0.25) {
+      return nextSequentialCard(pool, candidateLimit);
+    }
+
+    const roll = Math.random();
+    if (weakCards.length && complexity > 0.12 && roll < 0.25 + complexity * 0.25) {
+      return weightedCardChoice(weakCards);
+    }
+    if (complexity > 0.08 && roll < 0.15 + complexity * 0.7) {
+      return weightedCardChoice(candidatePool);
+    }
+
+    return nextSequentialCard(pool, candidateLimit);
+  }
+
+  function markCardAsked(card) {
+    const stats = ensureCardStats(card.key);
+    stats.asked += 1;
+    stats.lastSeen = Date.now();
+    state.sessionRecentCards.push(card.key);
+    while (state.sessionRecentCards.length > RECENT_CARD_LIMIT) state.sessionRecentCards.shift();
+    saveProgress();
+  }
+
+  function recordCurrentCardAnswer(result) {
+    if (!state.currentNote) return;
+    const key = state.currentNote.cardKey || cardKey(state.currentNote.string, state.currentNote.fret);
+    const stats = ensureCardStats(key);
+    stats.lastAnswered = Date.now();
+
+    if (result === true) {
+      stats.correct += 1;
+      stats.streak += 1;
+      stats.mastery = clamp(stats.mastery + 1 + (stats.streak >= 3 ? 0.5 : 0), 0, MAX_MASTERY);
+      state.practiceProgress.correctAnswered = (state.practiceProgress.correctAnswered || 0) + 1;
+    } else if (result === false) {
+      stats.wrong += 1;
+      stats.streak = 0;
+      stats.mastery = clamp(stats.mastery - 2, 0, MAX_MASTERY);
+    } else {
+      stats.skipped += 1;
+      stats.streak = 0;
+      stats.mastery = clamp(stats.mastery - 0.5, 0, MAX_MASTERY);
+    }
+
+    state.practiceProgress.totalAnswered = (state.practiceProgress.totalAnswered || 0) + 1;
+    saveProgress();
   }
 
   function updateTimerDisplay() {
@@ -749,13 +937,22 @@ input[type=range]::-webkit-slider-thumb {
       els.fretTo.value = state.fretTo;
     }
 
-    const str = state.activeStrings[Math.floor(Math.random() * state.activeStrings.length)];
-    const fret = Math.floor(Math.random() * (state.fretTo - state.fretFrom + 1)) + state.fretFrom;
+    const card = chooseNextPracticeCard();
+    if (!card) {
+      stopPractice({ keepOverlay: true });
+      els.noteStage.innerHTML = `<div class="waiting-msg">SELECT AT LEAST ONE STRING</div>`;
+      return;
+    }
+
+    const str = card.string;
+    const fret = card.fret;
     const info = getNoteInfo(str, fret, state.notation === 'sharp');
 
-    state.currentNote = { string: str, fret, ...info };
+    state.currentNote = { string: str, fret, cardKey: card.key, ...info };
     state.answered = false;
     state.matchCount = 0;
+    state.detectedHistory = [];
+    markCardAsked(card);
 
     renderCurrentNote();
     startNoteTimer();
@@ -795,6 +992,7 @@ input[type=range]::-webkit-slider-thumb {
   function handleCorrect() {
     if (state.answered || !state.currentNote) return;
     state.answered = true;
+    recordCurrentCardAnswer(true);
     state.correct += 1;
     state.total += 1;
     state.streak += 1;
@@ -811,6 +1009,7 @@ input[type=range]::-webkit-slider-thumb {
   function handleWrong() {
     if (state.answered || !state.currentNote) return;
     state.answered = true;
+    recordCurrentCardAnswer(false);
     state.wrong += 1;
     state.total += 1;
     state.streak = 0;
@@ -840,6 +1039,8 @@ input[type=range]::-webkit-slider-thumb {
 
   function nextNote() {
     if (!state.isPracticing) return;
+    if (state.answered) return;
+    recordCurrentCardAnswer(null);
     state.answered = true;
     state.total += 1;
     updateScores();
@@ -966,26 +1167,31 @@ input[type=range]::-webkit-slider-thumb {
             console.log('[Mic] First note detected:', note.full, freq.toFixed(1), 'Hz');
             firstDetection = false;
           }
+          const stableNote = smoothDetectedNote(note);
           // Always show detected note — this gives constant feedback
-          setDetectedText(`${note.full} • ${Math.abs(note.cents).toFixed(0)}¢`, true);
-          state.lastDetectedMidi = note.midi;
+          setDetectedText(`${stableNote.full} • ${Math.abs(stableNote.cents).toFixed(0)}¢`, true);
+          state.lastDetectedMidi = stableNote.midi;
 
           // Only validate answer during active practice
           if (state.isPracticing && state.currentNote && !state.answered) {
             const targetNoteClass = state.currentNote.midi % 12;
-            const detectedNoteClass = note.midi % 12;
-            if (targetNoteClass === detectedNoteClass && Math.abs(note.cents) <= CENT_TOLERANCE) {
-              state.matchCount = (state.matchCount || 0) + 1;
-              if (state.matchCount >= MATCH_FRAMES_REQUIRED) {
+            const detectedNoteClass = stableNote.midi % 12;
+            const cents = Math.abs(stableNote.cents);
+            if (targetNoteClass === detectedNoteClass && cents <= CENT_TOLERANCE) {
+              state.matchCount = (state.matchCount || 0) + 2;
+              if (state.matchCount >= MATCH_SCORE_REQUIRED) {
                 handleCorrect();
                 state.matchCount = 0;
               }
+            } else if (targetNoteClass === detectedNoteClass && cents <= LOOSE_CENT_TOLERANCE) {
+              state.matchCount = (state.matchCount || 0) + 1;
             } else {
-              state.matchCount = 0;
+              state.matchCount = Math.max(0, (state.matchCount || 0) - 1);
             }
           }
         } else {
           setDetectedText('—', false);
+          state.detectedHistory = [];
         }
       } else {
         silenceFrames++;
@@ -993,6 +1199,7 @@ input[type=range]::-webkit-slider-thumb {
           setDetectedText('—', false);
           state.lastDetectedMidi = null;
           state.matchCount = 0;
+          state.detectedHistory = [];
         }
       }
 
@@ -1023,6 +1230,8 @@ input[type=range]::-webkit-slider-thumb {
     state.total = 0;
     state.streak = 0;
     state.bestStreak = 0;
+    state.sessionRecentCards = [];
+    state.detectedHistory = [];
     updateScores();
     updateStreak();
 
@@ -1158,6 +1367,143 @@ input[type=range]::-webkit-slider-thumb {
 
   // --- LocalStorage Persistence ---
   const STORAGE_KEY = 'fretboard-trainer-settings';
+
+  function sanitizeProgressData(saved = {}) {
+    const progress = {
+      cards: {},
+      sequenceCursor: clamp(parseInt(saved.sequenceCursor, 10) || 0, 0, 1000000),
+      totalAnswered: Math.max(0, parseInt(saved.totalAnswered, 10) || 0),
+      correctAnswered: Math.max(0, parseInt(saved.correctAnswered, 10) || 0),
+    };
+
+    if (saved.cards && typeof saved.cards === 'object') {
+      Object.entries(saved.cards).forEach(([key, value]) => {
+        if (!/^[1-6]:([0-9]|1[0-9]|2[0-4])$/.test(key) || !value || typeof value !== 'object') return;
+        progress.cards[key] = {
+          asked: Math.max(0, parseInt(value.asked, 10) || 0),
+          correct: Math.max(0, parseInt(value.correct, 10) || 0),
+          wrong: Math.max(0, parseInt(value.wrong, 10) || 0),
+          skipped: Math.max(0, parseInt(value.skipped, 10) || 0),
+          streak: Math.max(0, parseInt(value.streak, 10) || 0),
+          mastery: clamp(Number(value.mastery) || 0, 0, MAX_MASTERY),
+          lastSeen: Math.max(0, parseInt(value.lastSeen, 10) || 0),
+          lastAnswered: Math.max(0, parseInt(value.lastAnswered, 10) || 0),
+        };
+      });
+    }
+
+    return progress;
+  }
+
+  function hasProgressData(progress) {
+    return !!progress && (
+      Object.keys(progress.cards || {}).length > 0 ||
+      progress.sequenceCursor > 0 ||
+      progress.totalAnswered > 0 ||
+      progress.correctAnswered > 0
+    );
+  }
+
+  async function progressApi(method = 'GET', body = null) {
+    const options = { method };
+    if (body) {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(PROGRESS_API_PATH, options);
+    if (!response.ok) throw new Error('Failed to sync fretboard trainer progress');
+    return response.json();
+  }
+
+  function cacheProgress(progress = state.practiceProgress) {
+    try {
+      localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress));
+    } catch (e) { /* ignore */ }
+  }
+
+  async function syncProgressNow() {
+    if (progressSyncInFlight) {
+      progressSyncQueued = true;
+      return progressSyncInFlight;
+    }
+
+    const snapshotJson = JSON.stringify(state.practiceProgress);
+    const snapshot = JSON.parse(snapshotJson);
+
+    progressSyncInFlight = progressApi('POST', snapshot)
+      .then(saved => {
+        if (JSON.stringify(state.practiceProgress) === snapshotJson) {
+          state.practiceProgress = sanitizeProgressData(saved);
+          cacheProgress();
+        }
+      })
+      .catch(error => {
+        console.warn('Failed to sync fretboard trainer progress:', error.message);
+      })
+      .finally(() => {
+        progressSyncInFlight = null;
+        if (progressSyncQueued) {
+          progressSyncQueued = false;
+          scheduleProgressSync();
+        }
+      });
+
+    return progressSyncInFlight;
+  }
+
+  function scheduleProgressSync() {
+    if (progressSyncTimer) clearTimeout(progressSyncTimer);
+    progressSyncTimer = setTimeout(() => {
+      progressSyncTimer = null;
+      syncProgressNow();
+    }, 700);
+  }
+
+  function saveProgress({ sync = true } = {}) {
+    cacheProgress();
+    if (sync) scheduleProgressSync();
+  }
+
+  async function loadProgress() {
+    let localProgress = sanitizeProgressData({});
+
+    try {
+      const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
+      if (raw) {
+        localProgress = sanitizeProgressData(JSON.parse(raw));
+        state.practiceProgress = localProgress;
+      }
+    } catch (e) { /* ignore */ }
+
+    try {
+      const remoteProgress = sanitizeProgressData(await progressApi());
+      if (!hasProgressData(remoteProgress) && hasProgressData(localProgress)) {
+        state.practiceProgress = localProgress;
+        await syncProgressNow();
+      } else {
+        state.practiceProgress = remoteProgress;
+        cacheProgress();
+      }
+    } catch (error) {
+      console.warn('Using cached fretboard trainer progress:', error.message);
+    }
+  }
+
+  function flushProgressBeforeUnload() {
+    if (progressSyncTimer) {
+      clearTimeout(progressSyncTimer);
+      progressSyncTimer = null;
+    }
+    cacheProgress();
+
+    if (navigator.sendBeacon) {
+      try {
+        const payload = new Blob([JSON.stringify(state.practiceProgress)], { type: 'application/json' });
+        navigator.sendBeacon(PROGRESS_API_PATH, payload);
+      } catch (e) { /* ignore */ }
+    }
+  }
 
   function saveSettings() {
     try {
@@ -1303,20 +1649,24 @@ input[type=range]::-webkit-slider-thumb {
   const _origSetNotation = setNotation;
   setNotation = function(type) { _origSetNotation(type); saveSettings(); };
 
-  function init() {
+  async function init() {
     initFretboard();
     updateTimerDisplay();
     updatePresetButtons();
     els.manualControls.classList.remove('visible');
     exposeApi();
     loadSettings();
+    await loadProgress();
     bindInputs();
     console.log('[Fretboard Trainer] Ready.');
   }
 
   
 window.addEventListener('load', () => {
-  init();
+  init().catch(err => {
+    console.error('[Fretboard Trainer] Init failed:', err);
+    bindInputs();
+  });
 
   // Extra fallback for mobile Safari / Android Chrome
   const permBtn = document.querySelector('.perm-btn');
@@ -1332,6 +1682,7 @@ window.addEventListener('load', () => {
   }
   // Clean up audio when leaving page
   window.addEventListener('beforeunload', () => {
+    flushProgressBeforeUnload();
     cleanupAudio();
   });
 });

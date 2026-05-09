@@ -61,6 +61,11 @@ const learnInvestingSchema = new mongoose.Schema({
 }, { timestamps: true });
 const LearnInvestingState = mongoose.model('LearnInvestingState', learnInvestingSchema);
 
+const fretboardTrainerSchema = new mongoose.Schema({
+    progress: { type: mongoose.Schema.Types.Mixed, default: {} }
+}, { timestamps: true });
+const FretboardTrainerState = mongoose.model('FretboardTrainerState', fretboardTrainerSchema);
+
 const fileHubEntrySchema = new mongoose.Schema({
     path: { type: String, required: true, unique: true },
     parentPath: { type: String, default: '' },
@@ -1463,6 +1468,89 @@ app.post('/api/learn-investing/state', async (req, res) => {
     } catch (error) {
         console.error('Error saving learn-investing state:', error);
         res.status(500).json({ error: 'Failed to save learn-investing state' });
+    }
+});
+
+
+// 12B. FRETBOARD TRAINER PROGRESS
+const defaultFretboardProgress = () => ({
+    cards: {},
+    sequenceCursor: 0,
+    totalAnswered: 0,
+    correctAnswered: 0
+});
+
+const normalizeNumber = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return min;
+    return Math.max(min, Math.min(max, number));
+};
+
+const normalizeFretboardProgress = (progress = {}) => {
+    const normalized = defaultFretboardProgress();
+    const sourceCards = isPlainObject(progress.cards) ? progress.cards : {};
+
+    Object.entries(sourceCards).forEach(([key, value]) => {
+        if (!/^[1-6]:([0-9]|1[0-9]|2[0-4])$/.test(key) || !isPlainObject(value)) return;
+
+        normalized.cards[key] = {
+            asked: normalizeNumber(value.asked),
+            correct: normalizeNumber(value.correct),
+            wrong: normalizeNumber(value.wrong),
+            skipped: normalizeNumber(value.skipped),
+            streak: normalizeNumber(value.streak),
+            mastery: normalizeNumber(value.mastery, 0, 8),
+            lastSeen: normalizeNumber(value.lastSeen),
+            lastAnswered: normalizeNumber(value.lastAnswered)
+        };
+    });
+
+    normalized.sequenceCursor = normalizeNumber(progress.sequenceCursor, 0);
+    normalized.totalAnswered = normalizeNumber(progress.totalAnswered, 0);
+    normalized.correctAnswered = normalizeNumber(progress.correctAnswered, 0);
+
+    return normalized;
+};
+
+const readFretboardProgress = async () => {
+    const data = await FretboardTrainerState.findOne();
+    if (!data) return defaultFretboardProgress();
+    const state = typeof data.toObject === 'function' ? data.toObject() : data;
+    return normalizeFretboardProgress(state.progress);
+};
+
+const writeFretboardProgress = async (progress) => {
+    const normalized = normalizeFretboardProgress(progress);
+    const existing = await FretboardTrainerState.findOne();
+
+    if (existing) {
+        existing.progress = normalized;
+        existing.markModified('progress');
+        await existing.save();
+        return normalized;
+    }
+
+    await FretboardTrainerState.create({ progress: normalized });
+    return normalized;
+};
+
+app.get('/api/fretboard-trainer/progress', async (req, res) => {
+    try {
+        const progress = await readFretboardProgress();
+        res.json(progress);
+    } catch (error) {
+        console.error('Error reading fretboard trainer progress:', error);
+        res.status(500).json({ error: 'Failed to read fretboard trainer progress' });
+    }
+});
+
+app.post('/api/fretboard-trainer/progress', async (req, res) => {
+    try {
+        const progress = await writeFretboardProgress(req.body || {});
+        res.json(progress);
+    } catch (error) {
+        console.error('Error saving fretboard trainer progress:', error);
+        res.status(500).json({ error: 'Failed to save fretboard trainer progress' });
     }
 });
 
