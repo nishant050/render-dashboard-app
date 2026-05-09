@@ -221,6 +221,8 @@
         }
     </script>
 
+    
+
     <!-- Share Modal -->
     <div id="shareModal" class="modal">
         <div class="modal-content">
@@ -285,16 +287,24 @@
                 li.style.display = 'flex';
                 li.style.justifyContent = 'space-between';
                 li.style.alignItems = 'center';
-                li.innerHTML = `<span>Link: ...${s.sessionId.substr(-6)} (Created: ${new Date(s.createdAt).toLocaleDateString()})</span> <button onclick="revokeShare('${s.sessionId}')" class="revoke-btn">Revoke</button>`;
+                li.innerHTML = `
+                    <span>Link: ...${s.sessionId.substr(-6)} (Created: ${new Date(s.createdAt).toLocaleDateString()})</span>
+                    <div>
+                        <button onclick="openAsGuest('${s.sessionId}')" class="btn" style="padding: 4px 8px; font-size: 0.8rem; background: #3498db; margin-right: 5px;">Open as User</button>
+                        <button onclick="revokeShare('${s.sessionId}')" class="revoke-btn">Revoke & Delete Data</button>
+                    </div>`;
                 list.appendChild(li);
             });
         }
+        function openAsGuest(sessionId) {
+            alert('Opening app as guest. To return to your admin dashboard later, navigate to /exit-guest to clear your guest session.');
+            window.open('/share/' + sessionId, '_blank');
+        }
         async function revokeShare(sessionId) {
-            if(!confirm('Are you sure you want to revoke this link? The guest will lose access.')) return;
+            if(!confirm('Are you sure you want to revoke this link? ALL data associated with this user session will be permanently deleted.')) return;
             const res = await fetch('/api/share/' + sessionId, { method: 'DELETE' });
             if(res.ok) loadActiveShares(currentShareApp);
         }
     </script>
 </body>
-
 </html>

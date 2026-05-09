@@ -147,7 +147,7 @@ const generateSessionToken = () => {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
-const getCookieValue = (req, name) => {
+const getGuestSessionCookie = (req, name) => {
     const cookies = String(req.headers.cookie || '').split(';');
     for (const cookie of cookies) {
         const [key, ...value] = cookie.trim().split('=');
@@ -159,7 +159,7 @@ const getCookieValue = (req, name) => {
 const getFinanceSessionToken = (req) => (
     req.headers['x-finance-session'] ||
     req.query.session ||
-    getCookieValue(req, 'financeSession')
+    getGuestSessionCookie(req, 'financeSession')
 );
 
 // Finance authentication middleware - protects /finance and /api/finance routes
@@ -176,6 +176,106 @@ const requireFinanceAuth = (req, res, next) => {
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+
+// --- App Sharing API & Middleware ---
+const crypto = require('crypto');
+
+app.get('/share/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const session = await SharedSession.findOne({ sessionId, isActive: true });
+        if (!session) {
+            return res.status(404).send('Invalid or expired share link.');
+        }
+        res.cookie('guestSession', sessionId, {
+            httpOnly: true,
+            sameSite: 'lax',
+            maxAge: 1000 * 60 * 60 * 24 * 30 // 30 days
+        });
+        res.redirect('/apps/' + session.appName + '/index.html');
+    } catch (e) {
+        console.error(e);
+        res.status(500).send('Server Error');
+    }
+});
+
+
+
+const guestSessionMiddleware = async (req, res, next) => {
+    try {
+        const sessionId = getGuestSessionCookie(req, 'guestSession');
+        if (sessionId) {
+            const session = await SharedSession.findOne({ sessionId, isActive: true });
+            if (session) {
+                req.guestSession = session;
+                // Restrict access
+                if (req.path.startsWith('/apps/') && !req.path.startsWith('/apps/' + session.appName)) {
+                     return res.status(403).send('You do not have access to this app. Please use your generated share link.');
+                }
+                if (req.path === '/' || req.path === '/index.html') {
+                     return res.redirect('/apps/' + session.appName + '/index.html');
+                }
+            } else {
+                res.clearCookie('guestSession');
+            }
+        }
+    } catch (e) {
+        console.error('Guest Session Middleware Error:', e);
+    }
+    next();
+};
+
+app.use(guestSessionMiddleware);
+
+app.post('/api/share', async (req, res) => {
+    try {
+        const { appName } = req.body;
+        if (!appName) return res.status(400).json({ error: 'appName is required' });
+        const sessionId = crypto.randomUUID();
+        await SharedSession.create({ sessionId, appName });
+        res.json({ success: true, link: '/share/' + sessionId, sessionId });
+    } catch (e) {
+        console.error('Error in POST /api/share:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/api/share', async (req, res) => {
+    try {
+        const sessions = await SharedSession.find().sort({ createdAt: -1 });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.delete('/api/share/:sessionId', async (req, res) => {
+    try {
+        const sessionId = req.params.sessionId;
+        await SharedSession.deleteOne({ sessionId });
+        
+        // Delete all associated data for this session to save space
+        await mongoose.model('ChemistrySchedule').deleteMany({ sessionId });
+        await mongoose.model('ChemistryProgress').deleteMany({ sessionId });
+        await mongoose.model('NewsHuntData').deleteMany({ sessionId });
+        await mongoose.model('QuickNote').deleteMany({ sessionId });
+        await mongoose.model('LearnInvestingState').deleteMany({ sessionId });
+        await mongoose.model('FretboardTrainerState').deleteMany({ sessionId });
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error deleting share:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/exit-guest', (req, res) => {
+    res.clearCookie('guestSession');
+    res.redirect('/');
+});
+
+
 
 // --- DietPlan Proxy & Process Setup ---
 const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
