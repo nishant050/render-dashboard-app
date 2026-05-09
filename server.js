@@ -22,16 +22,26 @@ mongoose.connect(MONGO_URI)
 
 // --- Schemas & Models ---
 
+// Shared Session for App Sharing
+const sharedSessionSchema = new mongoose.Schema({
+    sessionId: { type: String, required: true, unique: true },
+    appName: { type: String, required: true },
+    isActive: { type: Boolean, default: true }
+}, { timestamps: true });
+const SharedSession = mongoose.model('SharedSession', sharedSessionSchema);
+
 // Chemistry Schedule
 const chemistryScheduleSchema = new mongoose.Schema({
     id: Number,
     dates: String,
-    topics: String
+    topics: String,
+    sessionId: { type: String, default: 'admin' }
 });
 const ChemistrySchedule = mongoose.model('ChemistrySchedule', chemistryScheduleSchema);
 
 const chemistryProgressSchema = new mongoose.Schema({
-    data: Object // Map of id -> status
+    data: Object, // Map of id -> status
+    sessionId: { type: String, default: 'admin' }
 }, { timestamps: true });
 const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressSchema);
 
@@ -41,7 +51,8 @@ const newsHuntSchema = new mongoose.Schema({
     feeds: { type: [mongoose.Schema.Types.Mixed], default: [] },
     articles: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     chatHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
-    articleContent: { type: Map, of: String, default: {} }
+    articleContent: { type: Map, of: String, default: {} },
+    sessionId: { type: String, default: 'admin' }
 }, { timestamps: true });
 const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
 
@@ -51,18 +62,21 @@ const quickNoteSchema = new mongoose.Schema({
     content: { type: String, default: '' },
     color: { type: String, default: 'linen' },
     pinned: { type: Boolean, default: false },
-    isEncrypted: { type: Boolean, default: false }
+    isEncrypted: { type: Boolean, default: false },
+    sessionId: { type: String, default: 'admin' }
 }, { timestamps: true });
 const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
 const learnInvestingSchema = new mongoose.Schema({
     profiles: { type: mongoose.Schema.Types.Mixed, default: {} },
-    currentProfileId: { type: String, default: null }
+    currentProfileId: { type: String, default: null },
+    sessionId: { type: String, default: 'admin' }
 }, { timestamps: true });
 const LearnInvestingState = mongoose.model('LearnInvestingState', learnInvestingSchema);
 
 const fretboardTrainerSchema = new mongoose.Schema({
-    progress: { type: mongoose.Schema.Types.Mixed, default: {} }
+    progress: { type: mongoose.Schema.Types.Mixed, default: {} },
+    sessionId: { type: String, default: 'admin' }
 }, { timestamps: true });
 const FretboardTrainerState = mongoose.model('FretboardTrainerState', fretboardTrainerSchema);
 
@@ -116,7 +130,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- Finance App Password Protection ---
-const FINANCE_PASSWORD = 'admin123';
+const FINANCE_PASSWORD_FILE = path.join(__dirname, 'finance-password.json');
+const loadFinancePassword = () => {
+    try {
+        const data = JSON.parse(fs.readFileSync(FINANCE_PASSWORD_FILE, 'utf8'));
+        return typeof data.password === 'string' && data.password ? data.password : 'admin123';
+    } catch {
+        return 'admin123';
+    }
+};
+let FINANCE_PASSWORD = loadFinancePassword();
 const financeAuth = new Map(); // sessionId -> true (authenticated)
 
 // Generate a simple session token
@@ -124,9 +147,24 @@ const generateSessionToken = () => {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
+const getCookieValue = (req, name) => {
+    const cookies = String(req.headers.cookie || '').split(';');
+    for (const cookie of cookies) {
+        const [key, ...value] = cookie.trim().split('=');
+        if (key === name) return decodeURIComponent(value.join('='));
+    }
+    return null;
+};
+
+const getFinanceSessionToken = (req) => (
+    req.headers['x-finance-session'] ||
+    req.query.session ||
+    getCookieValue(req, 'financeSession')
+);
+
 // Finance authentication middleware - protects /finance and /api/finance routes
 const requireFinanceAuth = (req, res, next) => {
-    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+    const sessionToken = getFinanceSessionToken(req);
 
     if (financeAuth.has(sessionToken)) {
         next();
@@ -163,15 +201,40 @@ app.post('/api/finance-login', (req, res) => {
     if (password === FINANCE_PASSWORD) {
         const sessionToken = generateSessionToken();
         financeAuth.set(sessionToken, true);
+        res.cookie('financeSession', sessionToken, {
+            httpOnly: true,
+            sameSite: 'lax',
+            maxAge: 1000 * 60 * 60 * 24 * 30
+        });
         res.json({ success: true, session: sessionToken });
     } else {
         res.status(401).json({ success: false, error: 'Invalid password' });
     }
 });
 
+app.post('/api/finance-change-password', requireFinanceAuth, async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+
+    if (currentPassword !== FINANCE_PASSWORD) {
+        return res.status(401).json({ success: false, error: 'Current password is incorrect' });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+        return res.status(400).json({ success: false, error: 'New password must be at least 6 characters' });
+    }
+
+    FINANCE_PASSWORD = newPassword.trim();
+    await fsPromises.writeFile(
+        FINANCE_PASSWORD_FILE,
+        JSON.stringify({ password: FINANCE_PASSWORD, updatedAt: new Date().toISOString() }, null, 2)
+    );
+
+    res.json({ success: true, message: 'Password changed successfully' });
+});
+
 // --- Finance Auth Check API ---
 app.get('/api/finance-auth-check', (req, res) => {
-    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+    const sessionToken = getFinanceSessionToken(req);
 
     if (financeAuth.has(sessionToken)) {
         res.json({ authenticated: true });
@@ -624,7 +687,7 @@ app.use('/api/finance', requireFinanceAuth, financeRoutes);
 // --- Finance App Static Files (Protected) ---
 // Custom middleware to protect static files under /finance
 const protectFinanceStatic = (req, res, next) => {
-    const sessionToken = req.headers['x-finance-session'] || req.query.session;
+    const sessionToken = getFinanceSessionToken(req);
 
     if (financeAuth.has(sessionToken)) {
         next();
@@ -1430,15 +1493,15 @@ const normalizeLearnInvestingState = (state = {}) => ({
         : null
 });
 
-const readLearnInvestingState = async () => {
-    const data = await LearnInvestingState.findOne();
+const readLearnInvestingState = async (sessionId = 'admin') => {
+    const data = await LearnInvestingState.findOne({ sessionId });
     if (!data) return { profiles: {}, currentProfileId: null };
     return normalizeLearnInvestingState(typeof data.toObject === 'function' ? data.toObject() : data);
 };
 
-const writeLearnInvestingState = async (state) => {
+const writeLearnInvestingState = async (state, sessionId = 'admin') => {
     const normalized = normalizeLearnInvestingState(state);
-    const existing = await LearnInvestingState.findOne();
+    const existing = await LearnInvestingState.findOne({ sessionId });
 
     if (existing) {
         existing.profiles = normalized.profiles;
@@ -1448,12 +1511,14 @@ const writeLearnInvestingState = async (state) => {
         return existing;
     }
 
+    normalized.sessionId = sessionId;
     return LearnInvestingState.create(normalized);
 };
 
 app.get('/api/learn-investing/state', async (req, res) => {
     try {
-        const state = await readLearnInvestingState();
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        const state = await readLearnInvestingState(sessionId);
         res.json(state);
     } catch (error) {
         console.error('Error reading learn-investing state:', error);
@@ -1463,8 +1528,9 @@ app.get('/api/learn-investing/state', async (req, res) => {
 
 app.post('/api/learn-investing/state', async (req, res) => {
     try {
-        const saved = await writeLearnInvestingState(req.body || {});
-        res.json(normalizeLearnInvestingState(typeof saved.toObject === 'function' ? saved.toObject() : saved));
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        const state = await writeLearnInvestingState(req.body, sessionId);
+        res.json({ success: true, state });
     } catch (error) {
         console.error('Error saving learn-investing state:', error);
         res.status(500).json({ error: 'Failed to save learn-investing state' });
@@ -1512,16 +1578,16 @@ const normalizeFretboardProgress = (progress = {}) => {
     return normalized;
 };
 
-const readFretboardProgress = async () => {
-    const data = await FretboardTrainerState.findOne();
+const readFretboardProgress = async (sessionId = 'admin') => {
+    const data = await FretboardTrainerState.findOne({ sessionId });
     if (!data) return defaultFretboardProgress();
     const state = typeof data.toObject === 'function' ? data.toObject() : data;
     return normalizeFretboardProgress(state.progress);
 };
 
-const writeFretboardProgress = async (progress) => {
+const writeFretboardProgress = async (progress, sessionId = 'admin') => {
     const normalized = normalizeFretboardProgress(progress);
-    const existing = await FretboardTrainerState.findOne();
+    const existing = await FretboardTrainerState.findOne({ sessionId });
 
     if (existing) {
         existing.progress = normalized;
@@ -1530,13 +1596,14 @@ const writeFretboardProgress = async (progress) => {
         return normalized;
     }
 
-    await FretboardTrainerState.create({ progress: normalized });
+    await FretboardTrainerState.create({ progress: normalized, sessionId });
     return normalized;
 };
 
 app.get('/api/fretboard-trainer/progress', async (req, res) => {
     try {
-        const progress = await readFretboardProgress();
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        const progress = await readFretboardProgress(sessionId);
         res.json(progress);
     } catch (error) {
         console.error('Error reading fretboard trainer progress:', error);
@@ -1546,7 +1613,8 @@ app.get('/api/fretboard-trainer/progress', async (req, res) => {
 
 app.post('/api/fretboard-trainer/progress', async (req, res) => {
     try {
-        const progress = await writeFretboardProgress(req.body || {});
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        const progress = await writeFretboardProgress(req.body || {}, sessionId);
         res.json(progress);
     } catch (error) {
         console.error('Error saving fretboard trainer progress:', error);
@@ -1770,16 +1838,18 @@ const defaultChemistrySchedule = [
 
 app.get('/api/chemistry/schedule', async (req, res) => {
     try {
-        let schedule = await ChemistrySchedule.find().sort({ id: 1 });
-        if (schedule.length === 0) {
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        let schedule = await ChemistrySchedule.find({ sessionId }).sort({ id: 1 });
+        if (schedule.length === 0 && sessionId === 'admin') {
             // Seed from file if exists, or use default
             console.log('Seeding Chemistry Schedule from JSON...');
             let initialData = defaultChemistrySchedule;
             if (fs.existsSync(chemistrySchedulePath)) {
                 initialData = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
             }
-            await ChemistrySchedule.insertMany(initialData);
-            schedule = await ChemistrySchedule.find().sort({ id: 1 });
+            const seededData = initialData.map(item => ({ ...item, sessionId }));
+            await ChemistrySchedule.insertMany(seededData);
+            schedule = await ChemistrySchedule.find({ sessionId }).sort({ id: 1 });
         }
         res.json(schedule);
     } catch (error) {
@@ -1790,11 +1860,12 @@ app.get('/api/chemistry/schedule', async (req, res) => {
 
 app.post('/api/chemistry/schedule', async (req, res) => {
     try {
-        const schedule = req.body;
-        if (!Array.isArray(schedule)) return res.status(400).json({ error: 'Schedule must be an array' });
+        if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Schedule must be an array' });
 
-        // Replace all
-        await ChemistrySchedule.deleteMany({});
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        const schedule = req.body.map(item => ({ ...item, sessionId }));
+        
+        await ChemistrySchedule.deleteMany({ sessionId });
         await ChemistrySchedule.insertMany(schedule);
 
         res.json({ message: 'Schedule updated successfully' });
@@ -1806,11 +1877,12 @@ app.post('/api/chemistry/schedule', async (req, res) => {
 
 app.get('/api/chemistry/progress', async (req, res) => {
     try {
-        let progressDoc = await ChemistryProgress.findOne().sort({ createdAt: -1 });
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
+        let progressDoc = await ChemistryProgress.findOne({ sessionId }).sort({ createdAt: -1 });
         if (!progressDoc) {
-            if (fs.existsSync(chemistryProgressPath)) {
+            if (fs.existsSync(chemistryProgressPath) && sessionId === 'admin') {
                 const data = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
-                progressDoc = await ChemistryProgress.create({ data });
+                progressDoc = await ChemistryProgress.create({ data, sessionId });
             } else {
                 progressDoc = { data: {} };
             }
@@ -1824,14 +1896,15 @@ app.get('/api/chemistry/progress', async (req, res) => {
 
 app.post('/api/chemistry/progress', async (req, res) => {
     try {
+        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
         const progressData = req.body;
         // Update or create the latest progress doc
-        const lastDoc = await ChemistryProgress.findOne().sort({ createdAt: -1 });
+        const lastDoc = await ChemistryProgress.findOne({ sessionId }).sort({ createdAt: -1 });
         if (lastDoc) {
             lastDoc.data = progressData;
             await lastDoc.save();
         } else {
-            await ChemistryProgress.create({ data: progressData });
+            await ChemistryProgress.create({ data: progressData, sessionId });
         }
         res.json({ message: 'Progress updated successfully' });
     } catch (error) {
@@ -1971,27 +2044,28 @@ const normalizeNewshuntData = (data = {}) => {
     };
 };
 
-const ensureNewshuntDocument = async () => {
-    let data = await NewsHuntData.findOne();
+const ensureNewshuntDocument = async (sessionId = "admin") => {
+    let data = await NewsHuntData.findOne({ sessionId });
 
     if (!data) {
         console.log('Seeding NewsHunt data from JSON...');
         let seedData = NEWSHUNT_DEFAULT_STATE;
 
-        if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
+        if (fs.existsSync(NEWSHUNT_DATA_PATH) && sessionId === "admin") {
             const jsonData = JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
             seedData = normalizeNewshuntData(jsonData);
         }
 
+        seedData.sessionId = sessionId;
         data = await NewsHuntData.create(seedData);
     }
 
     return data;
 };
 
-const readNewshuntData = async () => {
+const readNewshuntData = async (sessionId = "admin") => {
     try {
-        const data = await ensureNewshuntDocument();
+        const data = await ensureNewshuntDocument(sessionId);
         return normalizeNewshuntData(data);
     } catch (e) {
         console.error('Error reading newshunt data:', e);
@@ -1999,12 +2073,12 @@ const readNewshuntData = async () => {
     }
 };
 
-const writeNewshuntData = async (data) => {
+const writeNewshuntData = async (data, sessionId = "admin") => {
     const normalized = normalizeNewshuntData(data);
     
     // Use findOneAndUpdate with upsert to avoid Mongoose VersionError on concurrent writes
     const result = await NewsHuntData.findOneAndUpdate(
-        {},
+        { sessionId },
         {
             $set: {
                 settings: normalized.settings,
@@ -2019,10 +2093,10 @@ const writeNewshuntData = async (data) => {
     return result;
 };
 
-const applyNewshuntUpdate = async (update = {}) => {
-    await ensureNewshuntDocument();
+const applyNewshuntUpdate = async (update = {}, sessionId = "admin") => {
+    await ensureNewshuntDocument(sessionId);
     return NewsHuntData.updateOne(
-        {},
+        { sessionId },
         update
     );
 };
@@ -2041,6 +2115,7 @@ app.get('/api/newshunt/ai-config', (req, res) => {
 
 // POST /api/newshunt/sideload — Completely replace server data with an imported JSON file
 app.post('/api/newshunt/sideload', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const payload = req.body;
         // Basic validation: ensure it looks like a backup object
@@ -2072,7 +2147,7 @@ app.post('/api/newshunt/sideload', async (req, res) => {
             serverData.articles = payload.articles;
         }
 
-        const savedData = await writeNewshuntData(serverData);
+        const savedData = await writeNewshuntData(serverData, sessionId);
         const normalized = normalizeNewshuntData(savedData);
         res.json({
             ok: true, message: 'Server data replaced successfully', counts: {
@@ -2089,8 +2164,9 @@ app.post('/api/newshunt/sideload', async (req, res) => {
 
 // GET /api/newshunt/sync — pull all synced state
 app.get('/api/newshunt/sync', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
-        const data = await readNewshuntData();
+        const data = await readNewshuntData(sessionId);
         res.json(data);
     } catch (error) {
         console.error('Error in GET /api/newshunt/sync:', error);
@@ -2100,9 +2176,10 @@ app.get('/api/newshunt/sync', async (req, res) => {
 
 // POST /api/newshunt/sync — push full sync (merge)
 app.post('/api/newshunt/sync', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articles: clientArticles, feeds: clientFeeds, settings: clientSettings } = req.body;
-        const serverData = await readNewshuntData();
+        const serverData = await readNewshuntData(sessionId);
 
         if (clientSettings !== undefined) {
             serverData.settings = normalizeNewshuntSettings(clientSettings);
@@ -2116,7 +2193,7 @@ app.post('/api/newshunt/sync', async (req, res) => {
             serverData.articles = normalizeNewshuntArticles(clientArticles);
         }
 
-        const savedData = await writeNewshuntData(serverData);
+        const savedData = await writeNewshuntData(serverData, sessionId);
         res.json(normalizeNewshuntData(savedData));
     } catch (error) {
         console.error('Error in POST /api/newshunt/sync:', error);
@@ -2126,6 +2203,7 @@ app.post('/api/newshunt/sync', async (req, res) => {
 
 // POST /api/newshunt/settings — save individual settings to server
 app.post('/api/newshunt/settings', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { key, value } = req.body;
         if (!key) return res.status(400).json({ error: 'key is required' });
@@ -2143,6 +2221,7 @@ app.post('/api/newshunt/settings', async (req, res) => {
 
 // POST /api/newshunt/mark-read — quick single-article mark-read
 app.post('/api/newshunt/mark-read', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { guid } = req.body;
         if (!guid) return res.status(400).json({ error: 'guid is required' });
@@ -2163,6 +2242,7 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
 
 // POST /api/newshunt/feeds — save feed subscriptions
 app.post('/api/newshunt/feeds', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { feeds } = req.body;
         const normalizedFeeds = normalizeNewshuntFeeds(feeds);
@@ -2178,6 +2258,7 @@ app.post('/api/newshunt/feeds', async (req, res) => {
 
 // POST /api/newshunt/article — add or modify a single article
 app.post('/api/newshunt/article', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { article } = req.body;
         if (!article || !article.guid) return res.status(400).json({ error: 'article and article.guid required' });
@@ -2194,6 +2275,7 @@ app.post('/api/newshunt/article', async (req, res) => {
 
 // POST /api/newshunt/articles/batch — batch add multiple articles
 app.post('/api/newshunt/articles/batch', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articles } = req.body; // array
         if (!Array.isArray(articles)) return res.status(400).json({ error: 'articles array required' });
@@ -2219,17 +2301,18 @@ app.post('/api/newshunt/articles/batch', async (req, res) => {
 
 // DELETE /api/newshunt/articles/feed — delete articles from a specific feed
 app.delete('/api/newshunt/articles/feed', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { feedUrl } = req.body;
         if (!feedUrl) return res.status(400).json({ error: 'feedUrl required' });
         
-        const data = await readNewshuntData();
+        const data = await readNewshuntData(sessionId);
         for (const guid in data.articles) {
             if (data.articles[guid].feedUrl === feedUrl) {
                 delete data.articles[guid];
             }
         }
-        await writeNewshuntData(data);
+        await writeNewshuntData(data, sessionId);
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in DELETE /api/newshunt/articles/feed:', error);
@@ -2239,12 +2322,13 @@ app.delete('/api/newshunt/articles/feed', async (req, res) => {
 
 // POST /api/newshunt/articles/purge — delete old articles
 app.post('/api/newshunt/articles/purge', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { maxAgeDays } = req.body;
         const days = Number(maxAgeDays) || 3;
         const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
         
-        const data = await readNewshuntData();
+        const data = await readNewshuntData(sessionId);
         let deletedCount = 0;
         
         for (const guid in data.articles) {
@@ -2256,7 +2340,7 @@ app.post('/api/newshunt/articles/purge', async (req, res) => {
                 deletedCount++;
             }
         }
-        await writeNewshuntData(data);
+        await writeNewshuntData(data, sessionId);
         res.json({ ok: true, deletedCount });
     } catch (error) {
         console.error('Error in POST /api/newshunt/articles/purge:', error);
@@ -2266,6 +2350,7 @@ app.post('/api/newshunt/articles/purge', async (req, res) => {
 
 // POST /api/newshunt/chat — add chat message
 app.post('/api/newshunt/chat', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articleGuid, role, content = '', reasoning = '' } = req.body;
         if (!articleGuid || !role || (!content && !reasoning)) return res.status(400).json({ error: 'Missing chat params' });
@@ -2290,6 +2375,7 @@ app.post('/api/newshunt/chat', async (req, res) => {
 
 // POST /api/newshunt/article-content — update article content map
 app.post('/api/newshunt/article-content', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { guid, content } = req.body;
         if (!guid) return res.status(400).json({ error: 'guid is required' });
@@ -2312,6 +2398,7 @@ app.post('/api/newshunt/article-content', async (req, res) => {
 
 // POST /api/newshunt/article-content/clear
 app.post('/api/newshunt/article-content/clear', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         await applyNewshuntUpdate({
             $set: { articleContent: {} }
@@ -2325,8 +2412,9 @@ app.post('/api/newshunt/article-content/clear', async (req, res) => {
 
 // DELETE /api/newshunt/clear-all
 app.delete('/api/newshunt/clear-all', async (req, res) => {
+    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
-        await NewsHuntData.deleteMany({});
+        await NewsHuntData.deleteMany({ sessionId });
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in DELETE /api/newshunt/clear-all:', error);
@@ -2356,7 +2444,8 @@ const sanitizeQuickNotePayload = (input = {}, fallback = {}) => {
 
 app.get('/api/quicknotes', async (req, res) => {
     try {
-        const notes = await QuickNote.find().sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
+        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
+        const notes = await QuickNote.find({ sessionId }).sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
         res.json(notes);
     } catch (e) {
         console.error('API Error in GET /api/quicknotes:', e);
@@ -2366,7 +2455,9 @@ app.get('/api/quicknotes', async (req, res) => {
 
 app.post('/api/quicknotes', async (req, res) => {
     try {
+        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
         const payload = sanitizeQuickNotePayload(req.body);
+        payload.sessionId = sessionId;
         if (!payload.title && !payload.content) {
             return res.status(400).json({ error: 'A note needs a title or content' });
         }
@@ -2381,7 +2472,8 @@ app.post('/api/quicknotes', async (req, res) => {
 
 app.patch('/api/quicknotes/:id', async (req, res) => {
     try {
-        const existingNote = await QuickNote.findById(req.params.id);
+        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
+        const existingNote = await QuickNote.findOne({ _id: req.params.id, sessionId });
         if (!existingNote) {
             return res.status(404).json({ error: 'Note not found' });
         }
@@ -2399,7 +2491,8 @@ app.patch('/api/quicknotes/:id', async (req, res) => {
 
 app.delete('/api/quicknotes/:id', async (req, res) => {
     try {
-        const deleted = await QuickNote.findByIdAndDelete(req.params.id);
+        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
+        const deleted = await QuickNote.findOneAndDelete({ _id: req.params.id, sessionId });
         if (!deleted) {
             return res.status(404).json({ error: 'Note not found' });
         }
@@ -2413,7 +2506,8 @@ app.delete('/api/quicknotes/:id', async (req, res) => {
 
 app.delete('/api/quicknotes', async (req, res) => {
     try {
-        await QuickNote.deleteMany({});
+        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
+        await QuickNote.deleteMany({ sessionId });
         res.json({ ok: true });
     } catch (e) {
         console.error('API Error in DELETE /api/quicknotes:', e);

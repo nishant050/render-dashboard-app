@@ -5,7 +5,8 @@ const settingsSchema = new mongoose.Schema({
     dateFormat: { type: String, enum: ['DD/MM/YYYY', 'DD MMM YYYY'], default: 'DD/MM/YYYY' },
     showDecimals: { type: Boolean, default: true },
     defaultPaymentMethod: { type: String, default: 'Cash' },
-    currency: { type: String, default: 'INR' }
+    currency: { type: String, default: 'INR' },
+    monthlyPlan: { type: mongoose.Schema.Types.Mixed, default: null }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Settings', settingsSchema);

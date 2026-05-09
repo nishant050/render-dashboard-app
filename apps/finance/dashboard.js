@@ -1,371 +1,337 @@
-// Dashboard Page Logic
-let categoryChart = null;
-let trendChart = null;
+let plan = null;
+let saveTimer = null;
+
+const columns = {
+    incomes: [
+        { key: 'name', label: 'Income' },
+        { key: 'amount', label: 'Amount', type: 'number' }
+    ],
+    expenses: [
+        { key: 'name', label: 'Expense' },
+        { key: 'amount', label: 'Amount', type: 'number' },
+        { key: 'store', label: 'Stored In' }
+    ],
+    stores: [
+        { key: 'name', label: 'Store' },
+        { key: 'amount', label: 'Amount', type: 'number' },
+        { key: 'purpose', label: 'Purpose' }
+    ],
+    investments: [
+        { key: 'fund', label: 'Mutual Fund' },
+        { key: 'amount', label: 'Amount', type: 'number' },
+        { key: 'purpose', label: 'Purpose' }
+    ],
+    goals: [
+        { key: 'important', label: 'Start', type: 'checkbox' },
+        { key: 'name', label: 'Goal' },
+        { key: 'expectedAmount', label: 'Target', type: 'number' },
+        { key: 'years', label: 'Years', type: 'number' },
+        { key: 'interestRate', label: 'Return %', type: 'number' },
+        { key: 'monthlyEmi', label: 'Monthly SIP', type: 'number' },
+        { key: 'fund', label: 'Fund' }
+    ]
+};
+
+const blankRows = {
+    incomes: { name: '', amount: 0 },
+    expenses: { name: '', amount: 0, store: '' },
+    stores: { name: '', amount: 0, purpose: '' },
+    investments: { fund: '', amount: 0, purpose: '' },
+    goals: { important: false, name: '', expectedAmount: 0, years: 1, interestRate: 10, monthlyEmi: 0, fund: '' }
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check authentication first
     const isAuth = await initFinanceAuth();
     if (!isAuth) return;
 
-    initMonthNavigator(loadDashboard);
-    loadDashboard(currentMonth, currentYear);
-
-    // Add Income button
-    document.getElementById('add-income-btn').addEventListener('click', () => {
-        openTransactionForm('income');
-    });
-
-    // Add Expense button
-    document.getElementById('add-expense-btn').addEventListener('click', () => {
-        openTransactionForm('expense');
-    });
+    await loadPlan();
+    bindActions();
 });
 
-async function loadDashboard(month, year) {
-    try {
-        const [summary, budget, bills, goals, transactions, trends] = await Promise.all([
-            api(`/transactions/summary?month=${month}&year=${year}`),
-            api(`/budgets?month=${month}&year=${year}`),
-            api('/bills/upcoming?days=15'),
-            api('/goals/summary'),
-            api(`/transactions?month=${month}&year=${year}&limit=8&sort=-date`),
-            api('/reports/trends?months=6')
-        ]);
+async function loadPlan() {
+    plan = await api('/plan');
+    normalizePlan();
+    renderPlan();
+}
 
-        renderSummaryCards(summary, budget);
-        renderBudgetProgress(budget, summary);
-        renderUpcomingBills(bills);
-        renderRecentTransactions(transactions);
-        renderGoalsSummary(goals);
-        renderMiniCharts(summary, trends);
-    } catch (error) {
-        console.error('Error loading dashboard:', error);
+function normalizePlan() {
+    for (const key of Object.keys(blankRows)) {
+        if (!Array.isArray(plan[key])) plan[key] = [];
     }
 }
 
-function renderSummaryCards(summary, budget) {
-    const totalIncome = summary.totalIncome || 0;
-    const totalExpenses = summary.totalExpenses || 0;
-    const savings = summary.savings || 0;
-    const savingsRate = summary.savingsRate || 0;
+function bindActions() {
+    document.getElementById('save-plan-btn').addEventListener('click', savePlan);
+    document.getElementById('reset-plan-btn').addEventListener('click', resetPlan);
+    document.getElementById('change-password-btn').addEventListener('click', openPasswordModal);
 
-    document.getElementById('total-income').textContent = formatCurrency(totalIncome);
-    document.getElementById('total-expenses').textContent = formatCurrency(totalExpenses);
-    document.getElementById('savings-rate').textContent = `${savingsRate}%`;
-
-    // Calculate remaining budget
-    if (budget) {
-        const remaining = budget.totalBudget - totalExpenses;
-        document.getElementById('remaining-budget').textContent = formatCurrency(remaining);
-        document.getElementById('remaining-budget').className =
-            `summary-card-value ${remaining >= 0 ? 'amount-positive' : 'amount-negative'}`;
-    } else {
-        document.getElementById('remaining-budget').textContent = 'N/A';
-    }
-
-    // Trend indicators (placeholder - would need last month's data for real comparison)
-    document.getElementById('income-trend').innerHTML = '<span class="trend-up">↑ 12%</span>';
-    document.getElementById('expenses-trend').innerHTML = '<span class="trend-down">↓ 5%</span>';
-    document.getElementById('budget-trend').innerHTML = '<span class="trend-up">On track</span>';
-    document.getElementById('savings-trend').innerHTML = `<span class="${savingsRate > 20 ? 'trend-up' : 'trend-down'}">${savingsRate > 20 ? '↑' : '↓'} ${savingsRate}%</span>`;
-}
-
-function renderBudgetProgress(budget, summary) {
-    const container = document.getElementById('budget-progress-content');
-
-    if (!budget) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📋</div>
-                <div class="empty-state-title">No Budget Set</div>
-                <div class="empty-state-text">Set up your monthly budget to track spending</div>
-                <a href="/finance/budget.html" class="btn btn-primary mt-md">Set Budget</a>
-            </div>
-        `;
-        return;
-    }
-
-    const totalSpent = summary.totalExpenses || 0;
-    const percentage = budget.totalBudget > 0 ? (totalSpent / budget.totalBudget * 100) : 0;
-    const progressColor = getProgressColor(percentage);
-
-    let html = `
-        <div class="budget-overview">
-            <div class="budget-overview-header">
-                <span>${formatCurrency(totalSpent)} spent of ${formatCurrency(budget.totalBudget)}</span>
-                <span>${percentage.toFixed(1)}%</span>
-            </div>
-            <div class="budget-overview-bar">
-                <div class="budget-overview-fill ${progressColor}" style="width: ${Math.min(percentage, 100)}%"></div>
-            </div>
-        </div>
-    `;
-
-    // Top 5 categories
-    if (budget.categories && budget.categories.length > 0) {
-        const topCategories = budget.categories.slice(0, 5);
-        html += '<div class="budget-categories">';
-
-        topCategories.forEach(cat => {
-            const spent = summary.byCategory?.find(c => c._id === cat.name)?.total || 0;
-            const catPercentage = cat.allocated > 0 ? (spent / cat.allocated * 100) : 0;
-            const catColor = getProgressColor(catPercentage);
-
-            html += `
-                <div class="budget-category-row">
-                    <div class="budget-category-icon">${getCategoryIcon(cat.name)}</div>
-                    <div class="budget-category-info">
-                        <div class="budget-category-name">${cat.name}</div>
-                        <div class="budget-category-bar">
-                            <div class="budget-category-fill ${catColor}" style="width: ${Math.min(catPercentage, 100)}%"></div>
-                        </div>
-                    </div>
-                    <div class="budget-category-numbers">
-                        <div class="budget-category-spent">${formatCurrency(spent)}</div>
-                        <div class="budget-category-allocated">/ ${formatCurrency(cat.allocated)}</div>
-                    </div>
-                </div>
-            `;
+    document.querySelectorAll('[data-add-row]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const section = button.dataset.addRow;
+            plan[section].push({ ...blankRows[section] });
+            renderPlan();
+            queueSave();
         });
-
-        html += '</div>';
-    }
-
-    container.innerHTML = html;
-}
-
-function renderUpcomingBills(bills) {
-    const container = document.getElementById('upcoming-bills-content');
-
-    if (!bills || bills.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📅</div>
-                <div class="empty-state-title">No Upcoming Bills</div>
-                <div class="empty-state-text">Add recurring bills to track them here</div>
-            </div>
-        `;
-        return;
-    }
-
-    let html = '<ul class="widget-list">';
-    bills.slice(0, 5).forEach(bill => {
-        const daysText = bill.daysUntil === 0 ? 'Today' :
-            bill.daysUntil === 1 ? 'Tomorrow' :
-                `In ${bill.daysUntil} days`;
-
-        html += `
-            <li>
-                <div>
-                    <div style="font-weight: 500;">${bill.name}</div>
-                    <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">${daysText}</div>
-                </div>
-                <div style="font-weight: 600;">${formatCurrency(bill.amount)}</div>
-            </li>
-        `;
     });
-    html += '</ul>';
-
-    container.innerHTML = html;
 }
 
-function renderRecentTransactions(transactions) {
-    const container = document.getElementById('recent-transactions-content');
-
-    if (!transactions || transactions.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">💸</div>
-                <div class="empty-state-title">No Transactions Yet</div>
-                <div class="empty-state-text">Start tracking your income and expenses</div>
-            </div>
-        `;
-        return;
-    }
-
-    let html = '<ul class="widget-list">';
-    transactions.forEach(tx => {
-        const icon = getCategoryIcon(tx.category, tx.type);
-        const amountClass = tx.type === 'income' ? 'amount-positive' : 'amount-negative';
-        const amountPrefix = tx.type === 'income' ? '+' : '-';
-
-        html += `
-            <li>
-                <div style="display: flex; align-items: center; gap: var(--space-sm);">
-                    <span>${icon}</span>
-                    <div>
-                        <div style="font-weight: 500;">${tx.description || tx.category}</div>
-                        <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">${formatDate(tx.date)}</div>
-                    </div>
-                </div>
-                <div class="${amountClass}" style="font-weight: 600;">${amountPrefix}${formatCurrency(tx.amount)}</div>
-            </li>
-        `;
-    });
-    html += '</ul>';
-
-    container.innerHTML = html;
+function renderPlan() {
+    renderSummary();
+    renderEditableTable('incomes', 'income-table');
+    renderEditableTable('expenses', 'expense-table');
+    renderEditableTable('stores', 'stores-table');
+    renderEditableTable('investments', 'investments-table');
+    renderEditableTable('goals', 'goals-table');
+    renderOneYearGoals();
+    renderChecks();
 }
 
-function renderGoalsSummary(goals) {
-    const container = document.getElementById('goals-summary-content');
+function renderSummary() {
+    const income = sum(plan.incomes, 'amount');
+    const expenses = sum(plan.expenses, 'amount');
+    const stores = sum(plan.stores, 'amount');
+    const sip = sum(plan.investments, 'amount');
+    const importantSip = plan.goals.filter((goal) => goal.important).reduce((total, goal) => total + toNumber(goal.monthlyEmi), 0);
+    const freeCash = income - expenses;
+    const savingsRate = income > 0 ? (freeCash / income) * 100 : 0;
 
-    if (!goals || goals.activeCount === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🎯</div>
-                <div class="empty-state-title">No Goals Set</div>
-                <div class="empty-state-text">Create savings goals to track your progress</div>
-            </div>
-        `;
-        return;
-    }
+    const cards = [
+        { label: 'Monthly Income', value: money(income), detail: `${plan.incomes.length} income lines`, tone: 'good' },
+        { label: 'Monthly Expenses', value: money(expenses), detail: `${money(freeCash)} left`, tone: freeCash >= 0 ? 'good' : 'bad' },
+        { label: 'Money Stored', value: money(stores), detail: `${money(stores - expenses)} vs expenses`, tone: Math.abs(stores - expenses) < 5 ? 'good' : 'warn' },
+        { label: 'Monthly SIPs', value: money(sip), detail: `${money(importantSip)} important goals`, tone: sip <= freeCash ? 'good' : 'warn' },
+        { label: 'Savings Rate', value: `${savingsRate.toFixed(1)}%`, detail: 'Income after expenses', tone: savingsRate >= 20 ? 'good' : 'warn' }
+    ];
 
-    let html = `
-        <div style="display: flex; gap: var(--space-lg); margin-bottom: var(--space-md);">
-            <div>
-                <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">Total Saved</div>
-                <div style="font-size: var(--font-size-xl); font-weight: 700;">${formatCurrency(goals.totalSaved)}</div>
-            </div>
-            <div>
-                <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">Remaining</div>
-                <div style="font-size: var(--font-size-xl); font-weight: 700;">${formatCurrency(goals.totalRemaining)}</div>
-            </div>
-            <div>
-                <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">Active Goals</div>
-                <div style="font-size: var(--font-size-xl); font-weight: 700;">${goals.activeCount}</div>
-            </div>
+    document.getElementById('summary-grid').innerHTML = cards.map((card) => `
+        <article class="summary-card ${card.tone}">
+            <span>${card.label}</span>
+            <strong>${card.value}</strong>
+            <small>${card.detail}</small>
+        </article>
+    `).join('');
+}
+
+function renderEditableTable(section, elementId) {
+    const config = columns[section];
+    const rows = plan[section];
+    const table = document.getElementById(elementId);
+
+    table.innerHTML = `
+        <div class="table-grid ${section}" style="--cols: ${config.length + 1}">
+            ${config.map((column) => `<div class="th">${column.label}</div>`).join('')}
+            <div class="th"></div>
+            ${rows.map((row, index) => renderRow(section, row, index, config)).join('')}
+            ${renderTotalRow(section, config)}
         </div>
     `;
 
-    container.innerHTML = html;
+    table.querySelectorAll('input, textarea').forEach((input) => {
+        input.addEventListener('input', handleCellInput);
+        input.addEventListener('change', handleCellInput);
+    });
+
+    table.querySelectorAll('[data-delete-row]').forEach((button) => {
+        button.addEventListener('click', () => {
+            plan[button.dataset.section].splice(Number(button.dataset.index), 1);
+            renderPlan();
+            queueSave();
+        });
+    });
 }
 
-function renderMiniCharts(summary, trends) {
-    // Category chart
-    if (categoryChart) {
-        categoryChart.destroy();
-    }
+function renderRow(section, row, index, config) {
+    const cells = config.map((column) => {
+        const value = row[column.key] ?? '';
+        if (column.type === 'checkbox') {
+            return `
+                <label class="check-cell">
+                    <input type="checkbox" data-section="${section}" data-index="${index}" data-key="${column.key}" ${value ? 'checked' : ''}>
+                </label>
+            `;
+        }
 
-    if (summary.byCategory && summary.byCategory.length > 0) {
-        const labels = summary.byCategory.map(c => c._id);
-        const data = summary.byCategory.map(c => c.total);
-        const colors = summary.byCategory.map(c => getCategoryColor(c._id));
+        const inputType = column.type === 'number' ? 'number' : 'text';
+        const step = column.type === 'number' ? ' step="0.01"' : '';
+        return `
+            <input type="${inputType}"${step} value="${escapeAttr(value)}"
+                data-section="${section}" data-index="${index}" data-key="${column.key}">
+        `;
+    }).join('');
 
-        categoryChart = createDoughnut('category-chart', labels, data, colors);
-    }
-
-    // Trend chart - use actual trends data
-    if (trendChart) {
-        trendChart.destroy();
-    }
-
-    if (trends && trends.length > 0) {
-        const trendLabels = trends.map(t => getMonthName(t.month).substring(0, 3));
-        const incomeData = trends.map(t => t.income);
-        const expenseData = trends.map(t => t.expenses);
-
-        trendChart = createBarChart('trend-chart', trendLabels, [
-            {
-                label: 'Income',
-                data: incomeData,
-                backgroundColor: 'rgba(34, 197, 94, 0.5)',
-                borderColor: 'rgba(34, 197, 94, 1)',
-                borderWidth: 1
-            },
-            {
-                label: 'Expenses',
-                data: expenseData,
-                backgroundColor: 'rgba(239, 68, 68, 0.5)',
-                borderColor: 'rgba(239, 68, 68, 1)',
-                borderWidth: 1
-            }
-        ]);
-    }
+    return `
+        ${cells}
+        <button class="row-delete" data-delete-row data-section="${section}" data-index="${index}" type="button" title="Delete row">x</button>
+    `;
 }
 
-function openTransactionForm(type) {
-    const categories = getEnabledCategories(type);
-    const categoryOptions = categories.map(c =>
-        `<option value="${c.name}">${c.icon} ${c.name}</option>`
-    ).join('');
+function renderTotalRow(section, config) {
+    const amountKey = section === 'goals' ? 'monthlyEmi' : 'amount';
+    if (!config.some((column) => column.key === amountKey)) return '';
+    const total = sum(plan[section], amountKey);
+    const fillerCount = config.length - 1;
+    return `
+        <div class="total-label">Total</div>
+        <div class="total-value">${money(total)}</div>
+        ${Array.from({ length: Math.max(0, fillerCount - 1) }, () => '<div class="total-empty"></div>').join('')}
+        <div class="total-empty"></div>
+    `;
+}
 
-    const paymentOptions = PAYMENT_METHODS.map(m =>
-        `<option value="${m}">${m}</option>`
-    ).join('');
+function handleCellInput(event) {
+    const input = event.target;
+    const section = input.dataset.section;
+    const index = Number(input.dataset.index);
+    const key = input.dataset.key;
+    const type = columns[section].find((column) => column.key === key)?.type;
 
-    const formHTML = `
-        <form id="transaction-form">
+    plan[section][index][key] = type === 'checkbox' ? input.checked : type === 'number' ? toNumber(input.value) : input.value;
+    renderSummary();
+    renderOneYearGoals();
+    renderChecks();
+    queueSave();
+}
+
+function renderOneYearGoals() {
+    const list = document.getElementById('one-year-list');
+    const shortTerm = plan.investments
+        .filter((item) => ['trip', 'gift', 'gold', 'honey', 'car'].some((word) => String(item.purpose).toLowerCase().includes(word)))
+        .sort((a, b) => toNumber(b.amount) - toNumber(a.amount));
+
+    if (!shortTerm.length) {
+        list.innerHTML = '<p class="muted">No short-term investment purposes found.</p>';
+        return;
+    }
+
+    list.innerHTML = shortTerm.map((item) => `
+        <div class="compact-row">
+            <span>${escapeHtml(item.fund)}</span>
+            <strong>${money(item.amount)}</strong>
+        </div>
+    `).join('');
+}
+
+function renderChecks() {
+    const income = sum(plan.incomes, 'amount');
+    const expenses = sum(plan.expenses, 'amount');
+    const stores = sum(plan.stores, 'amount');
+    const sip = sum(plan.investments, 'amount');
+    const checks = [];
+
+    checks.push(buildCheck('Income covers expenses', income >= expenses, `${money(income - expenses)} monthly buffer`));
+    checks.push(buildCheck('Stores match expense plan', Math.abs(stores - expenses) < 5, `${money(stores - expenses)} difference`));
+    checks.push(buildCheck('Investments fit inside savings', sip <= Math.max(0, income - expenses), `${money(Math.max(0, income - expenses) - sip)} remaining after SIPs`));
+
+    const storeNames = new Set(plan.stores.map((store) => String(store.name).trim()).filter(Boolean));
+    const missingStores = plan.expenses
+        .map((expense) => expense.store)
+        .filter((store) => store && !storeNames.has(store));
+    checks.push(buildCheck('Expense stores exist', missingStores.length === 0, missingStores.length ? `Missing: ${[...new Set(missingStores)].join(', ')}` : 'All expense stores mapped'));
+
+    document.getElementById('check-list').innerHTML = checks.join('');
+}
+
+function buildCheck(title, passed, detail) {
+    return `
+        <div class="check-row ${passed ? 'passed' : 'attention'}">
+            <div>
+                <strong>${title}</strong>
+                <span>${escapeHtml(detail)}</span>
+            </div>
+            <b>${passed ? 'OK' : 'Fix'}</b>
+        </div>
+    `;
+}
+
+function queueSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(savePlan, 900);
+}
+
+async function savePlan() {
+    clearTimeout(saveTimer);
+    await api('/plan', { method: 'PUT', body: plan });
+    showToast('Plan saved', 'success');
+}
+
+async function resetPlan() {
+    showConfirm('Reset this page to the original sample values from your spreadsheet?', async () => {
+        await api('/settings', { method: 'PUT', body: { monthlyPlan: null } });
+        await loadPlan();
+        showToast('Sample plan restored', 'success');
+    });
+}
+
+function openPasswordModal() {
+    openModal('Change Password', `
+        <form id="password-form">
             <div class="form-group">
-                <label class="form-label">Type</label>
-                <div class="type-toggle">
-                    <button type="button" class="${type === 'income' ? 'active' : ''}" data-type="income">Income</button>
-                    <button type="button" class="${type === 'expense' ? 'active' : ''}" data-type="expense">Expense</button>
-                </div>
-                <input type="hidden" name="type" value="${type}">
+                <label class="form-label">Current password</label>
+                <input class="form-input" type="password" name="currentPassword" autocomplete="current-password" required>
             </div>
             <div class="form-group">
-                <label class="form-label">Amount (₹)</label>
-                <input type="number" name="amount" class="form-input" placeholder="0.00" step="0.01" required>
+                <label class="form-label">New password</label>
+                <input class="form-input" type="password" name="newPassword" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="form-group">
-                <label class="form-label">Category</label>
-                <select name="category" class="form-select" required>
-                    <option value="">Select category</option>
-                    ${categoryOptions}
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Description</label>
-                <input type="text" name="description" class="form-input" placeholder="Enter description">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Date</label>
-                <input type="date" name="date" class="form-input" value="${formatDateForInput(new Date())}" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Payment Method</label>
-                <select name="paymentMethod" class="form-select">
-                    ${paymentOptions}
-                </select>
+                <label class="form-label">Confirm new password</label>
+                <input class="form-input" type="password" name="confirmPassword" autocomplete="new-password" minlength="6" required>
             </div>
         </form>
-    `;
+    `, async () => {
+        const form = document.getElementById('password-form');
+        const data = Object.fromEntries(new FormData(form).entries());
+        if (data.newPassword !== data.confirmPassword) {
+            showToast('New passwords do not match', 'error');
+            throw new Error('Password mismatch');
+        }
 
-    openModal(`Add ${type.charAt(0).toUpperCase() + type.slice(1)}`, formHTML, async () => {
-        const form = document.getElementById('transaction-form');
-        const formData = new FormData(form);
-        const data = {
-            type: formData.get('type'),
-            amount: parseFloat(formData.get('amount')),
-            category: formData.get('category'),
-            description: formData.get('description'),
-            date: formData.get('date'),
-            paymentMethod: formData.get('paymentMethod')
-        };
-
-        if (!validateAmount(data.amount)) return;
-        if (!validateRequired({ category: data.category })) return;
-
-        await api('/transactions', { method: 'POST', body: data });
-        showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully`, 'success');
-        loadDashboard(currentMonth, currentYear);
-    });
-
-    // Type toggle functionality
-    const typeButtons = document.querySelectorAll('.type-toggle button');
-    typeButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            typeButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const newType = btn.dataset.type;
-            document.querySelector('input[name="type"]').value = newType;
-
-            // Update category dropdown
-            const categorySelect = document.querySelector('select[name="category"]');
-            const newCategories = getEnabledCategories(newType);
-            categorySelect.innerHTML = '<option value="">Select category</option>' +
-                newCategories.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+        const response = await fetch('/api/finance-change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Finance-Session': getFinanceSession() || ''
+            },
+            body: JSON.stringify({
+                currentPassword: data.currentPassword,
+                newPassword: data.newPassword
+            })
         });
+        const result = await response.json();
+        if (!response.ok) {
+            showToast(result.error || 'Password change failed', 'error');
+            throw new Error(result.error || 'Password change failed');
+        }
+        showToast('Password changed', 'success');
     });
+}
+
+function sum(items, key) {
+    return items.reduce((total, item) => total + toNumber(item[key]), 0);
+}
+
+function toNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+
+function money(value) {
+    return `Rs. ${toNumber(value).toLocaleString('en-IN', {
+        minimumFractionDigits: Number.isInteger(toNumber(value)) ? 0 : 2,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    }[char]));
+}
+
+function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, '&#096;');
 }
