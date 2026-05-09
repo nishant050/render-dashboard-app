@@ -414,6 +414,8 @@ input[type=range]::-webkit-slider-thumb {
   const OPEN_MIDI = {6:40, 5:45, 4:50, 3:55, 2:59, 1:64}; // E2, A2, D3, G3, B3, E4
   const OPEN_NOTES = {6:'E2', 5:'A2', 4:'D3', 3:'G3', 2:'B3', 1:'E4'};
   const COLORS = {6:'#e8a030',5:'#d4763a',4:'#c45a5a',3:'#7a9fc4',2:'#6ab87a',1:'#b07acc'};
+  const MATCH_FRAMES_REQUIRED = 5;
+  const CENT_TOLERANCE = 35;
 
   const els = {
     fretFrom: document.getElementById('fretFrom'),
@@ -522,64 +524,66 @@ input[type=range]::-webkit-slider-thumb {
   function autoCorrelate(buf, sampleRate) {
     const SIZE = buf.length;
     const rms = rmsOfBuffer(buf);
-    if (rms < 0.002) return -1;
+    if (rms < 0.0015) return -1;
 
-    // NSDF approach — more stable than normalized cross-correlation
+    // YIN-style detection: choose the first confident fundamental period,
+    // not the strongest later harmonic/subharmonic peak.
     const minFreq = 60;   // below low E (82Hz) with slack tuning
     const maxFreq = 1400; // above high e frets
-    const minLag = Math.floor(sampleRate / maxFreq);
-    const maxLag = Math.floor(sampleRate / minFreq);
+    const minLag = Math.max(2, Math.floor(sampleRate / maxFreq));
+    const maxLag = Math.min(Math.floor(sampleRate / minFreq), SIZE - 2);
+    const yin = new Float32Array(maxLag + 1);
 
-    // Step 1: compute sum of squares for the full window (lag=0)
-    let sumSq = 0;
-    for (let i = 0; i < SIZE; i++) sumSq += buf[i] * buf[i];
-
-    let bestLag = -1;
-    let bestVal = 0.001; // minimum threshold to count as a peak
-
-    // Step 2: slide the lag window
-    for (let lag = minLag; lag <= Math.min(maxLag, SIZE - 1); lag++) {
-      let acf = 0;       // autocorrelation value
-      let norm = 0;      // consistent normalization
-
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let sum = 0;
       for (let i = 0; i < SIZE - lag; i++) {
-        acf  += buf[i] * buf[i + lag];
-        norm += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
+        const diff = buf[i] - buf[i + lag];
+        sum += diff * diff;
       }
+      yin[lag] = sum;
+    }
 
-      // NSDF value — ranges -1 to 1
-      const nsdf = norm > 0 ? (2 * acf) / norm : 0;
+    let runningSum = 0;
+    for (let lag = 1; lag <= maxLag; lag++) {
+      runningSum += yin[lag];
+      yin[lag] = runningSum > 0 ? (yin[lag] * lag) / runningSum : 1;
+    }
 
-      if (nsdf > bestVal) {
-        bestVal = nsdf;
+    const threshold = 0.12;
+    let bestLag = -1;
+
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      if (yin[lag] < threshold) {
+        while (lag + 1 <= maxLag && yin[lag + 1] < yin[lag]) lag++;
         bestLag = lag;
+        break;
       }
     }
 
-    if (bestLag < minLag) return -1;
+    if (bestLag < 0) {
+      let bestVal = 1;
+      for (let lag = minLag; lag <= maxLag; lag++) {
+        if (yin[lag] < bestVal) {
+          bestVal = yin[lag];
+          bestLag = lag;
+        }
+      }
+      if (bestLag < 0 || bestVal > 0.25) return -1;
+    }
 
-    // Step 3: parabolic interpolation for sub-sample accuracy
-    if (bestLag > minLag && bestLag < Math.min(maxLag, SIZE - 2)) {
-      const y1 = nsdfAtLag(buf, SIZE, bestLag - 1);
-      const y2 = bestVal;
-      const y3 = nsdfAtLag(buf, SIZE, bestLag + 1);
+    if (bestLag > minLag && bestLag < maxLag) {
+      const y1 = yin[bestLag - 1];
+      const y2 = yin[bestLag];
+      const y3 = yin[bestLag + 1];
       const denom = y1 - 2 * y2 + y3;
       if (Math.abs(denom) > 1e-10) {
-        bestLag = bestLag - 0.5 * (y1 - y3) / denom;
+        const adjustment = 0.5 * (y1 - y3) / denom;
+        if (Math.abs(adjustment) <= 1) bestLag += adjustment;
       }
     }
 
-    return sampleRate / bestLag;
-  }
-
-  // Helper for parabolic interpolation step
-  function nsdfAtLag(buf, SIZE, lag) {
-    let acf = 0, norm = 0;
-    for (let i = 0; i < SIZE - lag; i++) {
-      acf  += buf[i] * buf[i + lag];
-      norm += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
-    }
-    return norm > 0 ? (2 * acf) / norm : 0;
+    const freq = sampleRate / bestLag;
+    return freq >= minFreq && freq <= maxFreq ? freq : -1;
   }
 
   function updateLevelMeter(buf) {
@@ -854,7 +858,7 @@ input[type=range]::-webkit-slider-thumb {
 
   function setManualMode(show) {
     state.manualMode = !!show;
-    els.manualControls.classList.toggle('visible', true);
+    els.manualControls.classList.toggle('visible', state.manualMode);
   }
 
   async function initAudio() {
@@ -970,9 +974,9 @@ input[type=range]::-webkit-slider-thumb {
           if (state.isPracticing && state.currentNote && !state.answered) {
             const targetNoteClass = state.currentNote.midi % 12;
             const detectedNoteClass = note.midi % 12;
-            if (targetNoteClass === detectedNoteClass && Math.abs(note.cents) <= 30) {
+            if (targetNoteClass === detectedNoteClass && Math.abs(note.cents) <= CENT_TOLERANCE) {
               state.matchCount = (state.matchCount || 0) + 1;
-              if (state.matchCount >= 9) {
+              if (state.matchCount >= MATCH_FRAMES_REQUIRED) {
                 handleCorrect();
                 state.matchCount = 0;
               }
