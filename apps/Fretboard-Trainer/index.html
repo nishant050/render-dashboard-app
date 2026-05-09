@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fretboard Trainer</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f0e0d; --surface: #1a1815; --surface2: #242220;
+  --amber: #e8a030; --amber-dim: #a06a15; --amber-glow: rgba(232,160,48,0.12);
+  --red: #d94f3d; --red-glow: rgba(217,79,61,0.18);
+  --green: #4caf7d; --green-glow: rgba(76,175,125,0.18);
+  --text: #f0ead8; --text-dim: #7a7060;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--text); font-family: 'Barlow', sans-serif;
+  min-height: 100vh; overflow-x: hidden;
+}
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0; opacity: 0.5;
+}
+.app { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding: 0 0 130px; }
+.header { padding: 24px 20px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.back-btn { text-decoration: none; color: var(--text-dim); font-size: 14px; margin-right: 8px; transition: color 0.15s; }
+.back-btn:hover { color: var(--amber); }
+.logo { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: var(--amber); line-height: 1; }
+.logo span { display: block; font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text-dim); letter-spacing: 3px; text-transform: uppercase; font-weight: 400; margin-top: 3px; }
+.mode-badge { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); border: 1px solid var(--surface2); padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+.section { padding: 0 16px; margin-bottom: 12px; }
+.section-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; padding-left: 4px; }
+.divider { height: 1px; background: var(--surface2); margin: 6px 16px 16px; }
+.card { background: var(--surface); border: 1px solid var(--surface2); border-radius: 16px; padding: 14px; }
+.string-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.action-link { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--amber-dim); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; border: none; background: none; padding: 0; }
+.action-link:hover { color: var(--amber); }
+.strings-grid { display: grid; grid-template-columns: repeat(6,1fr); gap: 8px; }
+.string-btn {
+  aspect-ratio: 1; border-radius: 12px; border: 2px solid var(--surface2); background: var(--surface);
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: all 0.18s ease; position: relative; overflow: hidden;
+}
+.string-btn::before { content: ''; position: absolute; inset: 0; background: currentColor; opacity: 0; transition: opacity 0.18s ease; }
+.string-btn.active::before { opacity: 0.15; }
+.string-btn .s-num { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; position: relative; z-index: 1; }
+.string-btn .s-note { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; opacity: 0.7; position: relative; z-index: 1; }
+.string-btn:nth-child(1) { color: #e8a030; } .string-btn:nth-child(2) { color: #d4763a; } .string-btn:nth-child(3) { color: #c45a5a; }
+.string-btn:nth-child(4) { color: #7a9fc4; } .string-btn:nth-child(5) { color: #6ab87a; } .string-btn:nth-child(6) { color: #b07acc; }
+.string-btn.active { border-color: currentColor; box-shadow: 0 0 16px -4px currentColor; }
+.fret-range-row { display: flex; gap: 8px; align-items: center; }
+.fret-input-wrap { flex: 1; background: var(--surface); border: 1px solid var(--surface2); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.fret-input-wrap label { font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+.fret-input-wrap input[type=number] {
+  background: transparent; border: none; outline: none; color: var(--text); font-family: 'Playfair Display', serif;
+  font-size: 22px; font-weight: 700; width: 100%; -moz-appearance: textfield;
+}
+.fret-input-wrap input[type=number]::-webkit-inner-spin-button, .fret-input-wrap input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+.fret-sep { color: var(--text-dim); font-size: 20px; padding: 0 4px; }
+.timer-row { display: flex; flex-direction: column; gap: 8px; }
+.timer-display-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.timer-value { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; color: var(--amber); }
+.timer-value span { font-family: 'Barlow', sans-serif; font-size: 14px; color: var(--text-dim); font-weight: 300; margin-left: 4px; }
+.timer-presets { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.preset-btn {
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--surface2); background: var(--surface); color: var(--text-dim); cursor: pointer; transition: all 0.15s ease;
+}
+.preset-btn:hover, .preset-btn.active { border-color: var(--amber-dim); color: var(--amber); background: var(--amber-glow); }
+input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; background: var(--surface2); border-radius: 2px; outline: none; }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--amber); cursor: pointer;
+  box-shadow: 0 0 10px rgba(232,160,48,0.5);
+}
+.notation-row { display: flex; gap: 8px; }
+.notation-btn {
+  flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--surface2); background: var(--surface);
+  color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.15s;
+}
+.notation-btn.active { border-color: var(--amber-dim); color: var(--amber); background: var(--amber-glow); }
+.start-btn {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  width: calc(100% - 32px); max-width: 448px; height: 60px; border-radius: 16px; border: none; background: var(--amber);
+  color: #0f0e0d; font-family: 'Barlow', sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 3px;
+  text-transform: uppercase; cursor: pointer; transition: all 0.2s ease; z-index: 100;
+  box-shadow: 0 4px 30px rgba(232,160,48,0.35);
+}
+.start-btn:active { transform: translateX(-50%) scale(0.97); }
+.start-btn.running { background: var(--surface2); color: var(--red); border: 2px solid var(--red); box-shadow: 0 4px 20px rgba(217,79,61,0.2); }
+.practice-overlay {
+  position: fixed; inset: 0; background: var(--bg); z-index: 200; display: none; flex-direction: column; align-items: center; overflow: hidden;
+}
+.practice-overlay.visible { display: flex; }
+.practice-overlay::before {
+  content: ''; position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; opacity: 0.5;
+}
+.practice-top {
+  width: 100%; padding: 16px 20px 0; display: flex; align-items: center; justify-content: space-between;
+  position: relative; z-index: 1; flex-shrink: 0;
+}
+.close-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--surface2); background: var(--surface);
+  color: var(--text-dim); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+}
+.close-btn:hover { color: var(--text); }
+.score-row { display: flex; gap: 16px; align-items: center; }
+.score-item {
+  font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 1px; display: flex; align-items: center; gap: 5px;
+}
+.score-item .s-icon { font-size: 11px; }
+.score-item.correct { color: var(--green); }
+.score-item.wrong { color: var(--red); }
+.score-item.total { color: var(--text-dim); font-size: 11px; }
+.note-stage {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; position: relative;
+  z-index: 1; gap: 6px; min-height: 0; padding: 0 16px;
+}
+.string-indicator {
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 4px; text-transform: uppercase;
+  padding: 5px 16px; border-radius: 20px; border: 1px solid currentColor; margin-bottom: 4px; transition: all 0.3s ease;
+}
+.big-note {
+  font-family: 'Playfair Display', serif; font-size: clamp(90px, 32vw, 150px); font-weight: 900; line-height: 0.9; text-align: center;
+  letter-spacing: -4px; transition: color 0.15s ease; position: relative; word-break: keep-all;
+}
+.big-note.flash-in { animation: noteFlash 0.25s ease; }
+.big-note.correct-flash { animation: correctPop 0.7s ease forwards; color: var(--green) !important; }
+.big-note.wrong-flash { animation: wrongShake 0.55s ease forwards; color: var(--red) !important; }
+@keyframes noteFlash { 0% { transform: scale(0.82); opacity: 0.2; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes correctPop { 0% { transform: scale(1); } 20% { transform: scale(1.18); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes wrongShake { 0%,100% { transform: translateX(0); } 18% { transform: translateX(-12px) rotate(-2deg); } 36% { transform: translateX(10px) rotate(1deg); } 54% { transform: translateX(-8px); } 72% { transform: translateX(6px); } }
+.feedback-badge { font-family: 'DM Mono', monospace; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; height: 22px; text-align: center; transition: opacity 0.3s ease; opacity: 0; }
+.note-sub { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-top: 2px; }
+.answer-area { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 8px; }
+.reveal-btn, .manual-btn {
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--surface2); padding: 7px 18px; border-radius: 20px; cursor: pointer; transition: all 0.15s;
+}
+.reveal-btn:hover, .manual-btn:hover { color: var(--amber); border-color: var(--amber-dim); }
+.manual-controls { display: none; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.manual-controls.visible { display: flex; }
+.fret-answer { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700; color: var(--green); opacity: 0; transition: opacity 0.3s ease; letter-spacing: 1px; }
+.fret-answer.visible { opacity: 1; }
+.fretboard-mini { width: 100%; padding: 0 20px 4px; position: relative; z-index: 1; flex-shrink: 0; display: none; }
+.fretboard-svg { width: 100%; display: block; }
+.mic-section {
+  width: 100%; padding: 6px 20px 8px; display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; flex-shrink: 0;
+}
+.mic-indicator { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.mic-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); transition: background 0.3s; }
+.mic-dot.active { background: var(--green); box-shadow: 0 0 8px var(--green); animation: micPulse 1.5s ease-in-out infinite; }
+.mic-dot.error { background: var(--red); }
+@keyframes micPulse { 0%,100% { opacity: 1; box-shadow: 0 0 6px var(--green); } 50% { opacity: 0.6; box-shadow: 0 0 12px var(--green); } }
+.mic-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
+.level-meter { display: flex; gap: 3px; align-items: center; }
+.ldot { width: 5px; border-radius: 2px; background: var(--surface2); transition: background 0.08s, height 0.08s; }
+.ldot:nth-child(1) { height: 8px; } .ldot:nth-child(2) { height: 11px; } .ldot:nth-child(3) { height: 14px; } .ldot:nth-child(4) { height: 17px; } .ldot:nth-child(5) { height: 20px; }
+.ldot.active { background: var(--green); } .ldot:nth-child(4).active { background: #a8d870; } .ldot:nth-child(5).active { background: var(--amber); }
+.detected-note-wrap { flex: 1; display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+.detected-note { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; color: var(--text-dim); transition: opacity 0.2s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detected-note.has-note { color: var(--amber); }
+.progress-wrap { width: 100%; padding: 4px 20px 24px; position: relative; z-index: 1; flex-shrink: 0; }
+.progress-info { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 6px; }
+.progress-track { width: 100%; height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--amber); border-radius: 2px; box-shadow: 0 0 8px rgba(232,160,48,0.5); transition: width 0.1s linear; }
+.mic-perm-banner {
+  margin: 0 20px 8px; padding: 12px 16px; border-radius: 12px; background: rgba(232,160,48,0.08);
+  border: 1px solid rgba(232,160,48,0.2); display: flex; gap: 12px; align-items: center; position: relative; z-index: 1; flex-shrink: 0;
+}
+.mic-perm-banner.hidden { display: none; }
+.perm-icon { font-size: 22px; flex-shrink: 0; }
+.perm-text { flex: 1; min-width: 0; }
+.perm-text p { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+.perm-text strong { color: var(--amber); display: block; font-size: 13px; margin-bottom: 3px; }
+.perm-btn {
+  background: var(--amber); color: #0f0e0d; border: none; padding: 7px 14px; border-radius: 8px;
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; cursor: pointer; font-weight: 500; flex-shrink: 0; white-space: nowrap;
+}
+.waiting-msg { font-family: 'DM Mono', monospace; font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); text-align: center; animation: blink 1.5s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+/* Session Summary Overlay */
+.summary-overlay {
+  position: fixed; inset: 0; background: rgba(15,14,13,0.92); z-index: 300;
+  display: none; align-items: center; justify-content: center; backdrop-filter: blur(12px);
+}
+.summary-overlay.visible { display: flex; }
+.summary-card {
+  background: var(--surface); border: 1px solid var(--surface2); border-radius: 20px;
+  padding: 32px 28px; max-width: 380px; width: calc(100% - 40px); text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: summaryIn 0.4s ease;
+}
+@keyframes summaryIn { 0% { transform: scale(0.9) translateY(20px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+.summary-title {
+  font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 900; color: var(--amber); margin-bottom: 6px;
+}
+.summary-subtitle { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 24px; }
+.summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+.summary-stat {
+  background: var(--surface2); border-radius: 12px; padding: 14px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.summary-stat .stat-value { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 700; }
+.summary-stat .stat-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+.summary-stat.s-correct .stat-value { color: var(--green); }
+.summary-stat.s-wrong .stat-value { color: var(--red); }
+.summary-stat.s-accuracy .stat-value { color: var(--amber); }
+.summary-accuracy-bar { width: 100%; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-bottom: 20px; }
+.summary-accuracy-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.summary-btn {
+  width: 100%; padding: 14px; border-radius: 12px; border: none; background: var(--amber); color: #0f0e0d;
+  font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.15s;
+}
+.summary-btn:hover { box-shadow: 0 4px 20px rgba(232,160,48,0.4); }
+.summary-btn + .summary-btn { margin-top: 8px; background: var(--surface2); color: var(--text-dim); }
+.summary-btn + .summary-btn:hover { color: var(--text); }
+
+/* Streak indicator */
+.streak-badge {
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; color: var(--amber);
+  display: flex; align-items: center; gap: 5px; opacity: 0; transition: opacity 0.3s ease;
+}
+.streak-badge.visible { opacity: 1; }
+.streak-badge .streak-fire { font-size: 14px; }
+
+
+
+@media (max-width: 380px) {
+  .string-btn .s-num { font-size: 18px; }
+  .big-note { letter-spacing: -3px; }
+  .timer-display-row { flex-direction: column; align-items: flex-start; }
+  .timer-presets { justify-content: flex-start; }
+  .summary-stats { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <div style="display: flex; align-items: center;">
+      <a href="../../index.html" class="back-btn" aria-label="Back to Dashboard">←</a>
+      <div class="logo">Fretboard<span>Trainer</span></div>
+    </div>
+    <div class="mode-badge">Note Flash</div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Strings to Practice</div>
+    <div class="string-actions">
+      <button class="action-link" onclick="selectAll()">All</button>
+      <button class="action-link" onclick="selectNone()">None</button>
+    </div>
+    <div class="strings-grid">
+      <div class="string-btn active" data-string="6" onclick="toggleString(this)"><span class="s-num">6</span><span class="s-note">Low E</span></div>
+      <div class="string-btn active" data-string="5" onclick="toggleString(this)"><span class="s-num">5</span><span class="s-note">A</span></div>
+      <div class="string-btn active" data-string="4" onclick="toggleString(this)"><span class="s-num">4</span><span class="s-note">D</span></div>
+      <div class="string-btn active" data-string="3" onclick="toggleString(this)"><span class="s-num">3</span><span class="s-note">G</span></div>
+      <div class="string-btn active" data-string="2" onclick="toggleString(this)"><span class="s-num">2</span><span class="s-note">B</span></div>
+      <div class="string-btn active" data-string="1" onclick="toggleString(this)"><span class="s-num">1</span><span class="s-note">Hi E</span></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-label">Fret Range</div>
+    <div class="card">
+      <div class="fret-range-row">
+        <div class="fret-input-wrap"><label>From</label><input type="number" id="fretFrom" value="1" min="0" max="11" inputmode="numeric"></div>
+        <div class="fret-sep">—</div>
+        <div class="fret-input-wrap"><label>To</label><input type="number" id="fretTo" value="12" min="1" max="24" inputmode="numeric"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-label">Time per Note</div>
+    <div class="card">
+      <div class="timer-row">
+        <div class="timer-display-row">
+          <div class="timer-value" id="timerDisplay">10<span>sec</span></div>
+          <div class="timer-presets">
+            <button class="preset-btn" onclick="setTimer(5)">5s</button>
+            <button class="preset-btn active" onclick="setTimer(10)">10s</button>
+            <button class="preset-btn" onclick="setTimer(20)">20s</button>
+            <button class="preset-btn" onclick="setTimer(30)">30s</button>
+          </div>
+        </div>
+        <input type="range" id="timerSlider" min="2" max="60" value="10" oninput="updateTimer(this.value)">
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-label">Note Notation</div>
+    <div class="notation-row">
+      <button class="notation-btn active" id="sharpBtn" onclick="setNotation('sharp')">♯ Sharps</button>
+      <button class="notation-btn" id="flatBtn" onclick="setNotation('flat')">♭ Flats</button>
+    </div>
+  </div>
+</div>
+
+<button class="start-btn" id="startBtn" onclick="togglePractice()">▶ START</button>
+
+<div class="practice-overlay" id="practiceOverlay">
+  <div class="practice-top">
+    <button class="close-btn" onclick="togglePractice()" aria-label="Close practice">✕</button>
+    <div class="score-row">
+      <div class="score-item correct"><span class="s-icon">✓</span><span id="correctCount">0</span></div>
+      <div class="score-item wrong"><span class="s-icon">✗</span><span id="wrongCount">0</span></div>
+      <div class="score-item total">#<span id="noteCount">0</span></div>
+      <div class="streak-badge" id="streakBadge"><span class="streak-fire">🔥</span><span id="streakCount">0</span></div>
+    </div>
+  </div>
+
+  <div class="mic-perm-banner hidden" id="permBanner">
+    <div class="perm-icon">🎙️</div>
+    <div class="perm-text">
+      <strong>Enable Microphone</strong>
+      <p>Tap to allow mic access for real-time note detection.</p>
+    </div>
+    <button class="perm-btn" onclick="requestMic()">Allow</button>
+  </div>
+
+  <div class="note-stage" id="noteStage">
+    <div class="waiting-msg">GET READY…</div>
+  </div>
+
+  <div class="fretboard-mini" id="fretboardWrap">
+    <svg class="fretboard-svg" id="fretboardSvg" viewBox="0 0 360 80" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="mic-section">
+    <div class="mic-indicator">
+      <div class="mic-dot" id="micDot"></div>
+      <span class="mic-label" id="micLabel">MIC OFF</span>
+    </div>
+    <div class="level-meter" aria-hidden="true">
+      <div class="ldot" id="ld0"></div>
+      <div class="ldot" id="ld1"></div>
+      <div class="ldot" id="ld2"></div>
+      <div class="ldot" id="ld3"></div>
+      <div class="ldot" id="ld4"></div>
+    </div>
+    <div class="detected-note-wrap">
+      <div class="detected-note" id="detectedNote" aria-live="polite">—</div>
+    </div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-info">
+      <span>TIME LEFT</span>
+      <span id="timeLeft">10s</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-bar" id="progressBar" style="width:100%"></div>
+    </div>
+  </div>
+
+  <div class="section" style="width:100%; padding-top:0;">
+    <div class="manual-controls" id="manualControls" aria-label="Manual scoring controls">
+      <button class="manual-btn" onclick="manualCorrect()">Correct</button>
+      <button class="manual-btn" onclick="manualWrong()">Wrong</button>
+      <button class="manual-btn" onclick="revealAnswer()">Reveal</button>
+      <button class="manual-btn" onclick="nextNote()">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="summary-overlay" id="summaryOverlay">
+  <div class="summary-card">
+    <div class="summary-title" id="summaryTitle">Session Complete</div>
+    <div class="summary-subtitle" id="summarySubtitle">PRACTICE RESULTS</div>
+    <div class="summary-stats">
+      <div class="summary-stat s-correct">
+        <span class="stat-value" id="sumCorrect">0</span>
+        <span class="stat-label">Correct</span>
+      </div>
+      <div class="summary-stat s-wrong">
+        <span class="stat-value" id="sumWrong">0</span>
+        <span class="stat-label">Wrong</span>
+      </div>
+      <div class="summary-stat s-accuracy">
+        <span class="stat-value" id="sumAccuracy">0%</span>
+        <span class="stat-label">Accuracy</span>
+      </div>
+    </div>
+    <div class="summary-accuracy-bar">
+      <div class="summary-accuracy-fill" id="sumAccBar" style="width:0%; background: var(--amber);"></div>
+    </div>
+    <button class="summary-btn" onclick="restartPractice()">PRACTICE AGAIN</button>
+    <button class="summary-btn" onclick="closeSummary()">DONE</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const NOTE_NAMES_SHARP = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+  const NOTE_NAMES_FLAT  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+  const OPEN_MIDI = {6:40, 5:45, 4:50, 3:55, 2:59, 1:64}; // E2, A2, D3, G3, B3, E4
+  const OPEN_NOTES = {6:'E2', 5:'A2', 4:'D3', 3:'G3', 2:'B3', 1:'E4'};
+  const COLORS = {6:'#e8a030',5:'#d4763a',4:'#c45a5a',3:'#7a9fc4',2:'#6ab87a',1:'#b07acc'};
+
+  const els = {
+    fretFrom: document.getElementById('fretFrom'),
+    fretTo: document.getElementById('fretTo'),
+    timerDisplay: document.getElementById('timerDisplay'),
+    timerSlider: document.getElementById('timerSlider'),
+    sharpBtn: document.getElementById('sharpBtn'),
+    flatBtn: document.getElementById('flatBtn'),
+    startBtn: document.getElementById('startBtn'),
+    practiceOverlay: document.getElementById('practiceOverlay'),
+    noteStage: document.getElementById('noteStage'),
+    fretboardWrap: document.getElementById('fretboardWrap'),
+    fretboardSvg: document.getElementById('fretboardSvg'),
+    correctCount: document.getElementById('correctCount'),
+    wrongCount: document.getElementById('wrongCount'),
+    noteCount: document.getElementById('noteCount'),
+    micDot: document.getElementById('micDot'),
+    micLabel: document.getElementById('micLabel'),
+    detectedNote: document.getElementById('detectedNote'),
+    progressBar: document.getElementById('progressBar'),
+    timeLeft: document.getElementById('timeLeft'),
+    permBanner: document.getElementById('permBanner'),
+    manualControls: document.getElementById('manualControls'),
+    ldots: [0,1,2,3,4].map(i => document.getElementById(`ld${i}`)),
+    summaryOverlay: document.getElementById('summaryOverlay'),
+    sumCorrect: document.getElementById('sumCorrect'),
+    sumWrong: document.getElementById('sumWrong'),
+    sumAccuracy: document.getElementById('sumAccuracy'),
+    sumAccBar: document.getElementById('sumAccBar'),
+    summaryTitle: document.getElementById('summaryTitle'),
+    streakBadge: document.getElementById('streakBadge'),
+    streakCount: document.getElementById('streakCount'),
+  };
+
+  const state = {
+    activeStrings: [6,5,4,3,2,1],
+    fretFrom: 1,
+    fretTo: 12,
+    timerSeconds: 10,
+    notation: 'sharp',
+    isPracticing: false,
+    currentNote: null,
+    correct: 0,
+    wrong: 0,
+    total: 0,
+    timerInterval: null,
+    answered: false,
+    audioContext: null,
+    analyser: null,
+    mediaStream: null,
+    pitchRaf: null,
+    micReady: false,
+    manualMode: false,
+    lastDetectedMidi: null,
+    matchCount: 0,
+    pausedTimer: false,
+    streak: 0,
+    bestStreak: 0,
+  };
+
+  function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+  function getStringColor(str) { return COLORS[str] || '#e8a030'; }
+
+  function noteNameFromMidi(midi, useSharp = true) {
+    const noteIndex = ((midi % 12) + 12) % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    const names = useSharp ? NOTE_NAMES_SHARP : NOTE_NAMES_FLAT;
+    return { name: names[noteIndex], full: `${names[noteIndex]}${octave}`, octave, midi };
+  }
+
+  function getNoteInfo(string, fret, useSharp) {
+    const midi = OPEN_MIDI[string] + fret;
+    const noteIndex = ((midi % 12) + 12) % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    const names = useSharp ? NOTE_NAMES_SHARP : NOTE_NAMES_FLAT;
+    return {
+      name: names[noteIndex],
+      full: `${names[noteIndex]}${octave}`,
+      midi,
+      freq: 440 * Math.pow(2, (midi - 69) / 12),
+      octave
+    };
+  }
+
+  function midiFromFrequency(freq) {
+    if (!Number.isFinite(freq) || freq <= 0) return null;
+    return 69 + 12 * Math.log2(freq / 440);
+  }
+
+  function frequencyToNote(freq) {
+    const midiFloat = midiFromFrequency(freq);
+    if (!Number.isFinite(midiFloat)) return null;
+    const midiRounded = Math.round(midiFloat);
+    const cents = (midiFloat - midiRounded) * 100;
+    const { name, full, octave, midi } = noteNameFromMidi(midiRounded, state.notation === 'sharp');
+    return { name, full, octave, midi, cents, midiFloat };
+  }
+
+  function rmsOfBuffer(buf) {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  }
+
+  function autoCorrelate(buf, sampleRate) {
+    const SIZE = buf.length;
+    const rms = rmsOfBuffer(buf);
+    if (rms < 0.002) return -1;
+
+    // NSDF approach — more stable than normalized cross-correlation
+    const minFreq = 60;   // below low E (82Hz) with slack tuning
+    const maxFreq = 1400; // above high e frets
+    const minLag = Math.floor(sampleRate / maxFreq);
+    const maxLag = Math.floor(sampleRate / minFreq);
+
+    // Step 1: compute sum of squares for the full window (lag=0)
+    let sumSq = 0;
+    for (let i = 0; i < SIZE; i++) sumSq += buf[i] * buf[i];
+
+    let bestLag = -1;
+    let bestVal = 0.001; // minimum threshold to count as a peak
+
+    // Step 2: slide the lag window
+    for (let lag = minLag; lag <= Math.min(maxLag, SIZE - 1); lag++) {
+      let acf = 0;       // autocorrelation value
+      let norm = 0;      // consistent normalization
+
+      for (let i = 0; i < SIZE - lag; i++) {
+        acf  += buf[i] * buf[i + lag];
+        norm += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
+      }
+
+      // NSDF value — ranges -1 to 1
+      const nsdf = norm > 0 ? (2 * acf) / norm : 0;
+
+      if (nsdf > bestVal) {
+        bestVal = nsdf;
+        bestLag = lag;
+      }
+    }
+
+    if (bestLag < minLag) return -1;
+
+    // Step 3: parabolic interpolation for sub-sample accuracy
+    if (bestLag > minLag && bestLag < Math.min(maxLag, SIZE - 2)) {
+      const y1 = nsdfAtLag(buf, SIZE, bestLag - 1);
+      const y2 = bestVal;
+      const y3 = nsdfAtLag(buf, SIZE, bestLag + 1);
+      const denom = y1 - 2 * y2 + y3;
+      if (Math.abs(denom) > 1e-10) {
+        bestLag = bestLag - 0.5 * (y1 - y3) / denom;
+      }
+    }
+
+    return sampleRate / bestLag;
+  }
+
+  // Helper for parabolic interpolation step
+  function nsdfAtLag(buf, SIZE, lag) {
+    let acf = 0, norm = 0;
+    for (let i = 0; i < SIZE - lag; i++) {
+      acf  += buf[i] * buf[i + lag];
+      norm += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
+    }
+    return norm > 0 ? (2 * acf) / norm : 0;
+  }
+
+  function updateLevelMeter(buf) {
+    const rms = rmsOfBuffer(buf);
+    const level = clamp(Math.ceil(rms * 400), 0, 5);
+    els.ldots.forEach((dot, i) => dot.classList.toggle('active', i < level));
+  }
+
+  function setDetectedText(text, isNote = false) {
+    els.detectedNote.textContent = text;
+    els.detectedNote.classList.toggle('has-note', isNote);
+  }
+
+  function updateScores() {
+    els.correctCount.textContent = state.correct;
+    els.wrongCount.textContent = state.wrong;
+    els.noteCount.textContent = state.total;
+  }
+
+  function updateTimerDisplay() {
+    els.timerDisplay.innerHTML = `${state.timerSeconds}<span>sec</span>`;
+    els.timeLeft.textContent = `${state.timerSeconds}s`;
+  }
+
+  function updatePresetButtons() {
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.textContent, 10) === state.timerSeconds);
+    });
+  }
+
+  function setTimer(sec) {
+    state.timerSeconds = clamp(parseInt(sec, 10) || 10, 2, 60);
+    els.timerSlider.value = state.timerSeconds;
+    updateTimerDisplay();
+    updatePresetButtons();
+  }
+
+  function updateTimer(val) {
+    state.timerSeconds = clamp(parseInt(val, 10) || 10, 2, 60);
+    updateTimerDisplay();
+    updatePresetButtons();
+  }
+
+  function setNotation(type) {
+    state.notation = type === 'flat' ? 'flat' : 'sharp';
+    els.sharpBtn.classList.toggle('active', state.notation === 'sharp');
+    els.flatBtn.classList.toggle('active', state.notation === 'flat');
+    if (state.isPracticing && state.currentNote) {
+      // refresh the visible label to match the new notation
+      renderCurrentNote();
+    }
+  }
+
+  function toggleString(el) {
+    const str = parseInt(el.dataset.string, 10);
+    if (state.activeStrings.includes(str)) {
+      state.activeStrings = state.activeStrings.filter(s => s !== str);
+      el.classList.remove('active');
+    } else {
+      state.activeStrings.push(str);
+      state.activeStrings.sort((a, b) => b - a);
+      el.classList.add('active');
+    }
+  }
+
+  function selectAll() {
+    state.activeStrings = [6,5,4,3,2,1];
+    document.querySelectorAll('.string-btn').forEach(el => el.classList.add('active'));
+  }
+
+  function selectNone() {
+    state.activeStrings = [];
+    document.querySelectorAll('.string-btn').forEach(el => el.classList.remove('active'));
+  }
+
+  function initFretboard() {
+    const nutX = 32;
+    const spacing = 25;
+    let html = `<rect x="0" y="0" width="360" height="80" fill="#1a1815" rx="6"/>`;
+    html += `<rect x="${nutX - 4}" y="6" width="5" height="68" fill="#e8a030"/>`;
+
+    for (let i = 0; i <= 12; i++) {
+      const x = nutX + i * spacing;
+      const w = i === 0 ? 2.5 : 1.2;
+      html += `<line x1="${x}" y1="8" x2="${x}" y2="72" stroke="#555" stroke-width="${w}"/>`;
+    }
+
+    const stringYs = [14, 24, 34, 44, 54, 64];
+    const thicknesses = [3.5, 3, 2.5, 2, 1.6, 1.3];
+    [6,5,4,3,2,1].forEach((s, i) => {
+      html += `<line x1="${nutX - 6}" y1="${stringYs[i]}" x2="355" y2="${stringYs[i]}" stroke="${getStringColor(s)}" stroke-width="${thicknesses[i]}"/>`;
+    });
+
+    [3,5,7,9].forEach(f => {
+      const x = nutX + f * spacing + 12;
+      html += `<circle cx="${x}" cy="39" r="3.5" fill="#555"/>`;
+    });
+    const x12 = nutX + 12 * spacing + 12;
+    html += `<circle cx="${x12}" cy="29" r="2.8" fill="#555"/><circle cx="${x12}" cy="49" r="2.8" fill="#555"/>`;
+
+    els.fretboardSvg.innerHTML = html;
+  }
+
+  function clearFretboardHighlight() {
+    const old = els.fretboardSvg.querySelector('.highlight');
+    if (old) old.remove();
+  }
+
+  function updateFretboard(string, fret) {
+    clearFretboardHighlight();
+    if (string == null || fret == null) return;
+
+    const stringYs = [14, 24, 34, 44, 54, 64];
+    const idx = 6 - string;
+    const y = stringYs[idx];
+    const x = 32 + fret * 25 + 12;
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("class", "highlight");
+    circle.setAttribute("cx", x);
+    circle.setAttribute("cy", y);
+    circle.setAttribute("r", "9");
+    circle.setAttribute("fill", "none");
+    circle.setAttribute("stroke", "#e8a030");
+    circle.setAttribute("stroke-width", "2.5");
+    circle.setAttribute("opacity", "0.9");
+    els.fretboardSvg.appendChild(circle);
+  }
+
+  function renderCurrentNote() {
+    if (!state.currentNote) return;
+    const { string, fret } = state.currentNote;
+    const info = getNoteInfo(string, fret, state.notation === 'sharp');
+    state.currentNote.label = info.full;
+    state.currentNote.noteName = info.name;
+    els.noteStage.innerHTML = `
+      <div class="string-indicator" style="color: ${getStringColor(string)}">STRING ${string} • ${OPEN_NOTES[string]}</div>
+      <div class="big-note flash-in" id="bigNote">${info.name}</div>
+      <div class="note-sub">PLAY THIS NOTE ON STRING ${string}</div>
+      <div class="feedback-badge" id="feedbackBadge"></div>
+      <div class="answer-area">
+        <button class="reveal-btn" onclick="revealAnswer()">REVEAL FRET</button>
+        <div class="fret-answer" id="fretAnswer">Fret ${fret}</div>
+      </div>
+    `;
+    setTimeout(() => {
+      const big = document.getElementById('bigNote');
+      if (big) big.classList.remove('flash-in');
+    }, 280);
+    updateFretboard(string, fret);
+    document.getElementById('fretAnswer')?.classList.remove('visible');
+  }
+
+  function generateNewNote() {
+    if (!state.activeStrings.length) {
+      stopPractice({ keepOverlay: true });
+      els.noteStage.innerHTML = `<div class="waiting-msg">SELECT AT LEAST ONE STRING</div>`;
+      return;
+    }
+    if (state.fretFrom > state.fretTo) {
+      [state.fretFrom, state.fretTo] = [state.fretTo, state.fretFrom];
+      els.fretFrom.value = state.fretFrom;
+      els.fretTo.value = state.fretTo;
+    }
+
+    const str = state.activeStrings[Math.floor(Math.random() * state.activeStrings.length)];
+    const fret = Math.floor(Math.random() * (state.fretTo - state.fretFrom + 1)) + state.fretFrom;
+    const info = getNoteInfo(str, fret, state.notation === 'sharp');
+
+    state.currentNote = { string: str, fret, ...info };
+    state.answered = false;
+    state.matchCount = 0;
+
+    renderCurrentNote();
+    startNoteTimer();
+    setDetectedText('—', false);
+  }
+
+  function startNoteTimer() {
+    let remaining = state.timerSeconds;
+    const totalSeconds = state.timerSeconds;
+
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    els.progressBar.style.width = '100%';
+    els.timeLeft.textContent = `${remaining}s`;
+
+    state.timerInterval = setInterval(() => {
+      remaining -= 1;
+      const pct = Math.max(0, (remaining / totalSeconds) * 100);
+      els.progressBar.style.width = `${pct}%`;
+      els.timeLeft.textContent = `${Math.max(0, remaining)}s`;
+
+      if (remaining <= 0) {
+        clearInterval(state.timerInterval);
+        state.timerInterval = null;
+        handleTimeout();
+      }
+    }, 1000);
+  }
+
+  function flashBigNote(cls) {
+    const big = document.getElementById('bigNote');
+    if (!big) return;
+    big.classList.remove('correct-flash', 'wrong-flash');
+    void big.offsetWidth;
+    big.classList.add(cls);
+  }
+
+  function handleCorrect() {
+    if (state.answered || !state.currentNote) return;
+    state.answered = true;
+    state.correct += 1;
+    state.total += 1;
+    state.streak += 1;
+    if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+    updateScores();
+    updateStreak();
+    flashBigNote('correct-flash');
+    // Show the note name as feedback on correct
+    const fb = document.getElementById('feedbackBadge');
+    if (fb) { fb.textContent = `✓ ${state.currentNote.noteName || ''}`; fb.style.opacity = '1'; fb.style.color = 'var(--green)'; }
+    setTimeout(() => { if (state.isPracticing) generateNewNote(); }, 650);
+  }
+
+  function handleWrong() {
+    if (state.answered || !state.currentNote) return;
+    state.answered = true;
+    state.wrong += 1;
+    state.total += 1;
+    state.streak = 0;
+    updateScores();
+    updateStreak();
+    flashBigNote('wrong-flash');
+    const answer = document.getElementById('fretAnswer');
+    if (answer) answer.classList.add('visible');
+    const fb = document.getElementById('feedbackBadge');
+    if (fb) { fb.textContent = `✗ It was ${state.currentNote.noteName || ''}`; fb.style.opacity = '1'; fb.style.color = 'var(--red)'; }
+    setTimeout(() => { if (state.isPracticing) generateNewNote(); }, 1300);
+  }
+
+  function handleTimeout() {
+    if (state.answered || !state.currentNote) return;
+    handleWrong();
+  }
+
+  function updateStreak() {
+    els.streakCount.textContent = state.streak;
+    els.streakBadge.classList.toggle('visible', state.streak >= 2);
+  }
+
+  function revealAnswer() {
+    document.getElementById('fretAnswer')?.classList.add('visible');
+  }
+
+  function nextNote() {
+    if (!state.isPracticing) return;
+    state.answered = true;
+    state.total += 1;
+    updateScores();
+    generateNewNote();
+  }
+
+  function manualCorrect() {
+    state.manualMode = true;
+    handleCorrect();
+  }
+
+  function manualWrong() {
+    state.manualMode = true;
+    handleWrong();
+  }
+
+  function setManualMode(show) {
+    state.manualMode = !!show;
+    els.manualControls.classList.toggle('visible', true);
+  }
+
+  async function initAudio() {
+    // Already initialized and working — just start detection
+    if (state.audioContext && state.analyser && state.micReady) {
+      if (state.isPracticing) startPitchDetection();
+      return true;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      state.micReady = false;
+      els.micLabel.textContent = 'MIC UNAVAILABLE';
+      els.micDot.classList.add('error');
+      setManualMode(true);
+      return false;
+    }
+
+    // Clean up any partially initialized audio before re-init
+    if (state.mediaStream) {
+      state.mediaStream.getTracks().forEach(t => t.stop());
+      state.mediaStream = null;
+    }
+    if (state.audioContext) {
+      state.audioContext.close().catch(() => {});
+      state.audioContext = null;
+      state.analyser = null;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+
+      state.mediaStream = stream;
+      state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (state.audioContext.state === 'suspended') {
+        try {
+          await state.audioContext.resume();
+        } catch(err) {
+          console.error('[Mic] AudioContext resume failed:', err);
+          state.micReady = false;
+          setManualMode(true);
+          return false;
+        }
+      }
+
+      const input = state.audioContext.createMediaStreamSource(stream);
+      const analyser = state.audioContext.createAnalyser();
+      analyser.fftSize = 8192;
+      analyser.smoothingTimeConstant = 0.1;
+      input.connect(analyser);
+
+      state.analyser = analyser;
+      state.micReady = true;
+      state.manualMode = false;
+
+      els.micLabel.textContent = 'LISTENING';
+      els.micDot.classList.remove('error');
+      els.micDot.classList.add('active');
+      els.permBanner.classList.add('hidden');
+      setManualMode(false);
+
+      console.log('[Mic] Audio initialized successfully. sampleRate:', state.audioContext.sampleRate);
+      // Always start pitch detection so the user gets continuous note feedback
+      startPitchDetection();
+      return true;
+    } catch (err) {
+      console.error('[Mic] initAudio error:', err);
+      state.micReady = false;
+      els.micLabel.textContent = 'MIC ERROR';
+      els.micDot.classList.add('error');
+      els.micDot.classList.remove('active');
+      els.permBanner.classList.remove('hidden');
+      setManualMode(true);
+      return false;
+    }
+  }
+
+  function startPitchDetection() {
+    if (state.pitchRaf) cancelAnimationFrame(state.pitchRaf);
+    if (!state.analyser || !state.audioContext) {
+      console.warn('[Mic] No analyser/audioContext — cannot start pitch detection');
+      return;
+    }
+
+    const buffer = new Float32Array(state.analyser.fftSize);
+    let firstDetection = true;
+    let silenceFrames = 0;
+
+    const loop = () => {
+      // Keep running as long as audioContext is alive — don't gate on isPracticing
+      if (!state.analyser || !state.audioContext) {
+        state.pitchRaf = null;
+        return;
+      }
+      state.analyser.getFloatTimeDomainData(buffer);
+      updateLevelMeter(buffer);
+      const freq = autoCorrelate(buffer, state.audioContext.sampleRate);
+
+      if (freq > 0) {
+        silenceFrames = 0;
+        const note = frequencyToNote(freq);
+        if (note) {
+          if (firstDetection) {
+            console.log('[Mic] First note detected:', note.full, freq.toFixed(1), 'Hz');
+            firstDetection = false;
+          }
+          // Always show detected note — this gives constant feedback
+          setDetectedText(`${note.full} • ${Math.abs(note.cents).toFixed(0)}¢`, true);
+          state.lastDetectedMidi = note.midi;
+
+          // Only validate answer during active practice
+          if (state.isPracticing && state.currentNote && !state.answered) {
+            const targetNoteClass = state.currentNote.midi % 12;
+            const detectedNoteClass = note.midi % 12;
+            if (targetNoteClass === detectedNoteClass && Math.abs(note.cents) <= 30) {
+              state.matchCount = (state.matchCount || 0) + 1;
+              if (state.matchCount >= 9) {
+                handleCorrect();
+                state.matchCount = 0;
+              }
+            } else {
+              state.matchCount = 0;
+            }
+          }
+        } else {
+          setDetectedText('—', false);
+        }
+      } else {
+        silenceFrames++;
+        if (silenceFrames > 8) {
+          setDetectedText('—', false);
+          state.lastDetectedMidi = null;
+          state.matchCount = 0;
+        }
+      }
+
+      state.pitchRaf = requestAnimationFrame(loop);
+    };
+
+    console.log('[Mic] Pitch detection loop started, fftSize:', state.analyser.fftSize, 'sampleRate:', state.audioContext.sampleRate);
+    loop();
+  }
+
+  async function startPractice() {
+    if (!state.activeStrings.length) {
+      els.noteStage.innerHTML = `<div class="waiting-msg">SELECT AT LEAST ONE STRING</div>`;
+      return;
+    }
+
+    state.fretFrom = clamp(parseInt(els.fretFrom.value, 10) || 1, 0, 24);
+    state.fretTo = clamp(parseInt(els.fretTo.value, 10) || 12, 1, 24);
+    if (state.fretFrom > state.fretTo) {
+      [state.fretFrom, state.fretTo] = [state.fretTo, state.fretFrom];
+      els.fretFrom.value = state.fretFrom;
+      els.fretTo.value = state.fretTo;
+    }
+
+    state.isPracticing = true;
+    state.correct = 0;
+    state.wrong = 0;
+    state.total = 0;
+    state.streak = 0;
+    state.bestStreak = 0;
+    updateScores();
+    updateStreak();
+
+    els.practiceOverlay.classList.add('visible');
+    els.startBtn.classList.add('running');
+    els.startBtn.innerHTML = '■ STOP';
+    els.fretboardWrap.style.display = 'block';
+    els.noteStage.innerHTML = `<div class="waiting-msg">GET READY…</div>`;
+    if (!state.micReady) els.permBanner.classList.remove('hidden');
+    else els.permBanner.classList.add('hidden');
+    setDetectedText('—', false);
+
+    setManualMode(false);
+    const audioReady = await initAudio();
+    if (!audioReady) setManualMode(true);
+
+    setTimeout(() => {
+      if (state.isPracticing) generateNewNote();
+    }, 360);
+  }
+
+  function stopPractice(options = {}) {
+    const { keepOverlay = false } = options;
+
+    state.isPracticing = false;
+    state.answered = false;
+    state.currentNote = null;
+
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    // NOTE: We do NOT kill audioContext/mediaStream here.
+    // The mic keeps running so the user always sees detected notes.
+    // Pitch detection loop keeps running (it checks isPracticing for answer matching).
+
+    if (!keepOverlay) els.practiceOverlay.classList.remove('visible');
+    els.startBtn.classList.remove('running');
+    els.startBtn.innerHTML = '▶ START';
+    els.manualControls.classList.remove('visible');
+
+    if (!keepOverlay) {
+      els.noteStage.innerHTML = `<div class="waiting-msg">GET READY…</div>`;
+      clearFretboardHighlight();
+    }
+  }
+
+  function cleanupAudio() {
+    if (state.pitchRaf) cancelAnimationFrame(state.pitchRaf);
+    state.pitchRaf = null;
+    if (state.mediaStream) {
+      state.mediaStream.getTracks().forEach(track => track.stop());
+      state.mediaStream = null;
+    }
+    if (state.audioContext) {
+      state.audioContext.close().catch(() => {});
+      state.audioContext = null;
+      state.analyser = null;
+    }
+    state.micReady = false;
+    els.micLabel.textContent = 'MIC OFF';
+    els.micDot.classList.remove('active', 'error');
+    els.ldots.forEach(dot => dot.classList.remove('active'));
+    setDetectedText('—', false);
+  }
+
+  function togglePractice() {
+    if (state.isPracticing) {
+      const hadNotes = state.total > 0;
+      stopPractice();
+      if (hadNotes) showSummary();
+    } else {
+      if (!state.audioContext) {
+        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (state.audioContext.state === 'suspended') {
+        state.audioContext.resume().catch(() => {});
+      }
+      startPractice();
+    }
+  }
+
+  function showSummary() {
+    const accuracy = state.total > 0 ? Math.round((state.correct / state.total) * 100) : 0;
+    els.sumCorrect.textContent = state.correct;
+    els.sumWrong.textContent = state.wrong;
+    els.sumAccuracy.textContent = `${accuracy}%`;
+
+    // Color accuracy bar
+    let barColor = 'var(--red)';
+    if (accuracy >= 80) barColor = 'var(--green)';
+    else if (accuracy >= 50) barColor = 'var(--amber)';
+    els.sumAccBar.style.background = barColor;
+    els.sumAccBar.style.width = '0%';
+
+    // Title based on performance
+    if (accuracy >= 90) els.summaryTitle.textContent = 'Excellent! 🎸';
+    else if (accuracy >= 70) els.summaryTitle.textContent = 'Good Job! 👍';
+    else if (accuracy >= 50) els.summaryTitle.textContent = 'Keep Practicing';
+    else els.summaryTitle.textContent = 'Room to Grow';
+
+    els.summaryOverlay.classList.add('visible');
+
+    // Animate accuracy bar
+    setTimeout(() => { els.sumAccBar.style.width = `${accuracy}%`; }, 100);
+  }
+
+  function closeSummary() {
+    els.summaryOverlay.classList.remove('visible');
+  }
+
+  function restartPractice() {
+    closeSummary();
+    setTimeout(() => startPractice(), 200);
+  }
+
+  async function requestMic() {
+    try {
+      if (!state.audioContext) {
+        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (state.audioContext.state === 'suspended') {
+        state.audioContext.resume().catch(() => {});
+      }
+      const ok = await initAudio();
+      if (ok) {
+        els.permBanner.classList.add('hidden');
+        els.micLabel.textContent = 'LISTENING';
+      }
+    } catch (err) {
+      console.error('Mic activation failed:', err);
+      alert('Microphone could not be activated. Make sure you allowed microphone permission in the browser.');
+    }
+  }
+
+  // --- LocalStorage Persistence ---
+  const STORAGE_KEY = 'fretboard-trainer-settings';
+
+  function saveSettings() {
+    try {
+      const settings = {
+        activeStrings: state.activeStrings,
+        fretFrom: state.fretFrom,
+        fretTo: state.fretTo,
+        timerSeconds: state.timerSeconds,
+        notation: state.notation,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    } catch (e) { /* ignore */ }
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+
+      if (Array.isArray(s.activeStrings)) {
+        state.activeStrings = s.activeStrings.filter(n => [1,2,3,4,5,6].includes(n));
+        document.querySelectorAll('.string-btn').forEach(el => {
+          const str = parseInt(el.dataset.string, 10);
+          el.classList.toggle('active', state.activeStrings.includes(str));
+        });
+      }
+      if (typeof s.fretFrom === 'number') {
+        state.fretFrom = clamp(s.fretFrom, 0, 24);
+        els.fretFrom.value = state.fretFrom;
+      }
+      if (typeof s.fretTo === 'number') {
+        state.fretTo = clamp(s.fretTo, 1, 24);
+        els.fretTo.value = state.fretTo;
+      }
+      if (typeof s.timerSeconds === 'number') {
+        state.timerSeconds = clamp(s.timerSeconds, 2, 60);
+        els.timerSlider.value = state.timerSeconds;
+        updateTimerDisplay();
+        updatePresetButtons();
+      }
+      if (s.notation === 'flat' || s.notation === 'sharp') {
+        setNotation(s.notation);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function bindInputs() {
+    els.fretFrom.addEventListener('change', () => {
+      state.fretFrom = clamp(parseInt(els.fretFrom.value, 10) || 1, 0, 24);
+      els.fretFrom.value = state.fretFrom;
+      if (state.fretFrom > state.fretTo) {
+        state.fretTo = state.fretFrom;
+        els.fretTo.value = state.fretTo;
+      }
+    });
+
+    els.fretTo.addEventListener('change', () => {
+      state.fretTo = clamp(parseInt(els.fretTo.value, 10) || 12, 1, 24);
+      els.fretTo.value = state.fretTo;
+      if (state.fretTo < state.fretFrom) {
+        state.fretFrom = state.fretTo;
+        els.fretFrom.value = state.fretFrom;
+      }
+    });
+
+    els.timerSlider.addEventListener('input', () => updateTimer(els.timerSlider.value));
+
+    document.addEventListener('keydown', e => {
+      if (!state.isPracticing) return;
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        const answer = document.getElementById('fretAnswer');
+        if (answer && answer.classList.contains('visible')) nextNote();
+        else revealAnswer();
+      }
+      if (e.key.toLowerCase() === 'r') revealAnswer();
+      if (e.key.toLowerCase() === 'c') manualCorrect();
+      if (e.key.toLowerCase() === 'x') manualWrong();
+      if (e.key === 'Enter') nextNote();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!state.isPracticing) return;
+      if (document.hidden) {
+        // Pause timer when tab hidden to prevent catch-up ticks
+        if (state.timerInterval) {
+          clearInterval(state.timerInterval);
+          state.pausedTimer = true;
+        }
+      } else if (state.pausedTimer) {
+        // Resume timer — read remaining from the display
+        state.pausedTimer = false;
+        const remaining = parseInt(els.timeLeft.textContent, 10) || 0;
+        if (remaining > 0) {
+          let rem = remaining;
+          const totalSeconds = state.timerSeconds;
+          state.timerInterval = setInterval(() => {
+            rem -= 1;
+            const pct = Math.max(0, (rem / totalSeconds) * 100);
+            els.progressBar.style.width = `${pct}%`;
+            els.timeLeft.textContent = `${Math.max(0, rem)}s`;
+            if (rem <= 0) {
+              clearInterval(state.timerInterval);
+              state.timerInterval = null;
+              handleTimeout();
+            }
+          }, 1000);
+        }
+      }
+    });
+  }
+
+  function exposeApi() {
+    window.toggleString = toggleString;
+    window.selectAll = selectAll;
+    window.selectNone = selectNone;
+    window.setTimer = setTimer;
+    window.updateTimer = updateTimer;
+    window.setNotation = setNotation;
+    window.togglePractice = togglePractice;
+    window.stopPractice = stopPractice;
+    window.requestMic = requestMic;
+    window.revealAnswer = revealAnswer;
+    window.manualCorrect = manualCorrect;
+    window.manualWrong = manualWrong;
+    window.nextNote = nextNote;
+    window.restartPractice = restartPractice;
+    window.closeSummary = closeSummary;
+  }
+
+  // Override settings-changing functions to auto-save
+  const _origToggleString = toggleString;
+  toggleString = function(el) { _origToggleString(el); saveSettings(); };
+  const _origSelectAll = selectAll;
+  selectAll = function() { _origSelectAll(); saveSettings(); };
+  const _origSelectNone = selectNone;
+  selectNone = function() { _origSelectNone(); saveSettings(); };
+  const _origSetTimer = setTimer;
+  setTimer = function(sec) { _origSetTimer(sec); saveSettings(); };
+  const _origUpdateTimer = updateTimer;
+  updateTimer = function(val) { _origUpdateTimer(val); saveSettings(); };
+  const _origSetNotation = setNotation;
+  setNotation = function(type) { _origSetNotation(type); saveSettings(); };
+
+  function init() {
+    initFretboard();
+    updateTimerDisplay();
+    updatePresetButtons();
+    els.manualControls.classList.remove('visible');
+    exposeApi();
+    loadSettings();
+    bindInputs();
+    console.log('[Fretboard Trainer] Ready.');
+  }
+
+  
+window.addEventListener('load', () => {
+  init();
+
+  // Extra fallback for mobile Safari / Android Chrome
+  const permBtn = document.querySelector('.perm-btn');
+  if (permBtn) {
+    permBtn.addEventListener('touchstart', async (e) => {
+      e.preventDefault();
+      try {
+        await requestMic();
+      } catch(err) {
+        console.error(err);
+      }
+    }, { passive: false });
+  }
+  // Clean up audio when leaving page
+  window.addEventListener('beforeunload', () => {
+    cleanupAudio();
+  });
+});
+
+})();
+</script>
+</body>
+</html>
