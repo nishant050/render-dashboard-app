@@ -22,26 +22,16 @@ mongoose.connect(MONGO_URI)
 
 // --- Schemas & Models ---
 
-// Shared Session for App Sharing
-const sharedSessionSchema = new mongoose.Schema({
-    sessionId: { type: String, required: true, unique: true },
-    appName: { type: String, required: true },
-    isActive: { type: Boolean, default: true }
-}, { timestamps: true });
-const SharedSession = mongoose.model('SharedSession', sharedSessionSchema);
-
 // Chemistry Schedule
 const chemistryScheduleSchema = new mongoose.Schema({
     id: Number,
     dates: String,
-    topics: String,
-    sessionId: { type: String, default: 'admin' }
+    topics: String
 });
 const ChemistrySchedule = mongoose.model('ChemistrySchedule', chemistryScheduleSchema);
 
 const chemistryProgressSchema = new mongoose.Schema({
-    data: Object, // Map of id -> status
-    sessionId: { type: String, default: 'admin' }
+    data: Object // Map of id -> status
 }, { timestamps: true });
 const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressSchema);
 
@@ -51,8 +41,7 @@ const newsHuntSchema = new mongoose.Schema({
     feeds: { type: [mongoose.Schema.Types.Mixed], default: [] },
     articles: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     chatHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
-    articleContent: { type: Map, of: String, default: {} },
-    sessionId: { type: String, default: 'admin' }
+    articleContent: { type: Map, of: String, default: {} }
 }, { timestamps: true });
 const NewsHuntData = mongoose.model('NewsHuntData', newsHuntSchema);
 
@@ -62,21 +51,18 @@ const quickNoteSchema = new mongoose.Schema({
     content: { type: String, default: '' },
     color: { type: String, default: 'linen' },
     pinned: { type: Boolean, default: false },
-    isEncrypted: { type: Boolean, default: false },
-    sessionId: { type: String, default: 'admin' }
+    isEncrypted: { type: Boolean, default: false }
 }, { timestamps: true });
 const QuickNote = mongoose.model('QuickNote', quickNoteSchema);
 
 const learnInvestingSchema = new mongoose.Schema({
     profiles: { type: mongoose.Schema.Types.Mixed, default: {} },
-    currentProfileId: { type: String, default: null },
-    sessionId: { type: String, default: 'admin' }
+    currentProfileId: { type: String, default: null }
 }, { timestamps: true });
 const LearnInvestingState = mongoose.model('LearnInvestingState', learnInvestingSchema);
 
 const fretboardTrainerSchema = new mongoose.Schema({
-    progress: { type: mongoose.Schema.Types.Mixed, default: {} },
-    sessionId: { type: String, default: 'admin' }
+    progress: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 const FretboardTrainerState = mongoose.model('FretboardTrainerState', fretboardTrainerSchema);
 
@@ -147,7 +133,7 @@ const generateSessionToken = () => {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
-const getGuestSessionCookie = (req, name) => {
+const getCookieValue = (req, name) => {
     const cookies = String(req.headers.cookie || '').split(';');
     for (const cookie of cookies) {
         const [key, ...value] = cookie.trim().split('=');
@@ -159,7 +145,7 @@ const getGuestSessionCookie = (req, name) => {
 const getFinanceSessionToken = (req) => (
     req.headers['x-finance-session'] ||
     req.query.session ||
-    getGuestSessionCookie(req, 'financeSession')
+    getCookieValue(req, 'financeSession')
 );
 
 // Finance authentication middleware - protects /finance and /api/finance routes
@@ -176,106 +162,6 @@ const requireFinanceAuth = (req, res, next) => {
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
-
-
-// --- App Sharing API & Middleware ---
-const crypto = require('crypto');
-
-app.get('/share/:sessionId', async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const session = await SharedSession.findOne({ sessionId, isActive: true });
-        if (!session) {
-            return res.status(404).send('Invalid or expired share link.');
-        }
-        res.cookie('guestSession', sessionId, {
-            httpOnly: true,
-            sameSite: 'lax',
-            maxAge: 1000 * 60 * 60 * 24 * 30 // 30 days
-        });
-        res.redirect('/apps/' + session.appName + '/index.html');
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('Server Error');
-    }
-});
-
-
-
-const guestSessionMiddleware = async (req, res, next) => {
-    try {
-        const sessionId = getGuestSessionCookie(req, 'guestSession');
-        if (sessionId) {
-            const session = await SharedSession.findOne({ sessionId, isActive: true });
-            if (session) {
-                req.guestSession = session;
-                // Restrict access
-                if (req.path.startsWith('/apps/') && !req.path.startsWith('/apps/' + session.appName)) {
-                     return res.status(403).send('You do not have access to this app. Please use your generated share link.');
-                }
-                if (req.path === '/' || req.path === '/index.html') {
-                     return res.redirect('/apps/' + session.appName + '/index.html');
-                }
-            } else {
-                res.clearCookie('guestSession');
-            }
-        }
-    } catch (e) {
-        console.error('Guest Session Middleware Error:', e);
-    }
-    next();
-};
-
-app.use(guestSessionMiddleware);
-
-app.post('/api/share', async (req, res) => {
-    try {
-        const { appName } = req.body;
-        if (!appName) return res.status(400).json({ error: 'appName is required' });
-        const sessionId = crypto.randomUUID();
-        await SharedSession.create({ sessionId, appName });
-        res.json({ success: true, link: '/share/' + sessionId, sessionId });
-    } catch (e) {
-        console.error('Error in POST /api/share:', e);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-app.get('/api/share', async (req, res) => {
-    try {
-        const sessions = await SharedSession.find().sort({ createdAt: -1 });
-        res.json(sessions);
-    } catch (e) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-app.delete('/api/share/:sessionId', async (req, res) => {
-    try {
-        const sessionId = req.params.sessionId;
-        await SharedSession.deleteOne({ sessionId });
-        
-        // Delete all associated data for this session to save space
-        await mongoose.model('ChemistrySchedule').deleteMany({ sessionId });
-        await mongoose.model('ChemistryProgress').deleteMany({ sessionId });
-        await mongoose.model('NewsHuntData').deleteMany({ sessionId });
-        await mongoose.model('QuickNote').deleteMany({ sessionId });
-        await mongoose.model('LearnInvestingState').deleteMany({ sessionId });
-        await mongoose.model('FretboardTrainerState').deleteMany({ sessionId });
-
-        res.json({ success: true });
-    } catch (e) {
-        console.error('Error deleting share:', e);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-app.get('/exit-guest', (req, res) => {
-    res.clearCookie('guestSession');
-    res.redirect('/');
-});
-
-
 
 // --- DietPlan Proxy & Process Setup ---
 const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
@@ -1593,15 +1479,15 @@ const normalizeLearnInvestingState = (state = {}) => ({
         : null
 });
 
-const readLearnInvestingState = async (sessionId = 'admin') => {
-    const data = await LearnInvestingState.findOne({ sessionId });
+const readLearnInvestingState = async () => {
+    const data = await LearnInvestingState.findOne({});
     if (!data) return { profiles: {}, currentProfileId: null };
     return normalizeLearnInvestingState(typeof data.toObject === 'function' ? data.toObject() : data);
 };
 
-const writeLearnInvestingState = async (state, sessionId = 'admin') => {
+const writeLearnInvestingState = async (state) => {
     const normalized = normalizeLearnInvestingState(state);
-    const existing = await LearnInvestingState.findOne({ sessionId });
+    const existing = await LearnInvestingState.findOne({});
 
     if (existing) {
         existing.profiles = normalized.profiles;
@@ -1611,14 +1497,12 @@ const writeLearnInvestingState = async (state, sessionId = 'admin') => {
         return existing;
     }
 
-    normalized.sessionId = sessionId;
     return LearnInvestingState.create(normalized);
 };
 
 app.get('/api/learn-investing/state', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        const state = await readLearnInvestingState(sessionId);
+        const state = await readLearnInvestingState();
         res.json(state);
     } catch (error) {
         console.error('Error reading learn-investing state:', error);
@@ -1628,8 +1512,7 @@ app.get('/api/learn-investing/state', async (req, res) => {
 
 app.post('/api/learn-investing/state', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        const state = await writeLearnInvestingState(req.body, sessionId);
+        const state = await writeLearnInvestingState(req.body);
         res.json({ success: true, state });
     } catch (error) {
         console.error('Error saving learn-investing state:', error);
@@ -1678,16 +1561,16 @@ const normalizeFretboardProgress = (progress = {}) => {
     return normalized;
 };
 
-const readFretboardProgress = async (sessionId = 'admin') => {
-    const data = await FretboardTrainerState.findOne({ sessionId });
+const readFretboardProgress = async () => {
+    const data = await FretboardTrainerState.findOne({});
     if (!data) return defaultFretboardProgress();
     const state = typeof data.toObject === 'function' ? data.toObject() : data;
     return normalizeFretboardProgress(state.progress);
 };
 
-const writeFretboardProgress = async (progress, sessionId = 'admin') => {
+const writeFretboardProgress = async (progress) => {
     const normalized = normalizeFretboardProgress(progress);
-    const existing = await FretboardTrainerState.findOne({ sessionId });
+    const existing = await FretboardTrainerState.findOne({});
 
     if (existing) {
         existing.progress = normalized;
@@ -1696,14 +1579,13 @@ const writeFretboardProgress = async (progress, sessionId = 'admin') => {
         return normalized;
     }
 
-    await FretboardTrainerState.create({ progress: normalized, sessionId });
+    await FretboardTrainerState.create({ progress: normalized });
     return normalized;
 };
 
 app.get('/api/fretboard-trainer/progress', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        const progress = await readFretboardProgress(sessionId);
+        const progress = await readFretboardProgress();
         res.json(progress);
     } catch (error) {
         console.error('Error reading fretboard trainer progress:', error);
@@ -1713,8 +1595,7 @@ app.get('/api/fretboard-trainer/progress', async (req, res) => {
 
 app.post('/api/fretboard-trainer/progress', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        const progress = await writeFretboardProgress(req.body || {}, sessionId);
+        const progress = await writeFretboardProgress(req.body || {});
         res.json(progress);
     } catch (error) {
         console.error('Error saving fretboard trainer progress:', error);
@@ -1938,18 +1819,16 @@ const defaultChemistrySchedule = [
 
 app.get('/api/chemistry/schedule', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        let schedule = await ChemistrySchedule.find({ sessionId }).sort({ id: 1 });
-        if (schedule.length === 0 && sessionId === 'admin') {
+        let schedule = await ChemistrySchedule.find({}).sort({ id: 1 });
+        if (schedule.length === 0) {
             // Seed from file if exists, or use default
             console.log('Seeding Chemistry Schedule from JSON...');
             let initialData = defaultChemistrySchedule;
             if (fs.existsSync(chemistrySchedulePath)) {
                 initialData = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
             }
-            const seededData = initialData.map(item => ({ ...item, sessionId }));
-            await ChemistrySchedule.insertMany(seededData);
-            schedule = await ChemistrySchedule.find({ sessionId }).sort({ id: 1 });
+            await ChemistrySchedule.insertMany(initialData);
+            schedule = await ChemistrySchedule.find({}).sort({ id: 1 });
         }
         res.json(schedule);
     } catch (error) {
@@ -1962,11 +1841,8 @@ app.post('/api/chemistry/schedule', async (req, res) => {
     try {
         if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Schedule must be an array' });
 
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        const schedule = req.body.map(item => ({ ...item, sessionId }));
-        
-        await ChemistrySchedule.deleteMany({ sessionId });
-        await ChemistrySchedule.insertMany(schedule);
+        await ChemistrySchedule.deleteMany({});
+        await ChemistrySchedule.insertMany(req.body);
 
         res.json({ message: 'Schedule updated successfully' });
     } catch (error) {
@@ -1977,12 +1853,11 @@ app.post('/api/chemistry/schedule', async (req, res) => {
 
 app.get('/api/chemistry/progress', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
-        let progressDoc = await ChemistryProgress.findOne({ sessionId }).sort({ createdAt: -1 });
+        let progressDoc = await ChemistryProgress.findOne({}).sort({ createdAt: -1 });
         if (!progressDoc) {
-            if (fs.existsSync(chemistryProgressPath) && sessionId === 'admin') {
+            if (fs.existsSync(chemistryProgressPath)) {
                 const data = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
-                progressDoc = await ChemistryProgress.create({ data, sessionId });
+                progressDoc = await ChemistryProgress.create({ data });
             } else {
                 progressDoc = { data: {} };
             }
@@ -1996,15 +1871,14 @@ app.get('/api/chemistry/progress', async (req, res) => {
 
 app.post('/api/chemistry/progress', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : 'admin';
         const progressData = req.body;
         // Update or create the latest progress doc
-        const lastDoc = await ChemistryProgress.findOne({ sessionId }).sort({ createdAt: -1 });
+        const lastDoc = await ChemistryProgress.findOne({}).sort({ createdAt: -1 });
         if (lastDoc) {
             lastDoc.data = progressData;
             await lastDoc.save();
         } else {
-            await ChemistryProgress.create({ data: progressData, sessionId });
+            await ChemistryProgress.create({ data: progressData });
         }
         res.json({ message: 'Progress updated successfully' });
     } catch (error) {
@@ -2144,28 +2018,27 @@ const normalizeNewshuntData = (data = {}) => {
     };
 };
 
-const ensureNewshuntDocument = async (sessionId = "admin") => {
-    let data = await NewsHuntData.findOne({ sessionId });
+const ensureNewshuntDocument = async () => {
+    let data = await NewsHuntData.findOne({});
 
     if (!data) {
         console.log('Seeding NewsHunt data from JSON...');
         let seedData = NEWSHUNT_DEFAULT_STATE;
 
-        if (fs.existsSync(NEWSHUNT_DATA_PATH) && sessionId === "admin") {
+        if (fs.existsSync(NEWSHUNT_DATA_PATH)) {
             const jsonData = JSON.parse(await fsPromises.readFile(NEWSHUNT_DATA_PATH, 'utf-8'));
             seedData = normalizeNewshuntData(jsonData);
         }
 
-        seedData.sessionId = sessionId;
         data = await NewsHuntData.create(seedData);
     }
 
     return data;
 };
 
-const readNewshuntData = async (sessionId = "admin") => {
+const readNewshuntData = async () => {
     try {
-        const data = await ensureNewshuntDocument(sessionId);
+        const data = await ensureNewshuntDocument();
         return normalizeNewshuntData(data);
     } catch (e) {
         console.error('Error reading newshunt data:', e);
@@ -2173,12 +2046,12 @@ const readNewshuntData = async (sessionId = "admin") => {
     }
 };
 
-const writeNewshuntData = async (data, sessionId = "admin") => {
+const writeNewshuntData = async (data) => {
     const normalized = normalizeNewshuntData(data);
     
     // Use findOneAndUpdate with upsert to avoid Mongoose VersionError on concurrent writes
     const result = await NewsHuntData.findOneAndUpdate(
-        { sessionId },
+        {},
         {
             $set: {
                 settings: normalized.settings,
@@ -2193,10 +2066,10 @@ const writeNewshuntData = async (data, sessionId = "admin") => {
     return result;
 };
 
-const applyNewshuntUpdate = async (update = {}, sessionId = "admin") => {
-    await ensureNewshuntDocument(sessionId);
+const applyNewshuntUpdate = async (update = {}) => {
+    await ensureNewshuntDocument();
     return NewsHuntData.updateOne(
-        { sessionId },
+        {},
         update
     );
 };
@@ -2215,7 +2088,6 @@ app.get('/api/newshunt/ai-config', (req, res) => {
 
 // POST /api/newshunt/sideload — Completely replace server data with an imported JSON file
 app.post('/api/newshunt/sideload', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const payload = req.body;
         // Basic validation: ensure it looks like a backup object
@@ -2247,7 +2119,7 @@ app.post('/api/newshunt/sideload', async (req, res) => {
             serverData.articles = payload.articles;
         }
 
-        const savedData = await writeNewshuntData(serverData, sessionId);
+        const savedData = await writeNewshuntData(serverData);
         const normalized = normalizeNewshuntData(savedData);
         res.json({
             ok: true, message: 'Server data replaced successfully', counts: {
@@ -2264,9 +2136,8 @@ app.post('/api/newshunt/sideload', async (req, res) => {
 
 // GET /api/newshunt/sync — pull all synced state
 app.get('/api/newshunt/sync', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
-        const data = await readNewshuntData(sessionId);
+        const data = await readNewshuntData();
         res.json(data);
     } catch (error) {
         console.error('Error in GET /api/newshunt/sync:', error);
@@ -2276,10 +2147,9 @@ app.get('/api/newshunt/sync', async (req, res) => {
 
 // POST /api/newshunt/sync — push full sync (merge)
 app.post('/api/newshunt/sync', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articles: clientArticles, feeds: clientFeeds, settings: clientSettings } = req.body;
-        const serverData = await readNewshuntData(sessionId);
+        const serverData = await readNewshuntData();
 
         if (clientSettings !== undefined) {
             serverData.settings = normalizeNewshuntSettings(clientSettings);
@@ -2293,7 +2163,7 @@ app.post('/api/newshunt/sync', async (req, res) => {
             serverData.articles = normalizeNewshuntArticles(clientArticles);
         }
 
-        const savedData = await writeNewshuntData(serverData, sessionId);
+        const savedData = await writeNewshuntData(serverData);
         res.json(normalizeNewshuntData(savedData));
     } catch (error) {
         console.error('Error in POST /api/newshunt/sync:', error);
@@ -2303,7 +2173,6 @@ app.post('/api/newshunt/sync', async (req, res) => {
 
 // POST /api/newshunt/settings — save individual settings to server
 app.post('/api/newshunt/settings', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { key, value } = req.body;
         if (!key) return res.status(400).json({ error: 'key is required' });
@@ -2321,7 +2190,6 @@ app.post('/api/newshunt/settings', async (req, res) => {
 
 // POST /api/newshunt/mark-read — quick single-article mark-read
 app.post('/api/newshunt/mark-read', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { guid } = req.body;
         if (!guid) return res.status(400).json({ error: 'guid is required' });
@@ -2342,7 +2210,6 @@ app.post('/api/newshunt/mark-read', async (req, res) => {
 
 // POST /api/newshunt/feeds — save feed subscriptions
 app.post('/api/newshunt/feeds', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { feeds } = req.body;
         const normalizedFeeds = normalizeNewshuntFeeds(feeds);
@@ -2358,7 +2225,6 @@ app.post('/api/newshunt/feeds', async (req, res) => {
 
 // POST /api/newshunt/article — add or modify a single article
 app.post('/api/newshunt/article', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { article } = req.body;
         if (!article || !article.guid) return res.status(400).json({ error: 'article and article.guid required' });
@@ -2375,7 +2241,6 @@ app.post('/api/newshunt/article', async (req, res) => {
 
 // POST /api/newshunt/articles/batch — batch add multiple articles
 app.post('/api/newshunt/articles/batch', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articles } = req.body; // array
         if (!Array.isArray(articles)) return res.status(400).json({ error: 'articles array required' });
@@ -2401,18 +2266,17 @@ app.post('/api/newshunt/articles/batch', async (req, res) => {
 
 // DELETE /api/newshunt/articles/feed — delete articles from a specific feed
 app.delete('/api/newshunt/articles/feed', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { feedUrl } = req.body;
         if (!feedUrl) return res.status(400).json({ error: 'feedUrl required' });
         
-        const data = await readNewshuntData(sessionId);
+        const data = await readNewshuntData();
         for (const guid in data.articles) {
             if (data.articles[guid].feedUrl === feedUrl) {
                 delete data.articles[guid];
             }
         }
-        await writeNewshuntData(data, sessionId);
+        await writeNewshuntData(data);
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in DELETE /api/newshunt/articles/feed:', error);
@@ -2422,13 +2286,12 @@ app.delete('/api/newshunt/articles/feed', async (req, res) => {
 
 // POST /api/newshunt/articles/purge — delete old articles
 app.post('/api/newshunt/articles/purge', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { maxAgeDays } = req.body;
         const days = Number(maxAgeDays) || 3;
         const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
         
-        const data = await readNewshuntData(sessionId);
+        const data = await readNewshuntData();
         let deletedCount = 0;
         
         for (const guid in data.articles) {
@@ -2440,7 +2303,7 @@ app.post('/api/newshunt/articles/purge', async (req, res) => {
                 deletedCount++;
             }
         }
-        await writeNewshuntData(data, sessionId);
+        await writeNewshuntData(data);
         res.json({ ok: true, deletedCount });
     } catch (error) {
         console.error('Error in POST /api/newshunt/articles/purge:', error);
@@ -2450,7 +2313,6 @@ app.post('/api/newshunt/articles/purge', async (req, res) => {
 
 // POST /api/newshunt/chat — add chat message
 app.post('/api/newshunt/chat', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { articleGuid, role, content = '', reasoning = '' } = req.body;
         if (!articleGuid || !role || (!content && !reasoning)) return res.status(400).json({ error: 'Missing chat params' });
@@ -2475,7 +2337,6 @@ app.post('/api/newshunt/chat', async (req, res) => {
 
 // POST /api/newshunt/article-content — update article content map
 app.post('/api/newshunt/article-content', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         const { guid, content } = req.body;
         if (!guid) return res.status(400).json({ error: 'guid is required' });
@@ -2498,7 +2359,6 @@ app.post('/api/newshunt/article-content', async (req, res) => {
 
 // POST /api/newshunt/article-content/clear
 app.post('/api/newshunt/article-content/clear', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
         await applyNewshuntUpdate({
             $set: { articleContent: {} }
@@ -2512,9 +2372,8 @@ app.post('/api/newshunt/article-content/clear', async (req, res) => {
 
 // DELETE /api/newshunt/clear-all
 app.delete('/api/newshunt/clear-all', async (req, res) => {
-    const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
     try {
-        await NewsHuntData.deleteMany({ sessionId });
+        await NewsHuntData.deleteMany({});
         res.json({ ok: true });
     } catch (error) {
         console.error('Error in DELETE /api/newshunt/clear-all:', error);
@@ -2544,8 +2403,7 @@ const sanitizeQuickNotePayload = (input = {}, fallback = {}) => {
 
 app.get('/api/quicknotes', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
-        const notes = await QuickNote.find({ sessionId }).sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
+        const notes = await QuickNote.find({}).sort({ pinned: -1, updatedAt: -1, createdAt: -1 });
         res.json(notes);
     } catch (e) {
         console.error('API Error in GET /api/quicknotes:', e);
@@ -2555,9 +2413,7 @@ app.get('/api/quicknotes', async (req, res) => {
 
 app.post('/api/quicknotes', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
         const payload = sanitizeQuickNotePayload(req.body);
-        payload.sessionId = sessionId;
         if (!payload.title && !payload.content) {
             return res.status(400).json({ error: 'A note needs a title or content' });
         }
@@ -2572,8 +2428,7 @@ app.post('/api/quicknotes', async (req, res) => {
 
 app.patch('/api/quicknotes/:id', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
-        const existingNote = await QuickNote.findOne({ _id: req.params.id, sessionId });
+        const existingNote = await QuickNote.findById(req.params.id);
         if (!existingNote) {
             return res.status(404).json({ error: 'Note not found' });
         }
@@ -2591,8 +2446,7 @@ app.patch('/api/quicknotes/:id', async (req, res) => {
 
 app.delete('/api/quicknotes/:id', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
-        const deleted = await QuickNote.findOneAndDelete({ _id: req.params.id, sessionId });
+        const deleted = await QuickNote.findByIdAndDelete(req.params.id);
         if (!deleted) {
             return res.status(404).json({ error: 'Note not found' });
         }
@@ -2606,8 +2460,7 @@ app.delete('/api/quicknotes/:id', async (req, res) => {
 
 app.delete('/api/quicknotes', async (req, res) => {
     try {
-        const sessionId = req.guestSession ? req.guestSession.sessionId : "admin";
-        await QuickNote.deleteMany({ sessionId });
+        await QuickNote.deleteMany({});
         res.json({ ok: true });
     } catch (e) {
         console.error('API Error in DELETE /api/quicknotes:', e);
