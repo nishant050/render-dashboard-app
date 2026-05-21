@@ -22,19 +22,6 @@ mongoose.connect(MONGO_URI)
 
 // --- Schemas & Models ---
 
-// Chemistry Schedule
-const chemistryScheduleSchema = new mongoose.Schema({
-    id: Number,
-    dates: String,
-    topics: String
-});
-const ChemistrySchedule = mongoose.model('ChemistrySchedule', chemistryScheduleSchema);
-
-const chemistryProgressSchema = new mongoose.Schema({
-    data: Object // Map of id -> status
-}, { timestamps: true });
-const ChemistryProgress = mongoose.model('ChemistryProgress', chemistryProgressSchema);
-
 // NewsHunt
 const newsHuntSchema = new mongoose.Schema({
     settings: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -1784,109 +1771,6 @@ app.get('/api/newspapers', async (req, res) => {
 });
 
 
-// --- API Routes (Chemistry Schedule) ---
-const chemistrySchedulePath = path.join(__dirname, 'news_settings_chemistry_schedule.json');
-const chemistryProgressPath = path.join(__dirname, 'news_settings_chemistry_progress.json');
-
-const defaultChemistrySchedule = [
-    { id: 1, dates: "March 1", topics: "Basic concept of chemistry + Thermodynamics" },
-    { id: 2, dates: "March 2", topics: "Basic concept of chemistry + Thermodynamics" },
-    { id: 3, dates: "March 3", topics: "Revision + Full length paper (Sunday)" },
-    { id: 4, dates: "March 4", topics: "Electrochemistry + Solution" },
-    { id: 5, dates: "March 5", topics: "Electrochemistry + Solution" },
-    { id: 6, dates: "March 6", topics: "Revision" },
-    { id: 7, dates: "March 7", topics: "Chemical Bonding + Structure of atom" },
-    { id: 8, dates: "March 8", topics: "Chemical Bonding + Structure of atom + Revision + Full length paper (Mar 8 Sunday)" },
-    { id: 9, dates: "March 9", topics: "Chemical kinetics + Aldehyde ketone" },
-    { id: 10, dates: "March 10", topics: "Chemical kinetics + Aldehyde ketone + Chemo -> So Revision (Side Note)" },
-    { id: 11, dates: "March 11", topics: "Chemical kinetics + Aldehyde ketone" },
-    { id: 12, dates: "March 12", topics: "Periodicity classification of elements + Aliphatic Hydrocarbon" },
-    { id: 13, dates: "March 13", topics: "Periodicity classification of elements + Aliphatic Hydrocarbon" },
-    { id: 14, dates: "March 14", topics: "Revision" },
-    { id: 15, dates: "March 15", topics: "d & f block + Biomolecules" },
-    { id: 16, dates: "March 16", topics: "d & f block + Biomolecules" },
-    { id: 17, dates: "March 17", topics: "Revision + Full length paper (Sunday)" },
-    { id: 18, dates: "March 18", topics: "Coordination chemistry + Amines" },
-    { id: 19, dates: "March 19", topics: "Coordination chemistry + Amines" },
-    { id: 20, dates: "March 20", topics: "Revision" },
-    { id: 21, dates: "March 21", topics: "Alcohol, phenol and ethers + Haloalkanes, Haloarenes" },
-    { id: 22, dates: "March 22", topics: "Alcohol, phenol and ethers + Haloalkanes, Haloarenes" },
-    { id: 23, dates: "March 23", topics: "Revision + Full length paper" },
-    { id: 24, dates: "March 24", topics: "Principles, techniques + Equilibrium + Redox Rxn [less Important]" },
-    { id: 25, dates: "March 25", topics: "Principles, techniques + Equilibrium + Redox Rxn [less Important]" },
-    { id: 26, dates: "March 26", topics: "Principles, techniques + Equilibrium + Redox Rxn + Revision + Full length paper [less Important]" }
-];
-
-app.get('/api/chemistry/schedule', async (req, res) => {
-    try {
-        let schedule = await ChemistrySchedule.find({}).sort({ id: 1 });
-        if (schedule.length === 0) {
-            // Seed from file if exists, or use default
-            console.log('Seeding Chemistry Schedule from JSON...');
-            let initialData = defaultChemistrySchedule;
-            if (fs.existsSync(chemistrySchedulePath)) {
-                initialData = JSON.parse(await fsPromises.readFile(chemistrySchedulePath, 'utf-8'));
-            }
-            await ChemistrySchedule.insertMany(initialData);
-            schedule = await ChemistrySchedule.find({}).sort({ id: 1 });
-        }
-        res.json(schedule);
-    } catch (error) {
-        console.error('Error reading chemistry schedule:', error);
-        res.status(500).json({ error: 'Failed to load schedule' });
-    }
-});
-
-app.post('/api/chemistry/schedule', async (req, res) => {
-    try {
-        if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Schedule must be an array' });
-
-        await ChemistrySchedule.deleteMany({});
-        await ChemistrySchedule.insertMany(req.body);
-
-        res.json({ message: 'Schedule updated successfully' });
-    } catch (error) {
-        console.error('Error saving chemistry schedule:', error);
-        res.status(500).json({ error: 'Failed to save schedule' });
-    }
-});
-
-app.get('/api/chemistry/progress', async (req, res) => {
-    try {
-        let progressDoc = await ChemistryProgress.findOne({}).sort({ createdAt: -1 });
-        if (!progressDoc) {
-            if (fs.existsSync(chemistryProgressPath)) {
-                const data = JSON.parse(await fsPromises.readFile(chemistryProgressPath, 'utf-8'));
-                progressDoc = await ChemistryProgress.create({ data });
-            } else {
-                progressDoc = { data: {} };
-            }
-        }
-        res.json(progressDoc.data || {});
-    } catch (error) {
-        console.error('Error reading chemistry progress:', error);
-        res.status(500).json({ error: 'Failed to load progress' });
-    }
-});
-
-app.post('/api/chemistry/progress', async (req, res) => {
-    try {
-        const progressData = req.body;
-        // Update or create the latest progress doc
-        const lastDoc = await ChemistryProgress.findOne({}).sort({ createdAt: -1 });
-        if (lastDoc) {
-            lastDoc.data = progressData;
-            await lastDoc.save();
-        } else {
-            await ChemistryProgress.create({ data: progressData });
-        }
-        res.json({ message: 'Progress updated successfully' });
-    } catch (error) {
-        console.error('Error saving chemistry progress:', error);
-        res.status(500).json({ error: 'Failed to save progress' });
-    }
-});
-
 
 // --- CORS Proxy (used by NewsHunt to fetch RSS feeds) ---
 const proxyFetch = (targetUrl) => {
@@ -2086,7 +1970,373 @@ app.get('/api/newshunt/ai-config', (req, res) => {
     res.json(config);
 });
 
-// POST /api/newshunt/sideload — Completely replace server data with an imported JSON file
+// ==========================================================================
+// SERVER-SIDE BACKGROUND CATEGORIZATION SYSTEM
+// ==========================================================================
+// The full AI categorization pipeline runs on the server — continues
+// running even after the user closes their browser or shuts down their PC.
+
+// --- Background job state ---
+const bgJob = {
+    active: false,
+    phase: null,        // 'fetching'|'saving'|'rating'|'grouping'|'merging'|'done'|'error'
+    progress: null,     // e.g. "8/24"
+    startedAt: null,
+    finishedAt: null,
+    newArticlesCount: 0,
+    error: null,
+    lastMessage: ''
+};
+
+function bgLog(phase, message, progress) {
+    bgJob.phase = phase;
+    bgJob.lastMessage = message;
+    if (progress !== undefined) bgJob.progress = progress;
+    console.log('[BG] [' + phase + '] ' + message + (progress ? ' (' + progress + ')' : ''));
+}
+
+// --- Server-side RSS fetch + XML parse ---
+function parseNewsXml(xmlText, feedUrl) {
+    const $ = cheerio.load(xmlText, { xmlMode: true });
+    const items = [];
+    const strip = (h) => (h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const trunc = (s, n) => s && s.length > n ? s.slice(0, n) : (s || '');
+    const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return Math.abs(h).toString(36); };
+    const isAtom = $('feed').length > 0;
+    if (isAtom) {
+        const feedTitle = $('feed > title').first().text().trim();
+        $('entry').each((_, el) => {
+            const title = $(el).find('title').first().text().trim();
+            const link = $(el).find('link[rel="alternate"]').attr('href') || $(el).find('link').first().attr('href') || '';
+            const desc = strip($(el).find('summary').text() || $(el).find('content').text());
+            const pubDate = $(el).find('published').text() || $(el).find('updated').text() || '';
+            const id = $(el).find('id').text() || link;
+            const cats = []; $(el).find('category').each((__, c) => cats.push($(c).attr('term') || $(c).text()));
+            items.push({ guid: hash(id || title + link), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator: '', categories: cats, image: '', dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null });
+        });
+    } else {
+        const feedTitle = $('channel > title').first().text().trim();
+        $('item').each((_, el) => {
+            const title = $(el).find('title').first().text().trim();
+            const link = $(el).find('link').first().text().trim();
+            const desc = strip($(el).find('description').text() || $(el).find('encoded').text());
+            const pubDate = $(el).find('pubDate').text();
+            const id = $(el).find('guid').text() || link || hash(title + link);
+            const creator = $(el).find('creator').text() || '';
+            const cats = []; $(el).find('category').each((__, c) => cats.push($(c).text()));
+            let image = ''; const enc = $(el).find('enclosure[type^="image"]'); if (enc.length) image = enc.attr('url') || '';
+            items.push({ guid: hash(id), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator, categories: cats, image, dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null });
+        });
+    }
+    return items;
+}
+
+async function serverFetchAllFeeds(feeds) {
+    const allItems = [];
+    const errors = [];
+    const baseURL = 'http://localhost:' + (process.env.PORT || 3000);
+    await Promise.allSettled(feeds.map(async (feed) => {
+        try {
+            const resp = await axios.get(baseURL + '/proxy?url=' + encodeURIComponent(feed.url), {
+                timeout: 25000,
+                headers: { 'User-Agent': 'NewsHunt-Server/1.0', 'Accept': 'application/xml,text/xml,*/*' }
+            });
+            allItems.push(...parseNewsXml(resp.data, feed.url));
+        } catch (e) {
+            errors.push({ url: feed.url, error: e.message });
+            console.warn('[BG] Feed error (' + feed.url + '):', e.message);
+        }
+    }));
+    const uniqueMap = new Map();
+    allItems.forEach(item => { if (!uniqueMap.has(item.guid)) uniqueMap.set(item.guid, item); });
+    const data = await readNewshuntData();
+    const existingGuids = new Set(Object.keys(data.articles || {}));
+    const newArticles = [...uniqueMap.values()].filter(a => !existingGuids.has(a.guid));
+    return { newArticles, errors };
+}
+
+// --- Server-side AI caller ---
+const SRV_AI = {
+    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',        env: 'GROQ_API_KEY',       defaultModel: 'llama-3.3-70b-versatile' },
+    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',           env: 'OPENROUTER_API_KEY', defaultModel: 'google/gemini-2.0-flash-001' },
+    cerebras:   { url: 'https://api.cerebras.ai/v1/chat/completions',             env: 'CEREBRAS_API_KEY',   defaultModel: 'llama3.1-8b' },
+    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',              env: 'MISTRAL_API_KEY',    defaultModel: 'mistral-small-2603' },
+    gemini:     { url: 'https://generativelanguage.googleapis.com/v1beta/models', env: 'GEMINI_API_KEY',     defaultModel: 'gemini-2.0-flash' }
+};
+
+async function callAIServer(messages, options, settings) {
+    options = options || {};
+    settings = settings || {};
+    let provider, model;
+    const taskKey = options.task ? ('task_model_' + options.task) : null;
+    const taskModel = taskKey ? settings[taskKey] : null;
+    if (taskModel && taskModel.provider && taskModel.model) { provider = taskModel.provider; model = taskModel.model; }
+    else {
+        const def = settings['ai_default_model'];
+        if (def && def.provider && def.model) { provider = def.provider; model = def.model; }
+        else { provider = settings['ai_provider'] || 'groq'; model = settings['ai_model'] || (SRV_AI[provider] || {}).defaultModel || ''; }
+    }
+    const prov = SRV_AI[provider];
+    if (!prov) throw new Error('Unknown AI provider: ' + provider);
+    const apiKey = process.env[prov.env] || settings['api_key_' + provider] || settings['ai_api_key'] || '';
+    if (!apiKey) throw new Error('No API key for "' + provider + '". Set env var ' + prov.env + ' or configure in NewsHunt Settings.');
+
+    if (provider === 'gemini') {
+        const url = prov.url + '/' + model + ':generateContent?key=' + apiKey;
+        const contents = []; let sysInst = null;
+        for (const m of messages) {
+            if (m.role === 'system') sysInst = { parts: [{ text: m.content }] };
+            else contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] });
+        }
+        const genCfg = { temperature: options.temperature != null ? options.temperature : 0.1, maxOutputTokens: options.max_tokens || 4096 };
+        if (options.response_format && options.response_format.type === 'json_object') genCfg.responseMimeType = 'application/json';
+        const body = { contents, generationConfig: genCfg, ...(sysInst ? { systemInstruction: sysInst } : {}) };
+        const r = await axios.post(url, body, { headers: { 'Content-Type': 'application/json' }, timeout: 90000 });
+        return (r.data.candidates[0].content.parts || []).map(p => p.text || '').join('');
+    }
+
+    const hdrs = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
+    if (provider === 'openrouter') { hdrs['HTTP-Referer'] = 'https://newshunt-app'; hdrs['X-Title'] = 'NewsHunt'; }
+    const base = { model, messages, temperature: options.temperature != null ? options.temperature : 0.1, max_tokens: options.max_tokens || 4096 };
+    const attempts = [Object.assign({}, base, options.response_format ? { response_format: options.response_format } : {}), base];
+    let lastErr;
+    for (const body of attempts) {
+        try { const r = await axios.post(prov.url, body, { headers: hdrs, timeout: 90000 }); return r.data.choices[0].message.content || ''; }
+        catch (e) { lastErr = (e.response && e.response.data && e.response.data.error && e.response.data.error.message) || e.message; }
+    }
+    throw new Error(lastErr || 'AI request failed');
+}
+
+function cleanJson(text) {
+    let s = String(text || '').trim();
+    if (s.startsWith('```')) s = s.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
+    return s.replace(/[\u0000-\u0019]+/g, '');
+}
+
+// Pass 1: Star-rate uncategorized articles in batches
+async function bgRate(settings) {
+    const data = await readNewshuntData();
+    const uncats = Object.values(data.articles || {}).filter(a => a.stars == null);
+    if (uncats.length === 0) return 0;
+    const interests = settings['interests'] || [];
+    const avoid = settings['avoid_topics'] || [];
+    const custom = settings['custom_instructions'] || '';
+    const iText = interests.length ? '\n**User interests**: ' + interests.join(', ') : '';
+    const aText = avoid.length ? '\n**Topics to avoid**: ' + avoid.join(', ') : '';
+    const cText = custom ? '\n**Additional context**: "' + custom + '"' : '';
+    const BATCH = 8;
+    let total = 0;
+    for (let i = 0; i < uncats.length; i += BATCH) {
+        const batch = uncats.slice(i, i + BATCH);
+        bgLog('rating', 'Rating articles', Math.min(i + BATCH, uncats.length) + '/' + uncats.length);
+        const articleList = batch.map((a, idx) =>
+            '[' + idx + '] Title: "' + a.title + '"\nSource: ' + (a.feedTitle || 'Unknown') + '\nDescription: ' + (a.description || '').slice(0, 160) + '\nCategories: ' + ((a.categories || []).join(', ') || 'N/A')
+        ).join('\n\n');
+        const prompt = 'You are an intelligent news curator. Rate each article 1-5 stars.\n5=Must Read (major world events, policy, AI/tech breakthroughs, financial impact)\n4=High Value (important analysis, industry news)\n3=Interesting (worth reading, not urgent)\n2=Low Value (minor/niche)\n1=Skip (clickbait, gossip, redundant)\nRules: +1 star for user interests, force 1 star for avoid topics.' + iText + aText + cText + '\n\n## Articles\n' + articleList + '\n\nRespond ONLY with JSON:\n{"ratings":[{"index":0,"stars":4,"reason":"Brief reason under 18 words"}]}';
+        for (let att = 0; att < 3; att++) {
+            try {
+                const resp = await callAIServer(
+                    [{ role: 'system', content: 'Return only valid JSON matching the schema.' }, { role: 'user', content: prompt }],
+                    { temperature: 0.1, max_tokens: 3000, response_format: { type: 'json_object' }, task: 'categorize' },
+                    settings
+                );
+                const parsed = JSON.parse(cleanJson(resp));
+                const ratings = Array.isArray(parsed) ? parsed : (parsed.ratings || []);
+                const fresh = await readNewshuntData();
+                for (const r of ratings) {
+                    const art = batch[r.index];
+                    if (!art || !Number.isInteger(r.stars) || r.stars < 1 || r.stars > 5) continue;
+                    if (fresh.articles[art.guid]) {
+                        fresh.articles[art.guid].stars = r.stars;
+                        fresh.articles[art.guid].ratingReason = String(r.reason || '').trim();
+                        fresh.articles[art.guid].ratedAt = Date.now();
+                        total++;
+                    }
+                }
+                await writeNewshuntData(fresh);
+                break;
+            } catch (e) {
+                if (att >= 2) console.error('[BG] Rating batch failed:', e.message);
+                else await new Promise(r => setTimeout(r, 1000 * (att + 1)));
+            }
+        }
+        if (i + BATCH < uncats.length) await new Promise(r => setTimeout(r, 800));
+    }
+    return total;
+}
+
+// Pass 2: Group duplicate stories + assign topic tags
+async function bgGroupAndTag(settings) {
+    const data = await readNewshuntData();
+    const untagged = Object.values(data.articles || {}).filter(a => !a.topics || a.topics.length === 0);
+    if (untagged.length === 0) return { grouped: 0, tagged: 0 };
+    const BATCH = 30;
+    let grouped = 0, tagged = 0;
+    for (let i = 0; i < untagged.length; i += BATCH) {
+        const batch = untagged.slice(i, i + BATCH);
+        bgLog('grouping', 'Grouping & tagging', Math.min(i + BATCH, untagged.length) + '/' + untagged.length);
+        const list = batch.map((a, idx) => '[' + idx + '] "' + a.title + '" (' + (a.feedTitle || 'Unknown') + ', ' + (a.stars || '?') + ' stars)').join('\n');
+        const prompt = 'You are a news editor. For these articles:\n1. Group articles covering the EXACT same news event (pick best as primary).\n2. Assign 1-3 specific event tags to every article (e.g. "Russia-Ukraine War", "ISRO Launch" — not generic "World News").\n\n## Articles\n' + list + '\n\nRespond with ONLY valid JSON:\n{"groups":[{"primaryIndex":0,"relatedIndices":[3],"groupLabel":"Specific event"}],"topics":[{"index":0,"tags":["Tag One","Tag Two"]}]}\n\nEvery article must appear in topics. Tags: 2-4 words, title-cased.';
+        try {
+            const resp = await callAIServer(
+                [{ role: 'system', content: 'Return only valid JSON. No markdown.' }, { role: 'user', content: prompt }],
+                { temperature: 0.1, max_tokens: 4096, task: 'group' },
+                settings
+            );
+            const result = JSON.parse(cleanJson(resp));
+            const fresh = await readNewshuntData();
+            if (result.groups) {
+                for (const grp of result.groups) {
+                    const primary = batch[grp.primaryIndex];
+                    if (!primary || !fresh.articles[primary.guid]) continue;
+                    const gid = primary.guid;
+                    Object.assign(fresh.articles[primary.guid], { groupId: gid, isGroupPrimary: true, groupLabel: grp.groupLabel, relatedCount: (grp.relatedIndices || []).length });
+                    for (const ri of (grp.relatedIndices || [])) {
+                        const rel = batch[ri];
+                        if (rel && rel.guid !== primary.guid && fresh.articles[rel.guid]) {
+                            Object.assign(fresh.articles[rel.guid], { groupId: gid, isGroupPrimary: false, groupLabel: grp.groupLabel, relatedCount: 0 });
+                            grouped++;
+                        }
+                    }
+                }
+            }
+            if (result.topics) {
+                for (const t of result.topics) {
+                    const art = batch[t.index];
+                    if (art && t.tags && t.tags.length > 0 && fresh.articles[art.guid]) {
+                        fresh.articles[art.guid].topics = t.tags;
+                        tagged++;
+                    }
+                }
+            }
+            await writeNewshuntData(fresh);
+        } catch (e) { console.error('[BG] Group batch failed:', e.message); }
+        if (i + BATCH < untagged.length) await new Promise(r => setTimeout(r, 800));
+    }
+    return { grouped, tagged };
+}
+
+// Pass 3: Merge redundant topic labels globally
+async function bgMergeTopics(settings) {
+    const data = await readNewshuntData();
+    const topicMap = {};
+    Object.values(data.articles || {}).forEach(a => (a.topics || []).forEach(t => { topicMap[t] = (topicMap[t] || 0) + 1; }));
+    const topics = Object.entries(topicMap).sort((a, b) => b[1] - a[1]);
+    if (topics.length < 2) return 0;
+    bgLog('merging', 'Merging redundant topic labels');
+    const list = topics.map((t, i) => '[' + i + '] "' + t[0] + '" (' + t[1] + ' articles)').join('\n');
+    const prompt = 'Identify duplicate/redundant topic labels that mean the same thing (e.g., "AI" = "Artificial Intelligence").\n\nTopics:\n' + list + '\n\nReturn ONLY a JSON array:\n[{"primary":"Best name","aliases":["Alias to merge"]}]\n\nIf none, return []. Aliases must exactly match names from the list above.';
+    try {
+        const resp = await callAIServer(
+            [{ role: 'system', content: 'Return only a valid JSON array.' }, { role: 'user', content: prompt }],
+            { temperature: 0.0, max_tokens: 2000, task: 'group' },
+            settings
+        );
+        const merges = JSON.parse(cleanJson(resp));
+        if (!Array.isArray(merges) || merges.length === 0) return 0;
+        const fresh = await readNewshuntData();
+        let count = 0;
+        for (const merge of merges) {
+            if (!merge.primary || !Array.isArray(merge.aliases)) continue;
+            for (const art of Object.values(fresh.articles)) {
+                if (!art.topics || !art.topics.length) continue;
+                const s = new Set(art.topics);
+                let changed = false;
+                for (const alias of merge.aliases) {
+                    if (alias !== merge.primary && s.has(alias)) { s.delete(alias); s.add(merge.primary); changed = true; count++; }
+                }
+                if (changed) art.topics = Array.from(s);
+            }
+        }
+        if (count > 0) await writeNewshuntData(fresh);
+        return count;
+    } catch (e) { console.error('[BG] Topic merge failed:', e.message); return 0; }
+}
+
+// --- Main background job orchestrator ---
+async function runBackgroundJob(opts) {
+    const categorizeOnly = opts && opts.categorizeOnly;
+    if (bgJob.active) return false;
+    bgJob.active = true;
+    bgJob.startedAt = Date.now();
+    bgJob.finishedAt = null;
+    bgJob.error = null;
+    bgJob.newArticlesCount = 0;
+    bgJob.progress = null;
+
+    // Runs async — does NOT block the HTTP response
+    (async () => {
+        try {
+            const data = await readNewshuntData();
+            const settings = data.settings || {};
+
+            if (!categorizeOnly) {
+                bgLog('fetching', 'Fetching RSS feeds');
+                const feeds = Array.isArray(data.feeds) ? data.feeds : [];
+                if (feeds.length === 0) { bgLog('done', 'No feeds configured'); return; }
+                const { newArticles, errors } = await serverFetchAllFeeds(feeds);
+                bgJob.newArticlesCount = newArticles.length;
+                bgLog('saving', 'Saving ' + newArticles.length + ' new articles, ' + errors.length + ' errors');
+                if (newArticles.length > 0) {
+                    const fresh = await readNewshuntData();
+                    newArticles.forEach(a => { fresh.articles[a.guid] = a; });
+                    const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+                    let purged = 0;
+                    for (const guid in fresh.articles) {
+                        if (new Date(fresh.articles[guid].pubDate || fresh.articles[guid].dateAdded || 0).getTime() < cutoff) {
+                            delete fresh.articles[guid]; purged++;
+                        }
+                    }
+                    await writeNewshuntData(fresh);
+                    if (purged > 0) bgLog('saving', 'Purged ' + purged + ' old articles');
+                }
+            }
+
+            const hasKey = Object.values(SRV_AI).some(p => !!process.env[p.env])
+                || !!settings['ai_api_key']
+                || Object.keys(SRV_AI).some(p => !!settings['api_key_' + p]);
+            if (!hasKey) { bgLog('done', 'No AI API key — skipping categorization'); return; }
+
+            const freshData = await readNewshuntData();
+            const uncatCount = Object.values(freshData.articles || {}).filter(a => a.stars == null).length;
+            if (uncatCount === 0) { bgLog('done', 'All articles already categorized'); return; }
+
+            const rated = await bgRate(settings);
+            bgLog('rating', 'Rated ' + rated + ' articles');
+
+            const { grouped, tagged } = await bgGroupAndTag(settings);
+            bgLog('grouping', 'Grouped ' + grouped + ', tagged ' + tagged);
+
+            const merged = await bgMergeTopics(settings);
+            bgLog('done', 'Complete — Rated: ' + rated + ', Grouped: ' + grouped + ', Tagged: ' + tagged + ', Topics merged: ' + merged);
+
+        } catch (e) {
+            bgJob.error = e.message;
+            bgLog('error', 'Job failed: ' + e.message);
+            console.error('[BG] Fatal error:', e);
+        } finally {
+            bgJob.active = false;
+            bgJob.finishedAt = Date.now();
+        }
+    })();
+
+    return true;
+}
+
+// POST /api/newshunt/refresh — trigger server-side RSS fetch + background categorization
+app.post('/api/newshunt/refresh', async (req, res) => {
+    const categorizeOnly = req.query.categorizeOnly === 'true' || (req.body && req.body.categorizeOnly === true);
+    if (bgJob.active) return res.json({ status: 'already_running', job: Object.assign({}, bgJob) });
+    await runBackgroundJob({ categorizeOnly });
+    res.json({ status: 'started', job: Object.assign({}, bgJob) });
+});
+
+// GET /api/newshunt/job-status — poll background job progress
+app.get('/api/newshunt/job-status', (req, res) => {
+    res.json(Object.assign({}, bgJob));
+});
+
+
 app.post('/api/newshunt/sideload', async (req, res) => {
     try {
         const payload = req.body;

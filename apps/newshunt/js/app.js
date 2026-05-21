@@ -8,6 +8,7 @@ const App = {
     searchQuery: '',
     topicSearchQuery: '',
     isRefreshing: false,
+    _jobPollTimer: null,
 
     _terminal(level, message, details) {
         window.NewsTerminal?.log(level, message, details);
@@ -43,6 +44,9 @@ const App = {
         // Update stats
         await this._updateStats();
         this._terminal('success', 'NewsHunt ready');
+
+        // Resume polling if a background job was already running on the server
+        this.checkJobStatus();
     },
 
     // Navigation setup
@@ -308,7 +312,7 @@ const App = {
         }
     },
 
-    // Refresh feeds: fetch new articles
+    // Refresh feeds: trigger server-side RSS fetch + background AI categorization
     async refreshFeeds() {
         if (this.isRefreshing) return;
 
@@ -320,136 +324,105 @@ const App = {
 
         this.isRefreshing = true;
         const btn = document.getElementById('refresh-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Refreshing...';
-        }
-
-        Components.showToast(`Fetching ${feeds.length} feeds...`, 'info');
-        this._terminal('info', `Refreshing ${feeds.length} feeds`);
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Refreshing...'; }
 
         try {
-            const { newArticles, totalFetched, errors } = await RSS.fetchAllFeeds(feeds);
-            this._terminal('info', `Feed refresh finished: ${totalFetched} fetched, ${newArticles.length} new, ${errors.length} errors`);
+            const resp = await fetch('/api/newshunt/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const result = await resp.json();
 
-            // Save new articles to DB
-            if (newArticles.length > 0) {
-                await db.addArticles(newArticles);
-                Components.showToast(`Found ${newArticles.length} new articles!`, 'success');
-                this._terminal('success', `Saved ${newArticles.length} new articles`);
+            if (result.status === 'already_running') {
+                Components.showToast('Refresh already running in background!', 'info');
+                this._terminal('info', 'Background job already running');
             } else {
-                Components.showToast('No new articles found', 'info');
+                Components.showToast('🚀 Feeds refreshing in background — you can navigate away!', 'success');
+                this._terminal('info', 'Background job started — RSS fetch + AI categorization running on server');
             }
-
-            // Purge stale articles (>3 days old)
-            const purged = await db.purgeOldArticles(3);
-            if (purged > 0) Components.showToast(`Cleaned up ${purged} old articles`, 'info');
-            if (purged > 0) this._terminal('info', `Purged ${purged} stale articles`);
-
-            if (errors.length > 0) {
-                errors.forEach(err => {
-                    Components.showToast(`Feed error (${Utils.extractDomain(err.url)}): ${err.error}`, 'warning', 6000);
-                    this._terminal('warning', `Feed error from ${Utils.extractDomain(err.url)}`, err.error);
-                });
-            }
-
-            // Refresh the view
-            await this.renderFeedView();
-
-            // Push state to server for cross-device sync
-            await db.syncToServer();
-
-            // Auto-categorize new articles silently
-            const configured = await AI.isConfigured();
-            if (configured && newArticles.length > 0) {
-                this._terminal('info', 'Starting automatic categorization for newly fetched articles');
-                await this.categorizeNew(true);
-            }
-
+            this.startJobPolling();
         } catch (error) {
-            Components.showToast(`Error refreshing feeds: ${error.message}`, 'error');
-            this._terminal('error', 'Feed refresh failed', error);
+            Components.showToast(`Error starting refresh: ${error.message}`, 'error');
+            this._terminal('error', 'Failed to start background refresh', error);
         } finally {
             this.isRefreshing = false;
             const btn2 = document.getElementById('refresh-btn');
-            if (btn2) {
-                btn2.disabled = false;
-                btn2.innerHTML = '🔄 Refresh Feeds';
-            }
+            if (btn2) { btn2.disabled = false; btn2.innerHTML = '🔄 Refresh Feeds'; }
         }
     },
 
-    // Categorize uncategorized articles
+    // Categorize uncategorized articles via server-side background job
     async categorizeNew(isAuto = false) {
-        const configured = await AI.isConfigured();
-        if (!configured) {
-            if (!isAuto) {
-                Components.showToast('Please configure AI settings first', 'warning');
-                this.navigate('settings');
-            }
-            this._terminal('warning', 'Categorization skipped because AI is not configured');
+        if (this._jobPollTimer) {
+            if (!isAuto) Components.showToast('Categorization already running in background!', 'info');
             return;
         }
-
-        const uncategorized = await db.getUncategorizedArticles();
-        if (uncategorized.length === 0) {
-            if (!isAuto) Components.showToast('All articles are already categorized!', 'info');
-            this._terminal('info', 'Categorization skipped because there are no uncategorized articles');
-            return;
-        }
-
-        if (!isAuto) Components.showToast(`Categorizing ${uncategorized.length} articles...`, 'info');
-        this._terminal('info', `${isAuto ? 'Automatic' : 'Manual'} categorization started for ${uncategorized.length} articles`);
-        db.pauseServerPulls();
 
         try {
-            // PASS 1: Star ratings
-            const result = await Categorizer.categorizeAll((progress) => {
-                if (progress.error) {
-                    Components.showToast(`Rating batch ${progress.batch} error: ${progress.error}`, 'warning', 3000);
-                    this._terminal('warning', `Rating batch ${progress.batch}/${progress.totalBatches} failed`, progress.error);
-                } else {
-                    this._terminal('info', `Rating batch ${progress.batch}/${progress.totalBatches} complete`, `${progress.categorized}/${progress.total} articles rated`);
-                }
+            const resp = await fetch('/api/newshunt/refresh?categorizeOnly=true', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categorizeOnly: true })
             });
+            const result = await resp.json();
 
-            Components.showToast(`Rated ${result.categorized} articles. Now grouping & tagging...`, 'success');
-            this._terminal('success', `Rating pass finished for ${result.categorized} articles`);
-            await this.renderFeedView();
-
-            // PASS 2: Group similar stories + assign topics
-            const groupResult = await Categorizer.groupAndTag((progress) => {
-                if (progress.error) {
-                    Components.showToast(`Grouping batch ${progress.batch} error: ${progress.error}`, 'warning', 3000);
-                    this._terminal('warning', `Grouping batch ${progress.batch}/${progress.totalBatches} failed`, progress.error);
-                } else {
-                    this._terminal('info', `Grouping batch ${progress.batch}/${progress.totalBatches} complete`, `Grouped ${progress.grouped}, tagged ${progress.tagged}`);
-                }
-            });
-
-            Components.showToast(`Done! Grouped ${groupResult.grouped} duplicates, tagged ${groupResult.tagged} articles`, 'success');
-            this._terminal('success', `Grouping pass finished: ${groupResult.grouped} grouped, ${groupResult.tagged} tagged`);
-            await this.renderFeedView();
-
-            // PASS 3: Merge similar/duplicate topics globally
-            if (!isAuto) Components.showToast('Merging redundant topics...', 'info');
-            this._terminal('info', 'Checking for redundant topics to merge');
-            const topicMergeResult = await Categorizer.groupSimilarTopics();
-            if (topicMergeResult && topicMergeResult.merged > 0) {
-                if (!isAuto) Components.showToast(`Merged ${topicMergeResult.merged} topics.`, 'success');
-                this._terminal('success', `Merged ${topicMergeResult.merged} topic groups`, `${topicMergeResult.articleUpdates || 0} article topic updates`);
-                if (this.currentView === 'topics') await this.renderTopicsView();
+            if (result.status === 'already_running') {
+                if (!isAuto) Components.showToast('Categorization already running in background!', 'info');
+                this._terminal('info', 'Background categorization already running');
             } else {
-                this._terminal('info', 'No redundant topics needed merging');
+                if (!isAuto) Components.showToast('🧠 Categorization started — you can navigate away!', 'success');
+                this._terminal('info', 'Background categorization started on server');
             }
-
+            this.startJobPolling();
         } catch (error) {
             if (!isAuto) Components.showToast(`Categorization error: ${error.message}`, 'error');
-            this._terminal('error', 'Categorization failed', error);
-        } finally {
-            await db.resumeServerPulls({ immediate: true });
+            this._terminal('error', 'Failed to start categorization', error);
         }
     },
+
+    // Start polling the server for background job progress
+    startJobPolling() {
+        if (this._jobPollTimer) return;
+        this._jobPollTimer = setInterval(() => this.checkJobStatus(), 3000);
+    },
+
+    stopJobPolling() {
+        if (this._jobPollTimer) { clearInterval(this._jobPollTimer); this._jobPollTimer = null; }
+    },
+
+    // Poll /api/newshunt/job-status and update the UI accordingly
+    async checkJobStatus() {
+        try {
+            const resp = await fetch('/api/newshunt/job-status');
+            if (!resp.ok) return;
+            const job = await resp.json();
+
+            if (job.active) {
+                const phaseLabel = { fetching: '📡 Fetching feeds', saving: '💾 Saving articles', rating: '⭐ Rating articles', grouping: '🏷️ Grouping & tagging', merging: '🔀 Merging topics' };
+                const label = phaseLabel[job.phase] || job.phase || 'Working...';
+                this._terminal('info', label + (job.progress ? ' ' + job.progress : ''), job.lastMessage);
+                this.startJobPolling(); // ensure polling is on
+            } else if (job.phase === 'done') {
+                this.stopJobPolling();
+                this._terminal('success', '✅ Background categorization complete!', job.lastMessage);
+                Components.showToast('✅ Categorization complete! Refreshing your feed...', 'success');
+                await db.syncFromServer({ force: true });
+                if (this.currentView === 'feed') await this.renderFeedView();
+                if (this.currentView === 'topics') await this.renderTopicsView();
+                await this._updateStats();
+            } else if (job.phase === 'error') {
+                this.stopJobPolling();
+                this._terminal('error', 'Background job failed', job.error);
+                Components.showToast('Categorization failed: ' + (job.error || 'Unknown error'), 'error');
+            } else if (!job.active && !job.phase) {
+                this.stopJobPolling();
+            }
+        } catch (e) {
+            // Silently ignore polling errors (e.g. server restart)
+        }
+    },
+
 
     // Open the reader for an article
     async openReader(guid) {
