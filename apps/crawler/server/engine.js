@@ -55,6 +55,7 @@ function normalizeAIMessage(message = {}) {
 let cachedSharedApiSettings = null;
 let cachedSharedApiSettingsAt = 0;
 const stopRequests = new Map();
+const activeBrowsers = new Map();
 
 function normalizeCrawlerModelSelection(modelString = '') {
     let provider = String(modelString || '').trim();
@@ -205,6 +206,18 @@ function hasStopRequest(runId) {
     return stopRequests.has(String(runId));
 }
 
+async function killActiveRunBrowser(runId) {
+    const browser = activeBrowsers.get(String(runId));
+    if (browser) {
+        try {
+            await browser.close();
+        } catch (err) {
+            console.error(`Error closing browser for run ${runId}:`, err);
+        }
+        activeBrowsers.delete(String(runId));
+    }
+}
+
 async function finalizeStoppedRun(run, task, pageSnapshots, workingSummary, primaryModel, fallbackModel, log, reason = 'Stopped by user.') {
     let finalSummary = workingSummary || '';
 
@@ -352,18 +365,34 @@ async function launchCrawlerBrowser(log) {
             log(`\x1b[90m[Browser]\x1b[0m Using local browser at ${executablePath}`);
         }
 
+        const sharedSettings = await getSharedApiSettings().catch(() => ({}));
+        const scrapeDoApiKey = process.env.SCRAPE_DO_API_KEY || sharedSettings.scrape_do_api_key || '';
+
+        const args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ];
+
+        let isProxied = false;
+        if (scrapeDoApiKey) {
+            log(`\x1b[90m[Browser]\x1b[0m Configuring Scrape.do proxy for local browser...`);
+            args.push('--proxy-server=http://proxy.scrape.do:8080');
+            isProxied = true;
+        }
+
         const browser = await puppeteer.launch({
             headless: true,
             protocolTimeout: 60000,
             ...(executablePath ? { executablePath } : {}),
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
+            args
         });
-        return { browser, mode: 'Local Chromium' };
+        return { 
+            browser, 
+            mode: isProxied ? 'Local Chromium (Scrape.do Proxy)' : 'Local Chromium',
+            scrapeDoApiKey: isProxied ? scrapeDoApiKey : null
+        };
     } catch (error) {
         const formatted = formatBrowserConnectError(error);
         const installHint = resolveLocalBrowserExecutablePath()
@@ -538,11 +567,19 @@ async function executeCrawlerRun(runId) {
 
         const browserSession = await launchCrawlerBrowser(log);
         browser = browserSession.browser;
+        activeBrowsers.set(String(run._id), browser);
         log(`\x1b[90m[Browser]\x1b[0m Ready via ${browserSession.mode}.`);
         
         const page = await browser.newPage();
+        if (browserSession.scrapeDoApiKey) {
+            log(`\x1b[90m[Browser]\x1b[0m Authenticating with Scrape.do proxy...`);
+            await page.authenticate({
+                username: browserSession.scrapeDoApiKey,
+                password: 'super=true'
+            });
+        }
         log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);
-        await page.goto(targetUrls[0], { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.goto(targetUrls[0], { waitUntil: 'networkidle2', timeout: 30000 });
         
         run.visitedUrls.push(page.url());
         await run.save();
@@ -639,7 +676,7 @@ async function executeCrawlerRun(runId) {
                             }
                         }
                         else if (funcName === 'goto_url') {
-                            await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 60000 });
+                            await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
                             toolResponse = `Navigated to: ${page.url()}. Run get_page_content.`;
                             toolFailureCounts.clear();
                             log(`\x1b[90m[Tool]\x1b[0m Switched to ${page.url()}`);
@@ -659,14 +696,39 @@ async function executeCrawlerRun(runId) {
                             const relativeUrl = `/uploads/crawler/${fileName}`;
 
                             log(`\x1b[90m[Tool]\x1b[0m Downloading attachment ${args.url}`);
-                            const fileRes = await axios.get(args.url, { responseType: 'stream' });
-                            const writer = fs.createWriteStream(filePath);
-                            fileRes.data.pipe(writer);
-                            
-                            await new Promise((resolve, reject) => {
-                                writer.on('finish', resolve);
-                                writer.on('error', reject);
-                            });
+                            try {
+                                const fileRes = await axios.get(args.url, { responseType: 'stream', timeout: 30000 });
+                                const writer = fs.createWriteStream(filePath);
+                                fileRes.data.pipe(writer);
+                                
+                                await new Promise((resolve, reject) => {
+                                    let finished = false;
+                                    const timeout = setTimeout(() => {
+                                        if (!finished) {
+                                            writer.destroy();
+                                            reject(new Error('Attachment download timed out after 30 seconds.'));
+                                        }
+                                    }, 30000);
+
+                                    writer.on('finish', () => {
+                                        finished = true;
+                                        clearTimeout(timeout);
+                                        resolve();
+                                    });
+                                    writer.on('error', (err) => {
+                                        finished = true;
+                                        clearTimeout(timeout);
+                                        reject(err);
+                                    });
+                                });
+                            } catch (err) {
+                                try {
+                                    if (fs.existsSync(filePath)) {
+                                        fs.unlinkSync(filePath);
+                                    }
+                                } catch (cleanupErr) {}
+                                throw err;
+                            }
 
                             run.attachments.push({ name: args.name, url: relativeUrl });
                             await run.save();
@@ -767,10 +829,15 @@ async function executeCrawlerRun(runId) {
         run.status = 'failed';
         run.error = err.message || JSON.stringify(err);
     } finally {
+        activeBrowsers.delete(String(run._id));
         consumeStopRequest(run._id);
         run.endTime = new Date();
         await run.save();
-        if (browser) await browser.close();
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (closeErr) {}
+        }
         log(`\x1b[90m[Crawler Shutdown]\x1b[0m Resources cleaned up.`);
     }
 }
@@ -805,7 +872,31 @@ async function crawlerWorkerLoop() {
     }
 }
 
-function startBackgroundWorker() {
+async function cleanupStaleRuns() {
+    try {
+        const result = await CrawlerRun.updateMany(
+            { status: 'running' },
+            { 
+                $set: { 
+                    status: 'failed', 
+                    endTime: new Date(), 
+                    error: 'Server restarted while run was in progress.'
+                },
+                $push: { 
+                    activityLog: `[Startup Cleanup] Stale run terminated due to server restart.` 
+                }
+            }
+        );
+        if (result.modifiedCount > 0) {
+            console.log(`\x1b[32m[Startup Cleanup]\x1b[0m Terminated ${result.modifiedCount} stale crawler runs.`);
+        }
+    } catch (err) {
+        console.error('\x1b[31m[Startup Cleanup] Error:\x1b[0m', err);
+    }
+}
+
+async function startBackgroundWorker() {
+    await cleanupStaleRuns();
     setInterval(crawlerWorkerLoop, 60000);
     console.log('\x1b[32m[Startup]\x1b[0m Background crawler started (60s tick).');
 }
@@ -813,5 +904,6 @@ function startBackgroundWorker() {
 module.exports = {
     startBackgroundWorker,
     executeCrawlerRun,
-    requestStopRun
+    requestStopRun,
+    killActiveRunBrowser
 };

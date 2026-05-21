@@ -314,7 +314,7 @@ app.use('/api/proxy', async (req, res) => {
             data: req.method !== 'GET' ? req.body : undefined,
             responseType: 'stream', // Use stream for memory efficiency and range support!
             validateStatus: () => true, // Accept all statuses
-            maxRedirects: 5,
+            maxRedirects: 0, // Let the proxy handle redirects so the browser's address bar updates
             headers: {
                 // Forward some safe headers
                 'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -330,9 +330,9 @@ app.use('/api/proxy', async (req, res) => {
         const response = await axios(axiosOptions);
 
         // Check for redirects
-        const finalUrl = (response.request && response.request.res && response.request.res.responseUrl) || response.config.url || targetUrl;
-        if (finalUrl && finalUrl !== targetUrl && response.status >= 300 && response.status < 400) {
-            // Redirect the client if axios got a redirect and we need the browser to know about the final location
+        if (response.status >= 300 && response.status < 400 && response.headers.location) {
+            // Redirect the client to the new location so the browser and sandbox know the final URL
+            const finalUrl = new URL(response.headers.location, targetUrl).href;
             return res.redirect(`/api/proxy?url=${encodeURIComponent(finalUrl)}`);
         }
 
@@ -883,6 +883,32 @@ app.get('/finance-login.html', (req, res) => {
 </body>
 </html>
     `);
+});
+
+// --- Escaped Proxy Navigation Interceptor ---
+// Catches relative URLs (e.g. /results) that escaped the iframe sandbox and forwards them back to the proxy.
+app.use((req, res, next) => {
+    // Exclude API, uploads, and specific backend routes
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/') || req.path.startsWith('/dietplan')) {
+        return next();
+    }
+    
+    const referer = req.headers.referer;
+    if (referer && referer.includes('/api/proxy?url=')) {
+        try {
+            const parsedReferer = new URL(referer);
+            const embeddedUrlStr = parsedReferer.searchParams.get('url');
+            if (embeddedUrlStr) {
+                const targetBase = new URL(embeddedUrlStr);
+                const escapedUrl = new URL(req.originalUrl, targetBase.href).href;
+                // Avoid infinite loop if it's somehow matching
+                if (req.path !== '/api/proxy') {
+                    return res.redirect(`/api/proxy?url=${encodeURIComponent(escapedUrl)}`);
+                }
+            }
+        } catch (error) {}
+    }
+    next();
 });
 
 // --- Static File Serving ---

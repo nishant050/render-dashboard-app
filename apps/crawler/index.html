@@ -96,7 +96,10 @@
             <div class="view" id="run-detail-view" style="display: none;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1rem;">
                     <button class="btn btn-secondary back-btn" onclick="App.switchView('runs')" style="margin-bottom:0">← Back to History</button>
-                    <button class="btn btn-secondary btn-sm" id="detail-stop-btn" onclick="App.stopCurrentRun()" style="display:none">⏹ Stop & Summarize</button>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <button class="btn btn-secondary btn-sm" id="detail-stop-btn" onclick="App.stopCurrentRun()" style="display:none">⏹ Stop & Summarize</button>
+                        <button class="btn btn-danger btn-sm" id="detail-delete-btn" onclick="App.deleteCurrentRun()">🗑️ Delete Run</button>
+                    </div>
                 </div>
                 <div class="run-detail-header">
                     <h2 id="detail-task-name">Task Name</h2>
@@ -184,9 +187,12 @@
                     </div>
                 </div>
 
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="App.closeTaskModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Task</button>
+                <div class="modal-actions" style="justify-content: space-between;">
+                    <button type="button" class="btn btn-danger" id="btn-delete-task" style="display: none;" onclick="App.deleteTask()">Delete Task</button>
+                    <div style="display: flex; gap: 1rem;">
+                        <button type="button" class="btn btn-secondary" onclick="App.closeTaskModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Task</button>
+                    </div>
                 </div>
             </form>
         </div>

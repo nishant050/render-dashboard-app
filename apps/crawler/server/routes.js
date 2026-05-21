@@ -55,11 +55,21 @@ router.put('/tasks/:id', async (req, res) => {
 // Delete task
 router.delete('/tasks/:id', async (req, res) => {
     try {
-        const task = await CrawlerTask.findByIdAndDelete(req.params.id);
+        const taskId = req.params.id;
+        
+        // Find and terminate any active runs for this task
+        const crawlerEngine = require('./engine');
+        const activeRuns = await CrawlerRun.find({ taskId, status: 'running' });
+        for (const run of activeRuns) {
+            crawlerEngine.requestStopRun(run._id);
+            await crawlerEngine.killActiveRunBrowser(run._id).catch(() => {});
+        }
+
+        const task = await CrawlerTask.findByIdAndDelete(taskId);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        // Optionally delete runs too
-        await CrawlerRun.deleteMany({ taskId: req.params.id });
-        res.json({ message: 'Task deleted' });
+        
+        await CrawlerRun.deleteMany({ taskId });
+        res.json({ message: 'Task deleted successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -113,6 +123,26 @@ router.delete('/runs', async (req, res) => {
                 : 'History cleared for all tasks.',
             deletedCount: result.deletedCount || 0
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete a specific run (and abort if running)
+router.delete('/runs/:id', async (req, res) => {
+    try {
+        const runId = req.params.id;
+        const run = await CrawlerRun.findById(runId);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+
+        if (run.status === 'running') {
+            const crawlerEngine = require('./engine');
+            crawlerEngine.requestStopRun(runId);
+            await crawlerEngine.killActiveRunBrowser(runId).catch(() => {});
+        }
+
+        await CrawlerRun.findByIdAndDelete(runId);
+        res.json({ message: 'Run deleted successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -190,7 +190,10 @@ const App = {
             <div class="card" onclick="App.viewRun('${r._id}')">
                 <div class="card-meta">
                      <span class="badge status-${r.status}">${r.status.toUpperCase()}</span>
-                     <span>${new Date(r.startTime).toLocaleString()}</span>
+                     <span style="display:flex; align-items:center; gap:0.5rem">
+                         <span>${new Date(r.startTime).toLocaleString()}</span>
+                         <button class="btn btn-sm btn-secondary" style="padding: 0.1rem 0.4rem; font-size: 0.75rem; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25);" onclick="App.deleteRun('${r._id}', event)">🗑️</button>
+                     </span>
                 </div>
                 <div style="margin-top:0.5rem; display:flex; gap:1rem; color:var(--text-muted); font-size: 0.875rem;">
                     <span>🔗 ${r.visitedUrls?.length || 0} pages</span>
@@ -248,6 +251,60 @@ const App = {
                 stopBtn.innerText = 'Stop & Summarize';
             }
             alert('Failed to stop run: ' + err.message);
+        }
+    },
+
+    async deleteRun(runId, event) {
+        if (event) event.stopPropagation();
+        
+        const run = this.runs.find(r => r._id === runId);
+        const isRunning = run && run.status === 'running';
+        const confirmMsg = isRunning 
+            ? 'This crawl is currently running. Stop and delete it?' 
+            : 'Delete this run from history?';
+            
+        if (!confirm(confirmMsg)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/runs/${runId}`, { method: 'DELETE' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Failed to delete run');
+
+            await this.loadRuns();
+        } catch (err) {
+            alert('Failed to delete run: ' + err.message);
+        }
+    },
+
+    async deleteCurrentRun() {
+        if (!this.currentRunId) return;
+        
+        const detailStatus = document.getElementById('detail-status').innerText;
+        const isRunning = detailStatus === 'RUNNING';
+        const confirmMsg = isRunning
+            ? 'This crawl is currently running. Stop and delete it?'
+            : 'Delete this run from history?';
+
+        if (!confirm(confirmMsg)) return;
+
+        const delBtn = document.getElementById('detail-delete-btn');
+        if (delBtn) {
+            delBtn.disabled = true;
+            delBtn.innerText = 'Deleting...';
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/runs/${this.currentRunId}`, { method: 'DELETE' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Failed to delete run');
+
+            this.switchView('runs');
+        } catch (err) {
+            if (delBtn) {
+                delBtn.disabled = false;
+                delBtn.innerText = '🗑️ Delete Run';
+            }
+            alert('Failed to delete run: ' + err.message);
         }
     },
 
@@ -348,6 +405,8 @@ const App = {
 
     // --- Task Modal ---
     openTaskModal() {
+        const delBtn = document.getElementById('btn-delete-task');
+        if (delBtn) delBtn.style.display = 'none';
         document.getElementById('task-id').value = '';
         document.getElementById('task-form').reset();
         document.getElementById('task-freq-val').value = 1;
@@ -359,6 +418,9 @@ const App = {
     editTask(id) {
         const task = this.tasks.find(t => t._id === id);
         if (!task) return;
+        
+        const delBtn = document.getElementById('btn-delete-task');
+        if (delBtn) delBtn.style.display = 'inline-flex';
         
         document.getElementById('task-id').value = task._id;
         document.getElementById('task-name').value = task.name;
@@ -436,6 +498,23 @@ const App = {
             this.loadTasks();
         } catch(err) {
             alert('Error saving task: ' + err.message);
+        }
+    },
+
+    async deleteTask() {
+        const id = document.getElementById('task-id').value;
+        if (!id) return;
+        if (!confirm('Are you sure you want to delete this crawler task? All run history associated with this task will be permanently deleted, and any currently running crawls will be stopped.')) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Failed to delete task');
+
+            this.closeTaskModal();
+            this.loadTasks();
+        } catch (err) {
+            alert('Failed to delete task: ' + err.message);
         }
     }
 };

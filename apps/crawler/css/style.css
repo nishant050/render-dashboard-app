@@ -157,6 +157,17 @@ body {
     background: rgba(255, 255, 255, 0.15);
 }
 
+.btn-danger {
+    background: linear-gradient(135deg, var(--error), #fda4af);
+    color: white;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
+}
+.btn-danger:hover {
+    background: linear-gradient(135deg, #e11d48, #fecdd3);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(244, 63, 94, 0.6);
+}
+
 .btn-sm {
     padding: 0.35rem 0.75rem;
     font-size: 0.8rem;
