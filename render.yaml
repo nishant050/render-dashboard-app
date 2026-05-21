@@ -1,4 +1,4 @@
-﻿services:
+services:
   - type: web
     name: render-dashboard-app
     env: node
@@ -14,3 +14,5 @@
         sync: false
       - key: FFMPEG_PATH
         sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.9
