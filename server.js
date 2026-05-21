@@ -307,12 +307,14 @@ app.use('/api/proxy', async (req, res) => {
             }
         })();
 
-        const response = await axios({
+        // Axios request options
+        const axiosOptions = {
             method: req.method,
             url: targetUrl,
             data: req.method !== 'GET' ? req.body : undefined,
-            responseType: 'arraybuffer',
+            responseType: 'stream', // Use stream for memory efficiency and range support!
             validateStatus: () => true, // Accept all statuses
+            maxRedirects: 5,
             headers: {
                 // Forward some safe headers
                 'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -323,333 +325,472 @@ app.use('/api/proxy', async (req, res) => {
                 'Origin': forwardedOrigin,
                 'Referer': forwardedReferer,
             }
-        });
+        };
+
+        const response = await axios(axiosOptions);
+
+        // Check for redirects
+        const finalUrl = (response.request && response.request.res && response.request.res.responseUrl) || response.config.url || targetUrl;
+        if (finalUrl && finalUrl !== targetUrl && response.status >= 300 && response.status < 400) {
+            // Redirect the client if axios got a redirect and we need the browser to know about the final location
+            return res.redirect(`/api/proxy?url=${encodeURIComponent(finalUrl)}`);
+        }
 
         const contentType = response.headers['content-type'] || '';
         
-        // Strip headers that prevent framing
+        // Strip headers that prevent framing or cause encoding/parsing conflicts
         const headersToKeep = { ...response.headers };
         delete headersToKeep['x-frame-options'];
         delete headersToKeep['content-security-policy'];
         delete headersToKeep['content-security-policy-report-only'];
         delete headersToKeep['strict-transport-security'];
         delete headersToKeep['set-cookie']; // Let the client handle them or ignore for simple proxy
+        delete headersToKeep['transfer-encoding'];
+        delete headersToKeep['connection'];
+        delete headersToKeep['content-encoding']; // Axios decompresses the stream by default
+
+        // For modified text types (HTML/CSS), delete original content-length so Express can recalculate it
+        if (contentType.includes('text/html') || contentType.includes('text/css')) {
+            delete headersToKeep['content-length'];
+        }
         
-        // We modify headers before sending
+        // Set response headers and status
         res.set(headersToKeep);
         res.status(response.status);
 
         if (contentType.includes('text/html')) {
-            const html = response.data.toString('utf-8');
-            const $ = cheerio.load(html);
-            const serializedTargetUrl = JSON.stringify(targetUrl);
+            // Read HTML stream into memory for parsing and rewriting
+            const chunks = [];
+            response.data.on('data', (chunk) => chunks.push(chunk));
+            response.data.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                const html = buffer.toString('utf-8');
+                const $ = cheerio.load(html);
+                const serializedTargetUrl = JSON.stringify(targetUrl);
 
-            // Re-write URLs
-            const rewriteUrl = (originalUrl) => {
-                if (!originalUrl) return originalUrl;
-                originalUrl = originalUrl.trim();
-                // Ignore base64, javascript, hash links
-                if (
-                    originalUrl.startsWith('data:') ||
-                    originalUrl.startsWith('javascript:') ||
-                    originalUrl.startsWith('mailto:') ||
-                    originalUrl.startsWith('tel:') ||
-                    originalUrl.startsWith('#')
-                ) return originalUrl;
-                try {
-                    let absoluteUrl = new URL(originalUrl, targetUrl).href;
-                    return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-                } catch (e) {
-                    return originalUrl;
-                }
-            };
-
-            // Process typical attributes where URLs reside
-            $('a').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
-            $('link').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
-            $('img').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('script').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('iframe').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('source').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('video').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('audio').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('track').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
-            $('img').each((i, el) => {
-                if ($(el).attr('srcset')) {
-                    const rewrittenSrcset = $(el).attr('srcset')
-                        .split(',')
-                        .map((candidate) => {
-                            const [candidateUrl, descriptor] = candidate.trim().split(/\s+/, 2);
-                            const rewritten = rewriteUrl(candidateUrl);
-                            return descriptor ? `${rewritten} ${descriptor}` : rewritten;
-                        })
-                        .join(', ');
-                    $(el).attr('srcset', rewrittenSrcset);
-                }
-            });
-            $('source').each((i, el) => {
-                if ($(el).attr('srcset')) {
-                    const rewrittenSrcset = $(el).attr('srcset')
-                        .split(',')
-                        .map((candidate) => {
-                            const [candidateUrl, descriptor] = candidate.trim().split(/\s+/, 2);
-                            const rewritten = rewriteUrl(candidateUrl);
-                            return descriptor ? `${rewritten} ${descriptor}` : rewritten;
-                        })
-                        .join(', ');
-                    $(el).attr('srcset', rewrittenSrcset);
-                }
-            });
-            $('form').each((i, el) => { 
-                const action = $(el).attr('action');
-                if (action) { 
-                    const rewrittenAction = rewriteUrl(action);
-                    $(el).attr('action', rewrittenAction);
-
-                    const method = ($(el).attr('method') || 'get').toLowerCase();
-                    if (method === 'get') {
-                        $(el).find('input[name="url"][data-proxy-hidden="true"]').remove();
-
-                        try {
-                            const embeddedUrl = new URL(rewrittenAction, 'http://localhost').searchParams.get('url');
-                            if (embeddedUrl) {
-                                $(el).prepend(`<input type="hidden" name="url" value="${embeddedUrl}" data-proxy-hidden="true">`);
-                            }
-                        } catch (error) {}
+                // Re-write URLs
+                const rewriteUrl = (originalUrl) => {
+                    if (!originalUrl) return originalUrl;
+                    originalUrl = originalUrl.trim();
+                    // Ignore base64, javascript, hash links
+                    if (
+                        originalUrl.startsWith('data:') ||
+                        originalUrl.startsWith('javascript:') ||
+                        originalUrl.startsWith('mailto:') ||
+                        originalUrl.startsWith('tel:') ||
+                        originalUrl.startsWith('#')
+                    ) return originalUrl;
+                    try {
+                        let absoluteUrl = new URL(originalUrl, targetUrl).href;
+                        return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                    } catch (e) {
+                        return originalUrl;
                     }
-                } 
-            });
-            
-            // Rewrite URL in style attributes
-            $('[style]').each((i, el) => {
-                let style = $(el).attr('style');
-                if (style && style.includes('url(')) {
-                    style = style.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
-                         if (url.startsWith('data:')) return match;
-                         return `url(${quote}${rewriteUrl(url)}${quote})`;
-                    });
-                    $(el).attr('style', style);
-                }
-            });
+                };
 
-            // Inject script to override window.fetch and XMLHttpRequest!
-            const interceptScript = `
-                <script>
-                    (() => {
-                        const PROXY_PATH = '/api/proxy?url=';
-                        const INITIAL_TARGET_URL = ${serializedTargetUrl};
-                        const SKIP_PROTOCOLS = ['about:', 'blob:', 'data:', 'javascript:', 'mailto:', 'tel:', '#'];
+                // Process typical attributes where URLs reside
+                $('a').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
+                $('link').each((i, el) => { if ($(el).attr('href')) $(el).attr('href', rewriteUrl($(el).attr('href'))); });
+                $('img').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('script').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('iframe').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('source').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('video').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('audio').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('track').each((i, el) => { if ($(el).attr('src')) $(el).attr('src', rewriteUrl($(el).attr('src'))); });
+                $('img').each((i, el) => {
+                    if ($(el).attr('srcset')) {
+                        const rewrittenSrcset = $(el).attr('srcset')
+                            .split(',')
+                            .map((candidate) => {
+                                const [candidateUrl, descriptor] = candidate.trim().split(/\s+/, 2);
+                                const rewritten = rewriteUrl(candidateUrl);
+                                return descriptor ? `${rewritten} ${descriptor}` : rewritten;
+                            })
+                            .join(', ');
+                        $(el).attr('srcset', rewrittenSrcset);
+                    }
+                });
+                $('source').each((i, el) => {
+                    if ($(el).attr('srcset')) {
+                        const rewrittenSrcset = $(el).attr('srcset')
+                            .split(',')
+                            .map((candidate) => {
+                                const [candidateUrl, descriptor] = candidate.trim().split(/\s+/, 2);
+                                const rewritten = rewriteUrl(candidateUrl);
+                                return descriptor ? `${rewritten} ${descriptor}` : rewritten;
+                            })
+                            .join(', ');
+                        $(el).attr('srcset', rewrittenSrcset);
+                    }
+                });
+                $('form').each((i, el) => { 
+                    const action = $(el).attr('action');
+                    if (action) { 
+                        const rewrittenAction = rewriteUrl(action);
+                        $(el).attr('action', rewrittenAction);
 
-                        const notifyParent = (url) => {
+                        const method = ($(el).attr('method') || 'get').toLowerCase();
+                        if (method === 'get') {
+                            $(el).find('input[name="url"][data-proxy-hidden="true"]').remove();
+
                             try {
-                                window.parent.postMessage({ type: 'proxy:navigation', url }, window.location.origin);
+                                const embeddedUrl = new URL(rewrittenAction, 'http://localhost').searchParams.get('url');
+                                if (embeddedUrl) {
+                                    $(el).prepend(`<input type="hidden" name="url" value="${embeddedUrl}" data-proxy-hidden="true">`);
+                                }
                             } catch (error) {}
-                        };
+                        }
+                    } 
+                });
+                
+                // Rewrite URL in style attributes
+                $('[style]').each((i, el) => {
+                    let style = $(el).attr('style');
+                    if (style && style.includes('url(')) {
+                        style = style.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
+                             if (url.startsWith('data:')) return match;
+                             return `url(${quote}${rewriteUrl(url)}${quote})`;
+                        });
+                        $(el).attr('style', style);
+                    }
+                });
 
-                        const unwrapProxyUrl = (value) => {
-                            if (!value) return null;
-                            try {
-                                const parsed = new URL(String(value), window.location.origin);
-                                if (parsed.origin === window.location.origin && parsed.pathname === '/api/proxy') {
-                                    const embeddedUrl = parsed.searchParams.get('url');
-                                    if (!embeddedUrl) {
-                                        return null;
+                // Inject script to override window.fetch, XMLHttpRequest, location, service worker, etc.
+                const interceptScript = `
+                    <script>
+                        (() => {
+                            const PROXY_PATH = '/api/proxy?url=';
+                            const INITIAL_TARGET_URL = ${serializedTargetUrl};
+                            const SKIP_PROTOCOLS = ['about:', 'blob:', 'data:', 'javascript:', 'mailto:', 'tel:', '#'];
+
+                            // Disable service worker registrations to prevent bypassing this proxy
+                            if (navigator.serviceWorker) {
+                                navigator.serviceWorker.register = function() {
+                                    return Promise.reject(new Error("Service Workers disabled in proxy mode"));
+                                };
+                            }
+
+                            const notifyParent = (url) => {
+                                try {
+                                    window.parent.postMessage({ type: 'proxy:navigation', url }, window.location.origin);
+                                } catch (error) {}
+                            };
+
+                            const unwrapProxyUrl = (value) => {
+                                if (!value) return null;
+                                try {
+                                    const parsed = new URL(String(value), window.location.origin);
+                                    if (parsed.origin === window.location.origin && parsed.pathname === '/api/proxy') {
+                                        const embeddedUrl = parsed.searchParams.get('url');
+                                        if (!embeddedUrl) {
+                                            return null;
+                                        }
+
+                                        const resolvedUrl = new URL(embeddedUrl);
+                                        parsed.searchParams.forEach((entry, key) => {
+                                            if (key !== 'url') {
+                                                resolvedUrl.searchParams.append(key, entry);
+                                            }
+                                        });
+
+                                        return resolvedUrl.toString();
                                     }
+                                } catch (error) {}
+                                return null;
+                            };
 
-                                    const resolvedUrl = new URL(embeddedUrl);
-                                    parsed.searchParams.forEach((entry, key) => {
-                                        if (key !== 'url') {
-                                            resolvedUrl.searchParams.append(key, entry);
+                            const getActiveTargetUrl = () => unwrapProxyUrl(window.location.href) || INITIAL_TARGET_URL;
+
+                            const toAbsoluteUrl = (value, baseUrl = getActiveTargetUrl()) => {
+                                const originalValue = String(value || '').trim();
+                                if (!originalValue || SKIP_PROTOCOLS.some((prefix) => originalValue.startsWith(prefix))) {
+                                    return originalValue;
+                                }
+                                const proxiedTarget = unwrapProxyUrl(originalValue);
+                                if (proxiedTarget) return proxiedTarget;
+                                try {
+                                    return new URL(originalValue, baseUrl).href;
+                                } catch (error) {
+                                    return originalValue;
+                                }
+                            };
+
+                            const toProxyUrl = (value, baseUrl = getActiveTargetUrl()) => {
+                                const originalValue = String(value || '').trim();
+                                if (!originalValue || SKIP_PROTOCOLS.some((prefix) => originalValue.startsWith(prefix))) {
+                                    return originalValue;
+                                }
+                                const proxiedTarget = unwrapProxyUrl(originalValue);
+                                const absoluteUrl = proxiedTarget || toAbsoluteUrl(originalValue, baseUrl);
+                                try {
+                                    return PROXY_PATH + encodeURIComponent(new URL(absoluteUrl).href);
+                                } catch (error) {
+                                    return originalValue;
+                                }
+                            };
+
+                            const syncNavigationState = (candidateUrl) => {
+                                const nextUrl = candidateUrl || getActiveTargetUrl();
+                                notifyParent(nextUrl);
+                            };
+
+                            // Override fetch & XHR
+                            const originalFetch = window.fetch.bind(window);
+                            window.fetch = (input, init) => {
+                                if (typeof input === 'string' || input instanceof URL) {
+                                    input = toProxyUrl(String(input));
+                                } else if (input instanceof Request) {
+                                    input = new Request(toProxyUrl(input.url), input);
+                                }
+                                return originalFetch(input, init);
+                            };
+
+                            const originalXHROpen = XMLHttpRequest.prototype.open;
+                            XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                                const rewrittenUrl = (typeof url === 'string' || url instanceof URL) ? toProxyUrl(String(url)) : url;
+                                return originalXHROpen.call(this, method, rewrittenUrl, ...rest);
+                            };
+
+                            // Virtualize location properties to reflect target website
+                            try {
+                                const originalLocationProto = Location.prototype;
+                                const targetProperties = ['href', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash', 'origin'];
+                                
+                                targetProperties.forEach(prop => {
+                                    const desc = Object.getOwnPropertyDescriptor(originalLocationProto, prop);
+                                    if (!desc) return;
+                                    
+                                    Object.defineProperty(originalLocationProto, prop, {
+                                        configurable: true,
+                                        enumerable: true,
+                                        get() {
+                                            const targetUrl = getActiveTargetUrl();
+                                            try {
+                                                const parsed = new URL(targetUrl);
+                                                return parsed[prop];
+                                            } catch (e) {
+                                                return desc.get.call(this);
+                                            }
+                                        },
+                                        set(value) {
+                                            if (prop === 'href') {
+                                                desc.set.call(this, toProxyUrl(value));
+                                            } else {
+                                                const targetUrl = getActiveTargetUrl();
+                                                try {
+                                                    const parsed = new URL(targetUrl);
+                                                    parsed[prop] = value;
+                                                    desc.set.call(this, toProxyUrl(parsed.href));
+                                                } catch (e) {
+                                                    desc.set.call(this, value);
+                                                }
+                                            }
                                         }
                                     });
+                                });
 
-                                    return resolvedUrl.toString();
-                                }
-                            } catch (error) {}
-                            return null;
-                        };
+                                const originalReplace = Location.prototype.replace;
+                                Location.prototype.replace = function(url) {
+                                    return originalReplace.call(this, toProxyUrl(url));
+                                };
 
-                        const getActiveTargetUrl = () => unwrapProxyUrl(window.location.href) || INITIAL_TARGET_URL;
-
-                        const toAbsoluteUrl = (value, baseUrl = getActiveTargetUrl()) => {
-                            const originalValue = String(value || '').trim();
-                            if (!originalValue || SKIP_PROTOCOLS.some((prefix) => originalValue.startsWith(prefix))) {
-                                return originalValue;
+                                const originalAssign = Location.prototype.assign;
+                                Location.prototype.assign = function(url) {
+                                    return originalAssign.call(this, toProxyUrl(url));
+                                };
+                            } catch (e) {
+                                console.warn("Location virtualization override failed", e);
                             }
-                            const proxiedTarget = unwrapProxyUrl(originalValue);
-                            if (proxiedTarget) return proxiedTarget;
+
+                            // Virtualize document URL properties
                             try {
-                                return new URL(originalValue, baseUrl).href;
-                            } catch (error) {
-                                return originalValue;
-                            }
-                        };
+                                Object.defineProperty(Document.prototype, 'URL', {
+                                    configurable: true,
+                                    enumerable: true,
+                                    get() { return getActiveTargetUrl(); }
+                                });
+                                Object.defineProperty(Document.prototype, 'documentURI', {
+                                    configurable: true,
+                                    enumerable: true,
+                                    get() { return getActiveTargetUrl(); }
+                                });
+                                Object.defineProperty(Document.prototype, 'domain', {
+                                    configurable: true,
+                                    enumerable: true,
+                                    get() {
+                                        try {
+                                            return new URL(getActiveTargetUrl()).hostname;
+                                        } catch (e) {
+                                            return '';
+                                        }
+                                    },
+                                    set(value) {}
+                                });
+                            } catch (e) {}
 
-                        const toProxyUrl = (value, baseUrl = getActiveTargetUrl()) => {
-                            const originalValue = String(value || '').trim();
-                            if (!originalValue || SKIP_PROTOCOLS.some((prefix) => originalValue.startsWith(prefix))) {
-                                return originalValue;
-                            }
-                            const proxiedTarget = unwrapProxyUrl(originalValue);
-                            const absoluteUrl = proxiedTarget || toAbsoluteUrl(originalValue, baseUrl);
-                            try {
-                                return PROXY_PATH + encodeURIComponent(new URL(absoluteUrl).href);
-                            } catch (error) {
-                                return originalValue;
-                            }
-                        };
-
-                        const syncNavigationState = (candidateUrl) => {
-                            const nextUrl = candidateUrl || getActiveTargetUrl();
-                            notifyParent(nextUrl);
-                        };
-
-                        const originalFetch = window.fetch.bind(window);
-                        window.fetch = (input, init) => {
-                            if (typeof input === 'string' || input instanceof URL) {
-                                input = toProxyUrl(String(input));
-                            } else if (input instanceof Request) {
-                                input = new Request(toProxyUrl(input.url), input);
-                            }
-                            return originalFetch(input, init);
-                        };
-
-                        const originalXHROpen = XMLHttpRequest.prototype.open;
-                        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-                            const rewrittenUrl = (typeof url === 'string' || url instanceof URL) ? toProxyUrl(String(url)) : url;
-                            return originalXHROpen.call(this, method, rewrittenUrl, ...rest);
-                        };
-
-                        const originalSetAttribute = Element.prototype.setAttribute;
-                        Element.prototype.setAttribute = function(name, value) {
-                            const normalizedName = String(name || '').toLowerCase();
-                            if (value != null && ['action', 'href', 'poster', 'src'].includes(normalizedName)) {
-                                value = toProxyUrl(String(value));
-                            }
-                            return originalSetAttribute.call(this, name, value);
-                        };
-
-                        const patchUrlProperty = (prototype, propertyName) => {
-                            if (!prototype) return;
-                            const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
-                            if (!descriptor || typeof descriptor.set !== 'function' || typeof descriptor.get !== 'function') {
-                                return;
-                            }
-
-                            Object.defineProperty(prototype, propertyName, {
-                                configurable: descriptor.configurable,
-                                enumerable: descriptor.enumerable,
-                                get() {
-                                    return descriptor.get.call(this);
-                                },
-                                set(value) {
-                                    const nextValue = value == null ? value : toProxyUrl(String(value));
-                                    descriptor.set.call(this, nextValue);
+                            // Override setAttribute and DOM properties for URLs
+                            const originalSetAttribute = Element.prototype.setAttribute;
+                            Element.prototype.setAttribute = function(name, value) {
+                                const normalizedName = String(name || '').toLowerCase();
+                                if (value != null && ['action', 'href', 'poster', 'src'].includes(normalizedName)) {
+                                    value = toProxyUrl(String(value));
                                 }
-                            });
-                        };
-
-                        patchUrlProperty(HTMLAnchorElement && HTMLAnchorElement.prototype, 'href');
-                        patchUrlProperty(HTMLFormElement && HTMLFormElement.prototype, 'action');
-                        patchUrlProperty(HTMLIFrameElement && HTMLIFrameElement.prototype, 'src');
-                        patchUrlProperty(HTMLImageElement && HTMLImageElement.prototype, 'src');
-                        patchUrlProperty(HTMLLinkElement && HTMLLinkElement.prototype, 'href');
-                        patchUrlProperty(HTMLMediaElement && HTMLMediaElement.prototype, 'src');
-                        patchUrlProperty(HTMLScriptElement && HTMLScriptElement.prototype, 'src');
-                        patchUrlProperty(HTMLSourceElement && HTMLSourceElement.prototype, 'src');
-                        patchUrlProperty(HTMLTrackElement && HTMLTrackElement.prototype, 'src');
-
-                        const wrapHistoryMethod = (methodName) => {
-                            const originalMethod = history[methodName].bind(history);
-                            history[methodName] = (state, title, url) => {
-                                const nextArguments = [state, title, url];
-                                if (typeof url === 'string' || url instanceof URL) {
-                                    nextArguments[2] = toProxyUrl(url);
-                                }
-                                const result = originalMethod(...nextArguments);
-                                syncNavigationState(unwrapProxyUrl(window.location.href));
-                                return result;
+                                return originalSetAttribute.call(this, name, value);
                             };
-                        };
 
-                        wrapHistoryMethod('pushState');
-                        wrapHistoryMethod('replaceState');
+                            const patchUrlProperty = (prototype, propertyName) => {
+                                if (!prototype) return;
+                                const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
+                                if (!descriptor || typeof descriptor.set !== 'function' || typeof descriptor.get !== 'function') {
+                                    return;
+                                }
 
-                        const originalOpen = window.open.bind(window);
-                        window.open = (url, ...rest) => {
-                            if (typeof url !== 'string' && !(url instanceof URL)) {
-                                return originalOpen(url, ...rest);
+                                Object.defineProperty(prototype, propertyName, {
+                                    configurable: descriptor.configurable,
+                                    enumerable: descriptor.enumerable,
+                                    get() {
+                                        return descriptor.get.call(this);
+                                    },
+                                    set(value) {
+                                        const nextValue = value == null ? value : toProxyUrl(String(value));
+                                        descriptor.set.call(this, nextValue);
+                                    }
+                                });
+                            };
+
+                            patchUrlProperty(HTMLAnchorElement && HTMLAnchorElement.prototype, 'href');
+                            patchUrlProperty(HTMLFormElement && HTMLFormElement.prototype, 'action');
+                            patchUrlProperty(HTMLIFrameElement && HTMLIFrameElement.prototype, 'src');
+                            patchUrlProperty(HTMLImageElement && HTMLImageElement.prototype, 'src');
+                            patchUrlProperty(HTMLLinkElement && HTMLLinkElement.prototype, 'href');
+                            patchUrlProperty(HTMLMediaElement && HTMLMediaElement.prototype, 'src');
+                            patchUrlProperty(HTMLScriptElement && HTMLScriptElement.prototype, 'src');
+                            patchUrlProperty(HTMLSourceElement && HTMLSourceElement.prototype, 'src');
+                            patchUrlProperty(HTMLTrackElement && HTMLTrackElement.prototype, 'src');
+
+                            const wrapHistoryMethod = (methodName) => {
+                                const originalMethod = history[methodName].bind(history);
+                                history[methodName] = (state, title, url) => {
+                                    const nextArguments = [state, title, url];
+                                    if (typeof url === 'string' || url instanceof URL) {
+                                        nextArguments[2] = toProxyUrl(url);
+                                    }
+                                    const result = originalMethod(...nextArguments);
+                                    syncNavigationState(unwrapProxyUrl(window.location.href));
+                                    return result;
+                                };
+                            };
+
+                            wrapHistoryMethod('pushState');
+                            wrapHistoryMethod('replaceState');
+
+                            const originalOpen = window.open.bind(window);
+                            window.open = (url, ...rest) => {
+                                if (typeof url !== 'string' && !(url instanceof URL)) {
+                                    return originalOpen(url, ...rest);
+                                }
+                                return originalOpen(toProxyUrl(url), ...rest);
+                            };
+
+                            // Wrap HTMLFormElement.prototype.submit to catch programmatic submit calls
+                            if (HTMLFormElement && HTMLFormElement.prototype.submit) {
+                                const originalSubmit = HTMLFormElement.prototype.submit;
+                                HTMLFormElement.prototype.submit = function() {
+                                    const action = this.getAttribute('action') || getActiveTargetUrl();
+                                    this.setAttribute('action', toProxyUrl(action));
+                                    return originalSubmit.call(this);
+                                };
                             }
-                            return originalOpen(toProxyUrl(url), ...rest);
-                        };
 
-                        document.addEventListener('click', (event) => {
-                            const anchor = event.target.closest && event.target.closest('a[href]');
-                            if (!anchor) return;
-                            const href = anchor.getAttribute('href');
-                            const rewrittenHref = toProxyUrl(href);
-                            if (rewrittenHref && rewrittenHref !== href) {
-                                anchor.setAttribute('href', rewrittenHref);
-                            }
-                            const absoluteHref = toAbsoluteUrl(href);
-                            if (absoluteHref) {
-                                syncNavigationState(absoluteHref);
-                            }
-                        }, true);
+                            document.addEventListener('click', (event) => {
+                                const anchor = event.target.closest && event.target.closest('a[href]');
+                                if (!anchor) return;
+                                const href = anchor.getAttribute('href');
+                                const rewrittenHref = toProxyUrl(href);
+                                if (rewrittenHref && rewrittenHref !== href) {
+                                    anchor.setAttribute('href', rewrittenHref);
+                                }
+                                const absoluteHref = toAbsoluteUrl(href);
+                                if (absoluteHref) {
+                                    syncNavigationState(absoluteHref);
+                                }
+                            }, true);
 
-                        document.addEventListener('submit', (event) => {
-                            const form = event.target;
-                            if (!(form instanceof HTMLFormElement)) return;
-                            const action = form.getAttribute('action') || getActiveTargetUrl();
-                            const rewrittenAction = toProxyUrl(action);
-                            if (rewrittenAction) {
-                                form.setAttribute('action', rewrittenAction);
-                            }
-                            const absoluteAction = toAbsoluteUrl(action);
-                            if (absoluteAction) {
-                                syncNavigationState(absoluteAction);
-                            }
-                        }, true);
+                            document.addEventListener('submit', (event) => {
+                                const form = event.target;
+                                if (!(form instanceof HTMLFormElement)) return;
+                                const action = form.getAttribute('action') || getActiveTargetUrl();
+                                const rewrittenAction = toProxyUrl(action);
+                                if (rewrittenAction) {
+                                    form.setAttribute('action', rewrittenAction);
+                                }
+                                const absoluteAction = toAbsoluteUrl(action);
+                                if (absoluteAction) {
+                                    syncNavigationState(absoluteAction);
+                                }
+                            }, true);
 
-                        window.addEventListener('popstate', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
-                        window.addEventListener('hashchange', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
-                        window.addEventListener('load', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
+                            window.addEventListener('popstate', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
+                            window.addEventListener('hashchange', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
+                            window.addEventListener('load', () => syncNavigationState(unwrapProxyUrl(window.location.href)));
 
-                        syncNavigationState(getActiveTargetUrl());
-                    })();
-                </script>
-            `;
-            $('head').prepend(interceptScript);
+                            syncNavigationState(getActiveTargetUrl());
+                        })();
+                    </script>
+                `;
+                $('head').prepend(interceptScript);
 
-            res.send(Buffer.from($.html(), 'utf-8'));
+                res.send(Buffer.from($.html(), 'utf-8'));
+            });
+            response.data.on('error', (err) => {
+                console.error('HTML Proxy stream error:', err.message);
+                if (!res.headersSent) res.status(500).send('Proxy Stream Error');
+            });
         } else if (contentType.includes('text/css')) {
-             let css = response.data.toString('utf-8');
-             css = css.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
-                 if (url.startsWith('data:')) return match;
-                 try {
-                     let absoluteUrl = new URL(url, targetUrl).href;
-                     return `url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
-                 } catch (e) {
-                     return match;
-                 }
+             // Read CSS stream into memory for url rewriting
+             const chunks = [];
+             response.data.on('data', (chunk) => chunks.push(chunk));
+             response.data.on('end', () => {
+                 const buffer = Buffer.concat(chunks);
+                 let css = buffer.toString('utf-8');
+                 css = css.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
+                     if (url.startsWith('data:')) return match;
+                     try {
+                         let absoluteUrl = new URL(url, targetUrl).href;
+                         return `url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                     } catch (e) {
+                         return match;
+                     }
+                 });
+                 css = css.replace(/@import\s+(?:url\()?\s*(['"])(.*?)\1\s*\)?/g, (match, quote, url) => {
+                      if (url.startsWith('data:')) return match;
+                      try {
+                          let absoluteUrl = new URL(url, targetUrl).href;
+                          return `@import url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                      } catch (e) {
+                          return match;
+                      }
+                 });
+                 res.send(Buffer.from(css, 'utf-8'));
              });
-             css = css.replace(/@import\s+(?:url\()?\s*(['"])(.*?)\1\s*\)?/g, (match, quote, url) => {
-                  if (url.startsWith('data:')) return match;
-                  try {
-                      let absoluteUrl = new URL(url, targetUrl).href;
-                      return `@import url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
-                  } catch (e) {
-                      return match;
-                  }
+             response.data.on('error', (err) => {
+                 console.error('CSS Proxy stream error:', err.message);
+                 if (!res.headersSent) res.status(500).send('Proxy Stream Error');
              });
-             res.send(Buffer.from(css, 'utf-8'));
         } else {
-            // For images, js, etc., just send the binary data
-            res.send(response.data);
+            // Stream binary data directly (images, video/audio chunks, media streams, js, etc.)
+            response.data.pipe(res);
+            response.data.on('error', (err) => {
+                console.error('Binary Proxy pipe error:', err.message);
+                // Can't set status if headers already sent, which is likely for streamed media
+            });
         }
     } catch (error) {
         console.error('Proxy Error:', error.message);
-        res.status(error.response ? error.response.status : 500).send(`Proxy Error: ${error.message}`);
+        if (!res.headersSent) {
+            res.status(error.response ? error.response.status : 500).send(`Proxy Error: ${error.message}`);
+        }
     }
 });
 
