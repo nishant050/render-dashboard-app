@@ -3037,6 +3037,12 @@ const getFfmpegCandidates = () => {
     addCandidate(process.env.FFMPEG_PATH, []);
     addCandidate('ffmpeg', []);
     addCandidate('ffmpeg.exe', []);
+    
+    // Fallback: Check common winget install path for yt-dlp.FFmpeg
+    const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+    if (localAppData) {
+        addCandidate(path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', 'yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-N-124279-g0f6ba39122-win64-gpl', 'bin', 'ffmpeg.exe'), []);
+    }
 
     const seen = new Set();
     return candidates.filter((candidate) => {
