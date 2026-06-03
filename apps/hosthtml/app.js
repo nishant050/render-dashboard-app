@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const toast = document.getElementById('toast');
     
     // Initialize Ace Editor
-    ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.24.1/');
+    ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.2/');
     const editor = ace.edit("ace-editor");
     editor.setTheme("ace/theme/tomorrow_night_eighties");
     editor.session.setMode("ace/mode/html");
