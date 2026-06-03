@@ -66,6 +66,16 @@ const fileHubEntrySchema = new mongoose.Schema({
 }, { timestamps: true });
 const FileHubEntry = mongoose.model('FileHubEntry', fileHubEntrySchema);
 
+// Host HTML App
+const hostedHtmlSchema = new mongoose.Schema({
+    path: { type: String, required: true, unique: true, match: /^[a-zA-Z0-9_-]{1,50}$/ },
+    title: { type: String, required: true, trim: true },
+    content: { type: String, required: true },
+    views: { type: Number, default: 0 }
+}, { timestamps: true });
+hostedHtmlSchema.index({ path: 1 }, { unique: true });
+const HostedHtml = mongoose.model('HostedHtml', hostedHtmlSchema);
+
 // Crawler App
 const crawlerTaskSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -791,6 +801,85 @@ app.use('/api/proxy', async (req, res) => {
         if (!res.headersSent) {
             res.status(error.response ? error.response.status : 500).send(`Proxy Error: ${error.message}`);
         }
+    }
+});
+
+// --- Host HTML API Routes ---
+app.use('/api/hosthtml', express.json({ limit: '10mb' }));
+
+app.get('/api/hosthtml/pages', async (req, res) => {
+    try {
+        const pages = await HostedHtml.find().select('path title views updatedAt').sort({ updatedAt: -1 });
+        res.json(pages);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/hosthtml/pages', async (req, res) => {
+    try {
+        const { path, title, content } = req.body;
+        if (!path || !title || !content) return res.status(400).json({ error: 'Missing required fields' });
+        
+        const existing = await HostedHtml.findOne({ path });
+        if (existing) return res.status(400).json({ error: 'Path already exists' });
+        
+        const newPage = new HostedHtml({ path, title, content });
+        await newPage.save();
+        res.json({ success: true, page: newPage });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/hosthtml/pages/:path', async (req, res) => {
+    try {
+        const page = await HostedHtml.findOne({ path: req.params.path });
+        if (!page) return res.status(404).json({ error: 'Page not found' });
+        res.json(page);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/hosthtml/pages/:path', async (req, res) => {
+    try {
+        const { title, content } = req.body;
+        const page = await HostedHtml.findOneAndUpdate(
+            { path: req.params.path },
+            { title, content },
+            { new: true }
+        );
+        if (!page) return res.status(404).json({ error: 'Page not found' });
+        res.json({ success: true, page });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/hosthtml/pages/:path', async (req, res) => {
+    try {
+        const result = await HostedHtml.findOneAndDelete({ path: req.params.path });
+        if (!result) return res.status(404).json({ error: 'Page not found' });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Host HTML Render Endpoint ---
+app.get('/p/:path', async (req, res) => {
+    try {
+        const page = await HostedHtml.findOne({ path: req.params.path });
+        if (!page) return res.status(404).send('Page not found');
+        
+        // Increment views in background
+        HostedHtml.updateOne({ _id: page._id }, { $inc: { views: 1 } }).exec();
+
+        res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-forms; default-src 'self' 'unsafe-inline' data: blob: *");
+        res.type('html').send(page.content);
+    } catch (error) {
+        res.status(500).send('Internal Server Error');
     }
 });
 
