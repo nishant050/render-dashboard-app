@@ -71,7 +71,8 @@ const hostedHtmlSchema = new mongoose.Schema({
     path: { type: String, required: true, unique: true, match: /^[a-zA-Z0-9_-]{1,50}$/ },
     title: { type: String, required: true, trim: true },
     content: { type: String, required: true },
-    views: { type: Number, default: 0 }
+    views: { type: Number, default: 0 },
+    data: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 hostedHtmlSchema.index({ path: 1 }, { unique: true });
 const HostedHtml = mongoose.model('HostedHtml', hostedHtmlSchema);
@@ -809,8 +810,20 @@ app.use('/api/hosthtml', express.json({ limit: '10mb' }));
 
 app.get('/api/hosthtml/pages', async (req, res) => {
     try {
-        const pages = await HostedHtml.find().select('path title views updatedAt').sort({ updatedAt: -1 });
-        res.json(pages);
+        const pages = await HostedHtml.find().select('path title views updatedAt data').sort({ updatedAt: -1 });
+        // Return a lightweight hasData flag instead of shipping the whole blob in the list
+        const safePages = pages.map(p => {
+            const d = p.data;
+            const hasData = d && typeof d === 'object' && Object.keys(d).length > 0;
+            return {
+                path: p.path,
+                title: p.title,
+                views: p.views,
+                updatedAt: p.updatedAt,
+                hasData
+            };
+        });
+        res.json(safePages);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -867,7 +880,59 @@ app.delete('/api/hosthtml/pages/:path', async (req, res) => {
     }
 });
 
+// --- Host HTML Server-Side Shared Data (replaces browser localStorage/IndexedDB for hosted pages) ---
+// All visitors to the same /p/:path see and modify the exact same server-stored data object.
+app.get('/api/hosthtml/pages/:path/data', async (req, res) => {
+    try {
+        const page = await HostedHtml.findOne({ path: req.params.path }).select('data');
+        if (!page) return res.status(404).json({ error: 'Page not found' });
+        res.json(page.data || {});
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/hosthtml/pages/:path/data', async (req, res) => {
+    try {
+        const { data } = req.body;
+        if (data === undefined) {
+            return res.status(400).json({ error: 'Request body must include "data"' });
+        }
+        const page = await HostedHtml.findOneAndUpdate(
+            { path: req.params.path },
+            { data },
+            { new: true }
+        );
+        if (!page) return res.status(404).json({ error: 'Page not found' });
+        res.json({ success: true, data: page.data || {} });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/hosthtml/pages/:path/data', async (req, res) => {
+    try {
+        const page = await HostedHtml.findOneAndUpdate(
+            { path: req.params.path },
+            { data: {} },
+            { new: true }
+        );
+        if (!page) return res.status(404).json({ error: 'Page not found' });
+        res.json({ success: true, data: {} });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Host HTML Render Endpoint ---
+// IMPORTANT: We deliberately do NOT use the restrictive CSP sandbox here.
+// The previous "sandbox allow-scripts allow-forms" (no allow-same-origin) was
+// causing SecurityError on sessionStorage / localStorage / IndexedDB and
+// origin mismatch errors inside real single-page apps.
+//
+// Hosted pages are now served as normal same-origin documents so they can use
+// modern web APIs. Data persistence is provided server-side (see HostedStorage below)
+// so that data is shared across all visitors instead of living in each user's browser.
 app.get('/p/:path', async (req, res) => {
     try {
         const page = await HostedHtml.findOne({ path: req.params.path });
@@ -876,8 +941,105 @@ app.get('/p/:path', async (req, res) => {
         // Increment views in background
         HostedHtml.updateOne({ _id: page._id }, { $inc: { views: 1 } }).exec();
 
-        res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-forms; default-src 'self' 'unsafe-inline' data: blob: *");
-        res.type('html').send(page.content);
+        const pagePath = page.path;
+        const safePath = JSON.stringify(pagePath);
+
+        // Permissive but still somewhat reasonable CSP for user-provided SPAs.
+        // Allows inline scripts/styles (very common), eval (some frameworks), data/blob URLs, and network requests.
+        const permissiveCSP = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; connect-src 'self' *; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline' https: http: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:;";
+        res.setHeader('Content-Security-Policy', permissiveCSP);
+
+        // Build the HostedStorage helper that the embedded SPA can use instead of (or in addition to) browser storage.
+        // This gives every visitor to /p/xxx the exact same server-persisted data.
+        const storageHelper = `
+<script id="hosted-storage-helper">
+(function () {
+  const PAGE_PATH = ${safePath};
+  const API = '/api/hosthtml/pages/' + encodeURIComponent(PAGE_PATH) + '/data';
+
+  async function apiGet() {
+    const r = await fetch(API, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HostedStorage: failed to load (' + r.status + ')');
+    return r.json();
+  }
+  async function apiPut(dataObj) {
+    const r = await fetch(API, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ data: dataObj })
+    });
+    if (!r.ok) throw new Error('HostedStorage: failed to save (' + r.status + ')');
+    return r.json();
+  }
+
+  const HostedStorage = {
+    async getAll() {
+      return (await apiGet()) || {};
+    },
+    async setAll(newData) {
+      if (newData === null || typeof newData !== 'object' || Array.isArray(newData)) {
+        // Allow any JSON-serializable value the app wants to store as the root
+      }
+      const res = await apiPut(newData);
+      return res.data;
+    },
+    async get(key, defaultValue) {
+      const all = await this.getAll().catch(() => ({}));
+      return (all && typeof all === 'object' && key in all) ? all[key] : defaultValue;
+    },
+    async set(key, value) {
+      const all = await this.getAll().catch(() => ({}));
+      all[key] = value;
+      return this.setAll(all);
+    },
+    async clear() {
+      return this.setAll({});
+    },
+    // Convenience for many apps that just want a single state blob
+    async loadState() { return this.getAll(); },
+    async saveState(state) { return this.setAll(state); }
+  };
+
+  window.HostedStorage = HostedStorage;
+  window.__HOSTED_PAGE_PATH__ = PAGE_PATH;
+
+  // Optional: surface a tiny status for debugging
+  console.log('%c[HostedStorage] Server-backed storage ready for /p/' + PAGE_PATH + ' (shared across all visitors)', 'color:#22c55e');
+})();
+</script>`.trim();
+
+        // Inject the helper script as early as possible using cheerio when we can.
+        let finalContent = page.content;
+        try {
+          const $ = cheerio.load(page.content, { decodeEntities: false, xmlMode: false });
+          let injected = false;
+
+          if ($('head').length > 0) {
+            $('head').prepend(storageHelper + '\n');
+            injected = true;
+          } else if ($('html').length > 0) {
+            const htmlEl = $('html').first();
+            if (htmlEl.children('head').length === 0) {
+              htmlEl.prepend('<head></head>');
+            }
+            $('head').prepend(storageHelper + '\n');
+            injected = true;
+          }
+
+          if (injected) {
+            finalContent = $.html();
+          } else {
+            // Extremely minimal document — just prepend
+            finalContent = storageHelper + '\n' + page.content;
+          }
+        } catch (injectErr) {
+          // Fallback: prepend the script. Most browsers will still execute it before the rest of the document.
+          console.warn('HostedStorage injection via cheerio failed, using fallback prepend:', injectErr.message);
+          finalContent = storageHelper + '\n' + page.content;
+        }
+
+        res.type('html').send(finalContent);
     } catch (error) {
         res.status(500).send('Internal Server Error');
     }

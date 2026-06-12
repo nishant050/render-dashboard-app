@@ -221,11 +221,15 @@ header {
 
 .page-actions {
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.4rem;
 }
 
 .page-actions .btn {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 70px;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.6rem;
 }
 
 /* Modal */

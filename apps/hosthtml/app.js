@@ -74,9 +74,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <a href="/p/${escapeHtml(page.path)}" target="_blank" class="page-path">/p/${escapeHtml(page.path)} ↗</a>
                 <div class="page-stats">
                     👁️ ${page.views} views • Updated: ${new Date(page.updatedAt).toLocaleDateString()}
+                    ${page.hasData ? ' • <span style="color:#22c55e">● server data</span>' : ''}
                 </div>
                 <div class="page-actions">
                     <button class="btn btn-secondary btn-sm" onclick="editPage('${escapeHtml(page.path)}')">Edit</button>
+                    <button class="btn btn-secondary btn-sm" onclick="viewPageData('${escapeHtml(page.path)}')" title="View current server data (JSON)">View Data</button>
+                    <button class="btn btn-secondary btn-sm" onclick="clearPageData('${escapeHtml(page.path)}')" title="Clear all server-stored data for this page (shared state)">Clear Data</button>
                     <button class="btn btn-danger btn-sm" onclick="deletePage('${escapeHtml(page.path)}')">Delete</button>
                 </div>
             </div>
@@ -213,6 +216,40 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             showToast('Page deleted successfully');
             fetchPages();
+        } catch (error) {
+            showToast(error.message, true);
+        }
+    };
+
+    window.clearPageData = async (path) => {
+        if (!confirm(`Clear ALL server-stored data for /p/${path}?\nThis affects everyone who visits the page and cannot be undone.`)) return;
+
+        try {
+            const res = await fetch(`/api/hosthtml/pages/${path}/data`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to clear data');
+            }
+            showToast('Server data cleared for this page');
+            fetchPages();
+        } catch (error) {
+            showToast(error.message, true);
+        }
+    };
+
+    window.viewPageData = async (path) => {
+        try {
+            const res = await fetch(`/api/hosthtml/pages/${path}/data`);
+            if (!res.ok) throw new Error('Failed to load data');
+            const data = await res.json();
+            const json = JSON.stringify(data, null, 2);
+            // Show in a non-blocking way + copy
+            if (navigator.clipboard) {
+                try { await navigator.clipboard.writeText(json); } catch (_) {}
+            }
+            // Use a simple overlay or alert for visibility
+            const preview = json.length > 8000 ? json.slice(0, 8000) + '\n... (truncated)' : json;
+            alert('Server data for /p/' + path + ' (copied to clipboard):\n\n' + preview);
         } catch (error) {
             showToast(error.message, true);
         }
