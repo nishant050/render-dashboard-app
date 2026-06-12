@@ -72,7 +72,9 @@
                         <strong>Gotcha!</strong> Since we only store the HTML string, external assets (images, CSS, JS) must be hosted on external CDNs (absolute URLs) or inlined directly using Base64 Data URLs.
                     </div>
                     <div class="info-alert" style="border-left-color:#22c55e;background:rgba(34,197,94,0.08);color:#86efac;">
-                        <strong>Server Storage (new):</strong> Any data your page saves using <code>HostedStorage.getAll()</code> / <code>setAll(obj)</code> / <code>get(key)</code> etc. lives on the server and is shared with everyone who visits <code>/p/your-page</code>. No more per-browser localStorage / IndexedDB / sessionStorage isolation.
+                        <strong>Server Storage (automatic):</strong> <code>localStorage</code> and <code>sessionStorage</code> (plus the explicit <code>window.HostedStorage</code> helper) are now transparently backed by the server. Data added inside a hosted page is shared with everyone who visits the same <code>/p/your-page</code> URL, even from different devices or browsers. No changes needed inside most pasted SPAs.
+                        <br><br>
+                        <strong>Note:</strong> IndexedDB is not automatically shimmed (use <code>HostedStorage</code> or localStorage patterns for lists/simple state).
                     </div>
 
                     <div class="split-pane">

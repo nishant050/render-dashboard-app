@@ -882,8 +882,13 @@ app.delete('/api/hosthtml/pages/:path', async (req, res) => {
 
 // --- Host HTML Server-Side Shared Data (replaces browser localStorage/IndexedDB for hosted pages) ---
 // All visitors to the same /p/:path see and modify the exact same server-stored data object.
+//
+// In addition to the explicit window.HostedStorage API, we now inject transparent
+// shims for localStorage and sessionStorage. Most existing "paste an HTML app"
+// workflows therefore get cross-device shared persistence automatically.
 app.get('/api/hosthtml/pages/:path/data', async (req, res) => {
     try {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         const page = await HostedHtml.findOne({ path: req.params.path }).select('data');
         if (!page) return res.status(404).json({ error: 'Page not found' });
         res.json(page.data || {});
@@ -894,6 +899,7 @@ app.get('/api/hosthtml/pages/:path/data', async (req, res) => {
 
 app.put('/api/hosthtml/pages/:path/data', async (req, res) => {
     try {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         const { data } = req.body;
         if (data === undefined) {
             return res.status(400).json({ error: 'Request body must include "data"' });
@@ -912,6 +918,7 @@ app.put('/api/hosthtml/pages/:path/data', async (req, res) => {
 
 app.delete('/api/hosthtml/pages/:path/data', async (req, res) => {
     try {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         const page = await HostedHtml.findOneAndUpdate(
             { path: req.params.path },
             { data: {} },
@@ -931,8 +938,14 @@ app.delete('/api/hosthtml/pages/:path/data', async (req, res) => {
 // origin mismatch errors inside real single-page apps.
 //
 // Hosted pages are now served as normal same-origin documents so they can use
-// modern web APIs. Data persistence is provided server-side (see HostedStorage below)
-// so that data is shared across all visitors instead of living in each user's browser.
+// modern web APIs.
+//
+// Data persistence for hosted pages is provided by a server-backed store
+// (the `data` field on the HostedHtml document). In addition to the explicit
+// window.HostedStorage helper we also install transparent shims for the
+// classic localStorage and sessionStorage APIs. This means the majority of
+// "single file HTML apps" users paste in will automatically have their data
+// shared across devices/browsers without any code changes inside the hosted HTML.
 app.get('/p/:path', async (req, res) => {
     try {
         const page = await HostedHtml.findOne({ path: req.params.path });
@@ -944,18 +957,32 @@ app.get('/p/:path', async (req, res) => {
         const pagePath = page.path;
         const safePath = JSON.stringify(pagePath);
 
+        // Snapshot of server data at render time. This seeds the transparent storage
+        // shims synchronously so that the first reads (even before any network) see
+        // the latest data from other devices.
+        const initialData = page.data || {};
+
         // Permissive but still somewhat reasonable CSP for user-provided SPAs.
         // Allows inline scripts/styles (very common), eval (some frameworks), data/blob URLs, and network requests.
         const permissiveCSP = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; connect-src 'self' *; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline' https: http: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:;";
         res.setHeader('Content-Security-Policy', permissiveCSP);
+        res.set('Cache-Control', 'no-store, private');
 
-        // Build the HostedStorage helper that the embedded SPA can use instead of (or in addition to) browser storage.
-        // This gives every visitor to /p/xxx the exact same server-persisted data.
+        // Build the storage helper injected into every hosted page.
+        // It provides:
+        //  - Transparent localStorage + sessionStorage facades backed by the server data
+        //    (so most existing pasted SPAs "just work" across devices).
+        //  - The explicit window.HostedStorage API (updated to be mostly sync after seed).
+        //  - A refresh() helper + visibilitychange listener for picking up remote changes.
         const storageHelper = `
 <script id="hosted-storage-helper">
 (function () {
   const PAGE_PATH = ${safePath};
   const API = '/api/hosthtml/pages/' + encodeURIComponent(PAGE_PATH) + '/data';
+
+  // Seeded synchronously from the snapshot embedded at page serve time.
+  // This is the source of truth for the shims and the explicit API.
+  let memoryData = ${JSON.stringify(initialData)};
 
   async function apiGet() {
     const r = await fetch(API, { credentials: 'same-origin' });
@@ -973,39 +1000,125 @@ app.get('/p/:path', async (req, res) => {
     return r.json();
   }
 
+  let saveTimer = null;
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      apiPut(memoryData).catch(err => console.warn('HostedStorage save failed', err));
+    }, 400);
+  }
+
+  function makeStorage() {
+    return {
+      getItem(key) {
+        if (key == null) return null;
+        const k = String(key);
+        return Object.prototype.hasOwnProperty.call(memoryData, k) ? String(memoryData[k]) : null;
+      },
+      setItem(key, val) {
+        if (key == null) return;
+        memoryData[String(key)] = String(val == null ? '' : val);
+        scheduleSave();
+      },
+      removeItem(key) {
+        if (key == null) return;
+        delete memoryData[String(key)];
+        scheduleSave();
+      },
+      clear() {
+        memoryData = {};
+        scheduleSave();
+      },
+      get length() {
+        return Object.keys(memoryData).length;
+      },
+      key(index) {
+        const keys = Object.keys(memoryData);
+        return (index >= 0 && index < keys.length) ? keys[index] : null;
+      }
+    };
+  }
+
+  const serverLocalStorage = makeStorage();
+  const serverSessionStorage = makeStorage();
+
+  // Install transparent shims. Both map to the same server-backed memory so that
+  // classic localStorage/sessionStorage usage in pasted SPAs becomes shared & persistent.
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      value: serverLocalStorage,
+      configurable: true,
+      enumerable: true,
+      writable: false
+    });
+  } catch (e) {
+    console.warn('[HostedStorage] Could not override localStorage', e);
+  }
+  try {
+    Object.defineProperty(window, 'sessionStorage', {
+      value: serverSessionStorage,
+      configurable: true,
+      enumerable: true,
+      writable: false
+    });
+  } catch (e) {
+    console.warn('[HostedStorage] Could not override sessionStorage', e);
+  }
+
+  // Explicit API. After the synchronous seed these are mostly sync (await on
+  // a non-thenable value still works, preserving backward compatibility).
   const HostedStorage = {
-    async getAll() {
-      return (await apiGet()) || {};
+    getAll() {
+      return { ...memoryData };
     },
     async setAll(newData) {
-      if (newData === null || typeof newData !== 'object' || Array.isArray(newData)) {
-        // Allow any JSON-serializable value the app wants to store as the root
+      if (newData && typeof newData === 'object' && !Array.isArray(newData)) {
+        memoryData = { ...newData };
+      } else {
+        memoryData = newData != null ? newData : {};
       }
-      const res = await apiPut(newData);
-      return res.data;
+      scheduleSave();
+      return { ...memoryData };
     },
-    async get(key, defaultValue) {
-      const all = await this.getAll().catch(() => ({}));
-      return (all && typeof all === 'object' && key in all) ? all[key] : defaultValue;
+    get(key, defaultValue) {
+      const k = String(key);
+      return Object.prototype.hasOwnProperty.call(memoryData, k) ? memoryData[k] : defaultValue;
     },
-    async set(key, value) {
-      const all = await this.getAll().catch(() => ({}));
-      all[key] = value;
-      return this.setAll(all);
+    set(key, value) {
+      memoryData[String(key)] = value;
+      scheduleSave();
+      return Promise.resolve();
     },
-    async clear() {
-      return this.setAll({});
+    clear() {
+      memoryData = {};
+      scheduleSave();
+      return Promise.resolve();
     },
-    // Convenience for many apps that just want a single state blob
-    async loadState() { return this.getAll(); },
-    async saveState(state) { return this.setAll(state); }
+    loadState() { return this.getAll(); },
+    saveState(state) { return this.setAll(state); },
+    async refresh() {
+      try {
+        const fresh = await apiGet();
+        memoryData = (fresh && typeof fresh === 'object') ? fresh : {};
+      } catch (e) {
+        console.warn('[HostedStorage] refresh failed', e);
+      }
+      return { ...memoryData };
+    }
   };
 
   window.HostedStorage = HostedStorage;
   window.__HOSTED_PAGE_PATH__ = PAGE_PATH;
 
-  // Optional: surface a tiny status for debugging
-  console.log('%c[HostedStorage] Server-backed storage ready for /p/' + PAGE_PATH + ' (shared across all visitors)', 'color:#22c55e');
+  // When the tab becomes visible again, pull latest from server (helps seeing
+  // writes that happened on another device while this tab was in the background).
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      HostedStorage.refresh().catch(() => {});
+    }
+  });
+
+  console.log('%c[HostedStorage] Server-backed storage ready for /p/' + PAGE_PATH + ' (localStorage/sessionStorage + HostedStorage are now shared across devices)', 'color:#22c55e');
 })();
 </script>`.trim();
 
