@@ -844,9 +844,16 @@ async function executeCrawlerRun(runId) {
 
 // --- Background Worker Loop ---
 let isWorkerRunning = false;
+let _isDisabledFn = () => false; // Set by main server via setDisabledCheck()
+
+function setDisabledCheck(fn) {
+    _isDisabledFn = fn;
+}
 
 async function crawlerWorkerLoop() {
     if (isWorkerRunning) return;
+    // Skip if crawler is disabled in dashboard settings
+    if (_isDisabledFn()) return;
     isWorkerRunning = true;
 
     try {
@@ -905,5 +912,6 @@ module.exports = {
     startBackgroundWorker,
     executeCrawlerRun,
     requestStopRun,
-    killActiveRunBrowser
+    killActiveRunBrowser,
+    setDisabledCheck
 };

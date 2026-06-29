@@ -106,6 +106,33 @@ const crawlerRunSchema = new mongoose.Schema({
 }, { timestamps: true });
 const CrawlerRun = mongoose.model('CrawlerRun', crawlerRunSchema);
 
+// Dashboard Settings (app enable/disable)
+const dashboardSettingsSchema = new mongoose.Schema({
+    disabledApps: { type: [String], default: [] }
+}, { timestamps: true });
+const DashboardSettings = mongoose.model('DashboardSettings', dashboardSettingsSchema);
+
+// --- Dashboard Settings Cache ---
+let _disabledAppsCache = new Set();
+let _disabledAppsCacheReady = false;
+
+async function loadDashboardSettings() {
+    try {
+        let doc = await DashboardSettings.findOne({});
+        if (!doc) doc = await DashboardSettings.create({ disabledApps: [] });
+        _disabledAppsCache = new Set(doc.disabledApps || []);
+        _disabledAppsCacheReady = true;
+        return doc;
+    } catch (e) {
+        console.error('Failed to load dashboard settings:', e.message);
+        return null;
+    }
+}
+
+function isAppDisabled(appId) {
+    return _disabledAppsCache.has(appId);
+}
+
 // Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
 // Default to user-provided key if not set, will fall back to manual links
 const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac053e55d17fb2bacb64a543d';
@@ -163,14 +190,29 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // --- DietPlan Proxy & Process Setup ---
 const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
-const dietPlanProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'main:app', '--port', '8005', '--host', '127.0.0.1', '--root-path', '/dietplan'], {
-    cwd: path.join(__dirname, 'apps', 'DietPlan'),
-    env: process.env
-});
-dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
-dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
+let dietPlanProcess = null;
 
-app.use('/dietplan', createProxyMiddleware({
+// DietPlan is launched after DB is ready so we can check if it's disabled
+async function startDietPlanIfEnabled() {
+    if (isAppDisabled('dietplan')) {
+        console.log('[DietPlan] App is disabled — skipping subprocess launch.');
+        return;
+    }
+    dietPlanProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'main:app', '--port', '8005', '--host', '127.0.0.1', '--root-path', '/dietplan'], {
+        cwd: path.join(__dirname, 'apps', 'DietPlan'),
+        env: process.env
+    });
+    dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
+    dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
+    console.log('[DietPlan] Subprocess started.');
+}
+
+app.use('/dietplan', (req, res, next) => {
+    if (isAppDisabled('dietplan')) {
+        return res.status(503).send('<h2>Diet Plan is currently disabled.</h2><p>Enable it from the dashboard settings.</p>');
+    }
+    next();
+}, createProxyMiddleware({
     target: 'http://127.0.0.1:8005',
     changeOrigin: true,
     pathRewrite: {
@@ -233,6 +275,8 @@ app.use('/api/crawler', crawlerRoutes);
 app.use('/uploads/crawler', express.static(path.join(__dirname, 'uploads', 'crawler')));
 const crawlerEngine = require('./apps/crawler/server/engine');
 crawlerEngine.startBackgroundWorker();
+// Pass the isAppDisabled check into the crawler engine so its worker loop can skip when disabled
+crawlerEngine.setDisabledCheck(() => isAppDisabled('crawler'));
 
 // --- AI Proxy for NVIDIA (CORS Bypass) ---
 app.post('/api/ai/nvidia-proxy', async (req, res) => {
@@ -1273,6 +1317,38 @@ app.use((req, res, next) => {
         } catch (error) {}
     }
     next();
+});
+
+// --- Dashboard Settings API ---
+app.get('/api/dashboard/settings', async (req, res) => {
+    try {
+        let doc = await DashboardSettings.findOne({});
+        if (!doc) doc = await DashboardSettings.create({ disabledApps: [] });
+        res.json({ disabledApps: doc.disabledApps || [] });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to load settings' });
+    }
+});
+
+app.post('/api/dashboard/settings', async (req, res) => {
+    try {
+        const { disabledApps } = req.body;
+        if (!Array.isArray(disabledApps)) {
+            return res.status(400).json({ error: 'disabledApps must be an array of app IDs' });
+        }
+        const filtered = disabledApps.filter(id => typeof id === 'string' && id.trim());
+        let doc = await DashboardSettings.findOne({});
+        if (!doc) doc = new DashboardSettings();
+        doc.disabledApps = filtered;
+        await doc.save();
+        // Update the in-memory cache immediately
+        _disabledAppsCache = new Set(filtered);
+        console.log('[Dashboard] Disabled apps updated:', filtered);
+        res.json({ ok: true, disabledApps: filtered });
+    } catch (e) {
+        console.error('Error saving dashboard settings:', e);
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
 });
 
 // --- Static File Serving ---
@@ -2874,6 +2950,9 @@ function getISTNow() {
 }
 
 function checkAutoRefresh() {
+    // Skip if NewsHunt is disabled in dashboard settings
+    if (isAppDisabled('newshunt')) return;
+
     const ist = getISTNow();
     const todayIST = ist.toISOString().slice(0, 10); // 'YYYY-MM-DD'
 
@@ -2894,6 +2973,9 @@ console.log('[AutoRefresh] Scheduled daily feed refresh at 05:00 AM IST');
 
 // POST /api/newshunt/refresh — trigger server-side RSS fetch + background categorization
 app.post('/api/newshunt/refresh', async (req, res) => {
+    if (isAppDisabled('newshunt')) {
+        return res.status(503).json({ error: 'NewsHunt is disabled. Enable it from the dashboard settings.' });
+    }
     const categorizeOnly = req.query.categorizeOnly === 'true' || (req.body && req.body.categorizeOnly === true);
     if (bgJob.active) return res.json({ status: 'already_running', job: Object.assign({}, bgJob) });
     await runBackgroundJob({ categorizeOnly });
@@ -4100,6 +4182,10 @@ Promise.all([probeYtDlp(), probeFfmpeg()])
     });
 
 // --- Server Start ---
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    // Load dashboard settings cache from MongoDB, then start conditional services
+    await loadDashboardSettings();
+    console.log('[Dashboard] Settings loaded. Disabled apps:', [..._disabledAppsCache]);
+    await startDietPlanIfEnabled();
 });
