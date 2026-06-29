@@ -2854,6 +2854,44 @@ async function runBackgroundJob(opts) {
     return true;
 }
 
+// ==========================================================================
+// DAILY AUTO-REFRESH SCHEDULER (5:00 AM IST)
+// ==========================================================================
+// Automatically triggers a full feed refresh + AI categorization every day
+// at 05:00 IST (Indian Standard Time, UTC+05:30) so the user wakes up to
+// fresh, categorized news without having to manually hit "Refresh Feeds".
+
+const autoRefresh = {
+    lastRunDate: null,   // 'YYYY-MM-DD' in IST — prevents double-fire
+    TARGET_HOUR: 5,      // 5:00 AM
+    TARGET_MINUTE: 0,
+    IST_OFFSET_MS: 5.5 * 60 * 60 * 1000  // UTC+05:30
+};
+
+function getISTNow() {
+    const now = new Date();
+    return new Date(now.getTime() + autoRefresh.IST_OFFSET_MS + now.getTimezoneOffset() * 60000);
+}
+
+function checkAutoRefresh() {
+    const ist = getISTNow();
+    const todayIST = ist.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+    // Already ran today — skip
+    if (autoRefresh.lastRunDate === todayIST) return;
+
+    // Check if it's the target time (5:00 AM IST)
+    if (ist.getHours() === autoRefresh.TARGET_HOUR && ist.getMinutes() === autoRefresh.TARGET_MINUTE) {
+        autoRefresh.lastRunDate = todayIST;
+        console.log(`[AutoRefresh] Triggering daily feed refresh at ${ist.toLocaleTimeString()} IST (${todayIST})`);
+        runBackgroundJob({ categorizeOnly: false });
+    }
+}
+
+// Check every 30 seconds — lightweight, no external cron dependency
+setInterval(checkAutoRefresh, 30 * 1000);
+console.log('[AutoRefresh] Scheduled daily feed refresh at 05:00 AM IST');
+
 // POST /api/newshunt/refresh — trigger server-side RSS fetch + background categorization
 app.post('/api/newshunt/refresh', async (req, res) => {
     const categorizeOnly = req.query.categorizeOnly === 'true' || (req.body && req.body.categorizeOnly === true);
