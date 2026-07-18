@@ -2953,31 +2953,31 @@ function buildInvestingLabFallbackFeedback(body = {}) {
     const checks = [];
 
     if (answer.includes('risk') || answer.includes('stop') || answer.includes('loss')) {
-        checks.push('Good: you mentioned risk control. Convert it into a position size, stop level, and maximum loss before entering the simulator.');
+        checks.push('Good: tumne risk control mention kiya. Ab isko position size, stop level, aur maximum loss mein convert karo before simulator trade.');
     } else {
-        checks.push('Missing: add a risk plan. A trade idea is incomplete until you define invalidation, stop loss, and position size.');
+        checks.push('Missing: risk plan add karo. Jab tak invalidation, stop loss, aur position size defined nahi hai, trade idea incomplete hai.');
     }
 
     if (answer.includes('debt') || answer.includes('cash') || answer.includes('roe') || answer.includes('pe') || answer.includes('growth')) {
-        checks.push('Good: you are linking the decision to business numbers. Compare each metric with the sector and ask whether the price already discounts it.');
+        checks.push('Good: tum decision ko business numbers se link kar rahe ho. Har metric ko sector se compare karo aur dekho price ne already ye expectation discount kiya hai ya nahi.');
     } else {
-        checks.push('Missing: refer to at least two numbers from the research page, such as ROE, debt/equity, growth, P/E, cash flow, or promoter pledge.');
+        checks.push('Missing: research page se at least do numbers mention karo, jaise ROE, debt/equity, growth, P/E, cash flow, ya promoter pledge.');
     }
 
     if (answer.includes('support') || answer.includes('resistance') || answer.includes('volume') || answer.includes('trend')) {
-        checks.push('Good: you connected research with market behavior. Use the chart to time execution instead of chasing price.');
+        checks.push('Good: tumne research ko market behavior se connect kiya. Price chase karne ke bajay chart se execution timing decide karo.');
     } else {
-        checks.push('Next step: add a chart trigger. Decide whether you will act near support, on a breakout, or after volume confirmation.');
+        checks.push('Next step: chart trigger add karo. Decide karo action support ke paas hoga, breakout par hoga, ya volume confirmation ke baad.');
     }
 
     if (metrics.debtEquity && Number(metrics.debtEquity) > 1.2) {
-        checks.push('Watch item: this company has elevated debt/equity in the drill, so a bullish view needs a clear reason why debt risk is acceptable.');
+        checks.push('Watch item: is drill mein debt/equity elevated hai, isliye bullish view tabhi valid hoga jab tum explain kar pao ki debt risk acceptable kyun hai.');
     }
 
     return [
         'Rule-based coach feedback:',
         ...checks,
-        'Before trading: write the thesis in one sentence, list the opposite evidence, then place only a paper order that matches the plan.'
+        'Before trading: thesis ek sentence mein likho, opposite evidence list karo, phir sirf wahi paper order place karo jo plan se match karta hai.'
     ].join('\n- ');
 }
 
@@ -2998,10 +2998,11 @@ app.post('/api/investing-lab/ai-feedback', async (req, res) => {
                 role: 'system',
                 content: [
                     'You are an investing lab coach for beginner stock market students.',
+                    'Always answer in simple Hinglish by default because the learner may not understand advanced English. Use Hindi-English mixed explanations with familiar market terms.',
                     'Give strict but encouraging training feedback. This is simulated education, not financial advice.',
                     'Use Indian market language when relevant: Rs, NSE/BSE, delivery, intraday, option chain, support, resistance, and position sizing.',
                     'Evaluate whether the learner used the right numbers, interpreted them correctly, controlled risk, and avoided emotional trading.',
-                    'Keep the response concise with sections: Score, Correct reasoning, Missing evidence, Risk check, Next simulator action.'
+                    'Keep the response concise in markdown with sections: Score, Sahi reasoning, Missing evidence, Risk check, Next simulator action.'
                 ].join(' ')
             },
             {
@@ -3029,8 +3030,7 @@ app.post('/api/investing-lab/ai-feedback', async (req, res) => {
 
         const feedback = await callAIServer(messages, {
             temperature: 0.2,
-            max_tokens: 700,
-            task: 'coach'
+            max_tokens: 700
         }, aiSettings);
 
         res.json({ success: true, source: 'ai', feedback: String(feedback || '').trim() });
@@ -3040,6 +3040,87 @@ app.post('/api/investing-lab/ai-feedback', async (req, res) => {
             success: true,
             source: 'rule-based',
             feedback: buildInvestingLabFallbackFeedback(req.body)
+        });
+    }
+});
+
+function buildInvestingLabResearchHelpFallback(body = {}) {
+    const context = isPlainObject(body.context) ? body.context : {};
+    const label = String(context.label || context.topic || 'this research section').trim();
+    const value = String(context.value || '').trim();
+    const help = String(context.help || 'Use this information as one input in the research process.').trim();
+    const question = String(body.question || '').trim();
+
+    return [
+        `**${label}**`,
+        '',
+        help + (value ? ` Abhi value: ${value}.` : ''),
+        '',
+        'Kaise use karna hai:',
+        '- Pehle samjho ye number kya measure karta hai.',
+        '- Phir decide karo ye tumhari thesis ko support karta hai ya weak karta hai.',
+        '- Finally isko risk, valuation, chart level, aur opposite evidence ke saath connect karo before simulator trade.',
+        question ? `\nTumhare question ke liye: ${question}` : ''
+    ].filter(Boolean).join('\n');
+}
+
+app.post('/api/investing-lab/research-help', async (req, res) => {
+    try {
+        const payload = isPlainObject(req.body) ? req.body : {};
+        const question = String(payload.question || '').trim().slice(0, 1200);
+        const context = isPlainObject(payload.context) ? payload.context : {};
+        const history = Array.isArray(payload.messages) ? payload.messages.slice(-8) : [];
+        const contextText = JSON.stringify(context, null, 2).slice(0, 5000);
+        const historyText = history.map(message => {
+            const role = message && message.role === 'user' ? 'Learner' : 'Coach';
+            return `${role}: ${String((message && message.content) || '').slice(0, 900)}`;
+        }).join('\n');
+
+        const messages = [
+            {
+                role: 'system',
+                content: [
+                    'You are an AI research tutor inside a simulated Indian stock market learning lab.',
+                    'Always answer in simple Hinglish by default because the learner may not understand advanced English. Use Hindi-English mixed explanations with familiar market terms.',
+                    'Explain the selected research section in simple, practical language for a beginner.',
+                    'Use Indian market language when relevant: Rs, NSE/BSE, delivery, intraday, support, resistance, option chain, OI, IV, theta, risk, and position sizing.',
+                    'Do not give real financial advice. Teach how to interpret the section and what the learner should check next.',
+                    'Return concise markdown with Hinglish sections: Meaning, Kaise read karein, Common mistake, Worksheet mein kya likhna hai.'
+                ].join(' ')
+            },
+            {
+                role: 'user',
+                content: [
+                    'Selected research context:',
+                    contextText,
+                    '',
+                    historyText ? `Chat so far:\n${historyText}\n` : '',
+                    'Learner question:',
+                    question || 'Explain this section clearly and tell me how to use it in my research.'
+                ].join('\n')
+            }
+        ];
+
+        let aiSettings = {};
+        try {
+            const newshuntData = await readNewshuntData();
+            aiSettings = isPlainObject(newshuntData.settings) ? newshuntData.settings : {};
+        } catch (settingsError) {
+            console.warn('Investing lab could not read research help AI settings:', settingsError.message);
+        }
+
+        const answer = await callAIServer(messages, {
+            temperature: 0.2,
+            max_tokens: 750
+        }, aiSettings);
+
+        res.json({ success: true, source: 'ai', answer: String(answer || '').trim() });
+    } catch (error) {
+        console.warn('Investing lab research help fallback:', error.message);
+        res.json({
+            success: true,
+            source: 'rule-based',
+            answer: buildInvestingLabResearchHelpFallback(req.body)
         });
     }
 });
