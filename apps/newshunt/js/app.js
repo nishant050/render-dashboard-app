@@ -117,7 +117,7 @@ const App = {
         // Sort articles: starred first (5 -> 1), then by date
         articles.sort((a, b) => {
             if (a.stars !== b.stars) return (b.stars || 0) - (a.stars || 0);
-            return new Date(b.pubDate || b.dateAdded) - new Date(a.pubDate || a.dateAdded);
+            return (Utils.getArticleTimestamp(b) || 0) - (Utils.getArticleTimestamp(a) || 0);
         });
 
         // Filter out grouped duplicates (exact same story)

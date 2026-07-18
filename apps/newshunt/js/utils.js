@@ -14,20 +14,68 @@ const Utils = {
         return 'nh_' + Math.abs(hash).toString(36);
     },
 
+    parseTimestamp(value) {
+        if (value === null || value === undefined || value === '') return null;
+
+        if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isFinite(time) ? time : null;
+        }
+
+        if (typeof value === 'number') {
+            if (!Number.isFinite(value) || value <= 0) return null;
+            return value < 10000000000 ? value * 1000 : value;
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed || /^invalid date$/i.test(trimmed)) return null;
+
+            if (/^\d+(\.\d+)?$/.test(trimmed)) {
+                return this.parseTimestamp(Number(trimmed));
+            }
+
+            const parsed = Date.parse(trimmed);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        return null;
+    },
+
+    normalizeDateString(value) {
+        const timestamp = this.parseTimestamp(value);
+        return timestamp ? new Date(timestamp).toISOString() : '';
+    },
+
+    getArticleTimestamp(article) {
+        if (!article) return null;
+        return this.parseTimestamp(article.pubDate) || this.parseTimestamp(article.dateAdded);
+    },
+
+    formatArticleDate(article) {
+        const timestamp = this.getArticleTimestamp(article);
+        return timestamp ? this.formatDate(timestamp) : 'Unknown date';
+    },
+
     // Format date relative to now
     formatDate(dateStr) {
-        if (!dateStr) return '';
-        const date = new Date(dateStr);
+        const timestamp = this.parseTimestamp(dateStr);
+        if (!timestamp) return '';
+
+        const date = new Date(timestamp);
         const now = new Date();
-        const diffMs = now - date;
+        const diffMs = now.getTime() - timestamp;
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
 
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
+        if (diffMs >= 0) {
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+        }
+
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
     },
 

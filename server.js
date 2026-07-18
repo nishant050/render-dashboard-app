@@ -48,6 +48,11 @@ const learnInvestingSchema = new mongoose.Schema({
 }, { timestamps: true });
 const LearnInvestingState = mongoose.model('LearnInvestingState', learnInvestingSchema);
 
+const investingLabSchema = new mongoose.Schema({
+    profiles: { type: mongoose.Schema.Types.Mixed, default: {} }
+}, { timestamps: true });
+const InvestingLabState = mongoose.model('InvestingLabState', investingLabSchema);
+
 const fretboardTrainerSchema = new mongoose.Schema({
     progress: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
@@ -2114,6 +2119,51 @@ app.post('/api/learn-investing/state', async (req, res) => {
     }
 });
 
+// 12A. INVESTING LAB STATE
+const normalizeInvestingLabState = (state = {}) => ({
+    profiles: isPlainObject(state.profiles) ? state.profiles : {}
+});
+
+const readInvestingLabState = async () => {
+    const data = await InvestingLabState.findOne({});
+    if (!data) return { profiles: {} };
+    return normalizeInvestingLabState(typeof data.toObject === 'function' ? data.toObject() : data);
+};
+
+const writeInvestingLabState = async (state) => {
+    const normalized = normalizeInvestingLabState(state);
+    const existing = await InvestingLabState.findOne({});
+
+    if (existing) {
+        existing.profiles = normalized.profiles;
+        existing.markModified('profiles');
+        await existing.save();
+        return existing;
+    }
+
+    return InvestingLabState.create(normalized);
+};
+
+app.get('/api/investing-lab/state', async (req, res) => {
+    try {
+        const state = await readInvestingLabState();
+        res.json(state);
+    } catch (error) {
+        console.error('Error reading investing-lab state:', error);
+        res.status(500).json({ error: 'Failed to read investing-lab state' });
+    }
+});
+
+app.post('/api/investing-lab/state', async (req, res) => {
+    try {
+        const state = await writeInvestingLabState(req.body);
+        res.json({ success: true, state });
+    } catch (error) {
+        console.error('Error saving investing-lab state:', error);
+        res.status(500).json({ error: 'Failed to save investing-lab state' });
+    }
+});
+
 
 // 12B. FRETBOARD TRAINER PROGRESS
 const defaultFretboardProgress = () => ({
@@ -2467,6 +2517,104 @@ const normalizeNewshuntFeeds = (feeds) => {
         }));
 };
 
+const NEWSHUNT_RETENTION_DAYS = Math.max(1, Number(process.env.NEWSHUNT_RETENTION_DAYS) || 3);
+
+const parseNewshuntTimestamp = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+
+    if (value instanceof Date) {
+        const time = value.getTime();
+        return Number.isFinite(time) ? time : null;
+    }
+
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value <= 0) return null;
+        return value < 10000000000 ? value * 1000 : value;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || /^invalid date$/i.test(trimmed)) return null;
+
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+            return parseNewshuntTimestamp(Number(trimmed));
+        }
+
+        const parsed = Date.parse(trimmed);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+};
+
+const normalizeNewshuntArticleDateFields = (article, options = {}) => {
+    const normalized = { ...article };
+    const pubDateMs = parseNewshuntTimestamp(normalized.pubDate);
+    const dateAddedMs = parseNewshuntTimestamp(normalized.dateAdded);
+
+    if (pubDateMs) normalized.pubDate = new Date(pubDateMs).toISOString();
+    else if (Object.prototype.hasOwnProperty.call(normalized, 'pubDate')) normalized.pubDate = '';
+
+    if (dateAddedMs) normalized.dateAdded = dateAddedMs;
+    else if (options.defaultDateAdded) normalized.dateAdded = Date.now();
+    else delete normalized.dateAdded;
+
+    return normalized;
+};
+
+const getNewshuntArticleTimestamp = (article) => {
+    if (!article) return null;
+    return parseNewshuntTimestamp(article.pubDate) || parseNewshuntTimestamp(article.dateAdded);
+};
+
+const cleanupNewshuntArticles = (data, maxAgeDays = NEWSHUNT_RETENTION_DAYS) => {
+    const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
+    const articles = data.articles || {};
+    const articleContent = data.articleContent || {};
+    const result = {
+        deletedCount: 0,
+        oldArticleCount: 0,
+        invalidDateCount: 0,
+        normalizedDateCount: 0,
+        contentDeletedCount: 0
+    };
+
+    for (const guid of Object.keys(articles)) {
+        const article = articles[guid];
+        const beforePubDate = article && article.pubDate;
+        const beforeDateAdded = article && article.dateAdded;
+        const normalized = normalizeNewshuntArticleDateFields(article || {});
+        const articleDate = getNewshuntArticleTimestamp(normalized);
+
+        if (!articleDate || articleDate < cutoff) {
+            delete articles[guid];
+            if (Object.prototype.hasOwnProperty.call(articleContent, guid)) {
+                delete articleContent[guid];
+                result.contentDeletedCount++;
+            }
+            result.deletedCount++;
+            if (!articleDate) result.invalidDateCount++;
+            else result.oldArticleCount++;
+            continue;
+        }
+
+        if (normalized.pubDate !== beforePubDate || normalized.dateAdded !== beforeDateAdded) {
+            articles[guid] = normalized;
+            result.normalizedDateCount++;
+        }
+    }
+
+    return result;
+};
+
+const cleanupSummary = (cleanup) => {
+    const parts = [];
+    if (cleanup.oldArticleCount) parts.push(`${cleanup.oldArticleCount} old`);
+    if (cleanup.invalidDateCount) parts.push(`${cleanup.invalidDateCount} invalid-date`);
+    if (cleanup.normalizedDateCount) parts.push(`${cleanup.normalizedDateCount} date-normalized`);
+    return parts.length ? parts.join(', ') : 'none';
+};
+
 const normalizeNewshuntArticles = (articles) => {
     const plainArticles = toPlainValue(articles);
     const articleMap = Array.isArray(plainArticles)
@@ -2488,10 +2636,10 @@ const normalizeNewshuntArticles = (articles) => {
 
         if (!normalizedGuid) continue;
 
-        normalized[normalizedGuid] = {
+        normalized[normalizedGuid] = normalizeNewshuntArticleDateFields({
             ...article,
             guid: normalizedGuid
-        };
+        });
     }
 
     return normalized;
@@ -2619,7 +2767,7 @@ function parseNewsXml(xmlText, feedUrl) {
             const pubDate = $(el).find('published').text() || $(el).find('updated').text() || '';
             const id = $(el).find('id').text() || link;
             const cats = []; $(el).find('category').each((__, c) => cats.push($(c).attr('term') || $(c).text()));
-            items.push({ guid: hash(id || title + link), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator: '', categories: cats, image: '', dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null });
+            items.push(normalizeNewshuntArticleDateFields({ guid: hash(id || title + link), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator: '', categories: cats, image: '', dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null }, { defaultDateAdded: true }));
         });
     } else {
         const feedTitle = $('channel > title').first().text().trim();
@@ -2632,7 +2780,7 @@ function parseNewsXml(xmlText, feedUrl) {
             const creator = $(el).find('creator').text() || '';
             const cats = []; $(el).find('category').each((__, c) => cats.push($(c).text()));
             let image = ''; const enc = $(el).find('enclosure[type^="image"]'); if (enc.length) image = enc.attr('url') || '';
-            items.push({ guid: hash(id), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator, categories: cats, image, dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null });
+            items.push(normalizeNewshuntArticleDateFields({ guid: hash(id), title, link: link.trim(), description: trunc(desc, 500), pubDate, feedUrl, feedTitle, creator, categories: cats, image, dateAdded: Date.now(), isRead: false, stars: null, ratingReason: null }, { defaultDateAdded: true }));
         });
     }
     return items;
@@ -2657,6 +2805,10 @@ async function serverFetchAllFeeds(feeds) {
     const uniqueMap = new Map();
     allItems.forEach(item => { if (!uniqueMap.has(item.guid)) uniqueMap.set(item.guid, item); });
     const data = await readNewshuntData();
+    const cleanup = cleanupNewshuntArticles(data);
+    if (cleanup.deletedCount > 0 || cleanup.normalizedDateCount > 0) {
+        await writeNewshuntData(data);
+    }
     const existingGuids = new Set(Object.keys(data.articles || {}));
     const newArticles = [...uniqueMap.values()].filter(a => !existingGuids.has(a.guid));
     return { newArticles, errors };
@@ -2667,9 +2819,77 @@ const SRV_AI = {
     groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',        env: 'GROQ_API_KEY',       defaultModel: 'llama-3.3-70b-versatile' },
     openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',           env: 'OPENROUTER_API_KEY', defaultModel: 'google/gemini-2.0-flash-001' },
     cerebras:   { url: 'https://api.cerebras.ai/v1/chat/completions',             env: 'CEREBRAS_API_KEY',   defaultModel: 'llama3.1-8b' },
+    nvidia:     { url: 'https://integrate.api.nvidia.com/v1/chat/completions',     env: 'NVIDIA_API_KEY',    defaultModel: 'z-ai/glm4.7' },
     mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',              env: 'MISTRAL_API_KEY',    defaultModel: 'mistral-small-2603' },
     gemini:     { url: 'https://generativelanguage.googleapis.com/v1beta/models', env: 'GEMINI_API_KEY',     defaultModel: 'gemini-2.0-flash' }
 };
+
+function normalizeServerAIModel(provider, model) {
+    const raw = String(model || '').trim();
+    if (!raw) return raw;
+
+    const normalized = raw.toLowerCase().replace(/[\s_]+/g, '-');
+    if (provider === 'cerebras' && ['glm-4.7', 'glm4.7', 'z-ai/glm4.7', 'zai-glm-4.7'].includes(normalized)) {
+        return 'zai-glm-4.7';
+    }
+
+    if (provider === 'nvidia' && ['glm-4.7', 'glm4.7', 'zai-glm-4.7', 'z-ai/glm4.7'].includes(normalized)) {
+        return 'z-ai/glm4.7';
+    }
+
+    return raw;
+}
+
+function isServerAIThinkingPart(part) {
+    if (!part || typeof part !== 'object') return false;
+    const type = String(part.type || '').toLowerCase();
+    const role = String(part.role || '').toLowerCase();
+    return part.thought === true
+        || type === 'reasoning'
+        || type === 'reasoning_content'
+        || type === 'thinking'
+        || type === 'thought'
+        || role === 'thought';
+}
+
+function extractServerAITextParts(value) {
+    let content = '';
+    let reasoning = '';
+    const parts = Array.isArray(value) ? value : [value];
+
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            content += part;
+            continue;
+        }
+
+        if (!part || typeof part !== 'object') continue;
+        const text = typeof part.text === 'string'
+            ? part.text
+            : (typeof part.content === 'string' ? part.content : '');
+        if (!text) continue;
+
+        if (isServerAIThinkingPart(part)) reasoning += text;
+        else content += text;
+    }
+
+    return { content, reasoning };
+}
+
+function flattenServerAIText(value) {
+    const parts = extractServerAITextParts(value);
+    return `${parts.content}${parts.reasoning}`;
+}
+
+function extractServerAIMessageText(message = {}) {
+    const contentParts = extractServerAITextParts(message.content);
+    return [
+        contentParts.content,
+        flattenServerAIText(message.reasoning_content),
+        flattenServerAIText(message.reasoning),
+        contentParts.reasoning
+    ].filter(Boolean).join('');
+}
 
 async function callAIServer(messages, options, settings) {
     options = options || {};
@@ -2683,6 +2903,7 @@ async function callAIServer(messages, options, settings) {
         if (def && def.provider && def.model) { provider = def.provider; model = def.model; }
         else { provider = settings['ai_provider'] || 'groq'; model = settings['ai_model'] || (SRV_AI[provider] || {}).defaultModel || ''; }
     }
+    model = normalizeServerAIModel(provider, model);
     const prov = SRV_AI[provider];
     if (!prov) throw new Error('Unknown AI provider: ' + provider);
     const apiKey = process.env[prov.env] || settings['api_key_' + provider] || settings['ai_api_key'] || '';
@@ -2705,19 +2926,322 @@ async function callAIServer(messages, options, settings) {
     const hdrs = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
     if (provider === 'openrouter') { hdrs['HTTP-Referer'] = 'https://newshunt-app'; hdrs['X-Title'] = 'NewsHunt'; }
     const base = { model, messages, temperature: options.temperature != null ? options.temperature : 0.1, max_tokens: options.max_tokens || 4096 };
-    const attempts = [Object.assign({}, base, options.response_format ? { response_format: options.response_format } : {}), base];
+    const jsonBody = Object.assign({}, base, options.response_format ? { response_format: options.response_format } : {});
+    const attempts = provider === 'nvidia'
+        ? [
+            Object.assign({}, jsonBody, { chat_template_kwargs: { enable_thinking: false, clear_thinking: true } }),
+            Object.assign({}, base, { chat_template_kwargs: { enable_thinking: false, clear_thinking: true } }),
+            jsonBody,
+            base
+        ]
+        : [jsonBody, base];
     let lastErr;
     for (const body of attempts) {
-        try { const r = await axios.post(prov.url, body, { headers: hdrs, timeout: 90000 }); return r.data.choices[0].message.content || ''; }
+        try {
+            const r = await axios.post(prov.url, body, { headers: hdrs, timeout: 90000 });
+            return extractServerAIMessageText(r.data.choices && r.data.choices[0] && r.data.choices[0].message || {});
+        }
         catch (e) { lastErr = (e.response && e.response.data && e.response.data.error && e.response.data.error.message) || e.message; }
     }
     throw new Error(lastErr || 'AI request failed');
 }
 
+function buildInvestingLabFallbackFeedback(body = {}) {
+    const answer = String(body.answer || '').toLowerCase();
+    const context = isPlainObject(body.context) ? body.context : {};
+    const metrics = isPlainObject(context.metrics) ? context.metrics : {};
+    const checks = [];
+
+    if (answer.includes('risk') || answer.includes('stop') || answer.includes('loss')) {
+        checks.push('Good: you mentioned risk control. Convert it into a position size, stop level, and maximum loss before entering the simulator.');
+    } else {
+        checks.push('Missing: add a risk plan. A trade idea is incomplete until you define invalidation, stop loss, and position size.');
+    }
+
+    if (answer.includes('debt') || answer.includes('cash') || answer.includes('roe') || answer.includes('pe') || answer.includes('growth')) {
+        checks.push('Good: you are linking the decision to business numbers. Compare each metric with the sector and ask whether the price already discounts it.');
+    } else {
+        checks.push('Missing: refer to at least two numbers from the research page, such as ROE, debt/equity, growth, P/E, cash flow, or promoter pledge.');
+    }
+
+    if (answer.includes('support') || answer.includes('resistance') || answer.includes('volume') || answer.includes('trend')) {
+        checks.push('Good: you connected research with market behavior. Use the chart to time execution instead of chasing price.');
+    } else {
+        checks.push('Next step: add a chart trigger. Decide whether you will act near support, on a breakout, or after volume confirmation.');
+    }
+
+    if (metrics.debtEquity && Number(metrics.debtEquity) > 1.2) {
+        checks.push('Watch item: this company has elevated debt/equity in the drill, so a bullish view needs a clear reason why debt risk is acceptable.');
+    }
+
+    return [
+        'Rule-based coach feedback:',
+        ...checks,
+        'Before trading: write the thesis in one sentence, list the opposite evidence, then place only a paper order that matches the plan.'
+    ].join('\n- ');
+}
+
+app.post('/api/investing-lab/ai-feedback', async (req, res) => {
+    try {
+        const payload = isPlainObject(req.body) ? req.body : {};
+        const answer = String(payload.answer || '').trim().slice(0, 4500);
+        const prompt = String(payload.prompt || '').trim().slice(0, 1200);
+        const context = isPlainObject(payload.context) ? payload.context : {};
+
+        if (!answer) {
+            return res.status(400).json({ error: 'Answer is required for AI feedback' });
+        }
+
+        const contextText = JSON.stringify(context, null, 2).slice(0, 5000);
+        const messages = [
+            {
+                role: 'system',
+                content: [
+                    'You are an investing lab coach for beginner stock market students.',
+                    'Give strict but encouraging training feedback. This is simulated education, not financial advice.',
+                    'Use Indian market language when relevant: Rs, NSE/BSE, delivery, intraday, option chain, support, resistance, and position sizing.',
+                    'Evaluate whether the learner used the right numbers, interpreted them correctly, controlled risk, and avoided emotional trading.',
+                    'Keep the response concise with sections: Score, Correct reasoning, Missing evidence, Risk check, Next simulator action.'
+                ].join(' ')
+            },
+            {
+                role: 'user',
+                content: [
+                    'Assignment prompt:',
+                    prompt || 'Review the learner interpretation.',
+                    '',
+                    'Research/simulator context:',
+                    contextText,
+                    '',
+                    'Learner interpretation:',
+                    answer
+                ].join('\n')
+            }
+        ];
+
+        let aiSettings = {};
+        try {
+            const newshuntData = await readNewshuntData();
+            aiSettings = isPlainObject(newshuntData.settings) ? newshuntData.settings : {};
+        } catch (settingsError) {
+            console.warn('Investing lab could not read AI settings:', settingsError.message);
+        }
+
+        const feedback = await callAIServer(messages, {
+            temperature: 0.2,
+            max_tokens: 700,
+            task: 'coach'
+        }, aiSettings);
+
+        res.json({ success: true, source: 'ai', feedback: String(feedback || '').trim() });
+    } catch (error) {
+        console.warn('Investing lab AI feedback fallback:', error.message);
+        res.json({
+            success: true,
+            source: 'rule-based',
+            feedback: buildInvestingLabFallbackFeedback(req.body)
+        });
+    }
+});
+
 function cleanJson(text) {
     let s = String(text || '').trim();
     if (s.startsWith('```')) s = s.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
     return s.replace(/[\u0000-\u0019]+/g, '');
+}
+
+function extractBalancedJson(text, openChar, closeChar) {
+    let start = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (ch === '\\' && inString) {
+            escaped = true;
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = !inString;
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (ch === openChar) {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (ch === closeChar) {
+            depth--;
+            if (depth === 0 && start !== -1) {
+                return text.slice(start, i + 1);
+            }
+        }
+    }
+
+    return start !== -1 ? text.slice(start) : '';
+}
+
+function parseServerRatingsResponse(responseText) {
+    const cleaned = cleanJson(responseText);
+    const candidates = [
+        cleaned,
+        extractBalancedJson(cleaned, '{', '}'),
+        extractBalancedJson(cleaned, '[', ']')
+    ].filter(Boolean);
+    let lastError = null;
+
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate);
+            const ratings = Array.isArray(parsed) ? parsed : (parsed && parsed.ratings);
+            if (!Array.isArray(ratings)) {
+                throw new Error('Response JSON did not contain a ratings array');
+            }
+
+            return ratings
+                .map(rating => ({
+                    index: Number(rating && rating.index),
+                    stars: Number(rating && rating.stars),
+                    reason: String((rating && rating.reason) || '').trim()
+                }))
+                .filter(rating =>
+                    Number.isInteger(rating.index)
+                    && rating.index >= 0
+                    && Number.isInteger(rating.stars)
+                    && rating.stars >= 1
+                    && rating.stars <= 5
+                );
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('Unable to parse ratings JSON');
+}
+
+function parseServerJsonObjectResponse(responseText) {
+    const cleaned = cleanJson(responseText);
+    const candidates = [
+        cleaned,
+        extractBalancedJson(cleaned, '{', '}')
+    ].filter(Boolean);
+    let lastError = null;
+
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('Response JSON was not an object');
+            }
+            return parsed;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('Unable to parse JSON object');
+}
+
+function parseServerJsonArrayResponse(responseText) {
+    const cleaned = cleanJson(responseText);
+    const candidates = [
+        cleaned,
+        extractBalancedJson(cleaned, '[', ']')
+    ].filter(Boolean);
+    let lastError = null;
+
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (!Array.isArray(parsed)) {
+                throw new Error('Response JSON was not an array');
+            }
+            return parsed;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('Unable to parse JSON array');
+}
+
+async function rateServerArticleBatch(batch, settings, promptContext, progressLabel) {
+    if (!Array.isArray(batch) || batch.length === 0) return 0;
+
+    const iText = promptContext && promptContext.iText || '';
+    const aText = promptContext && promptContext.aText || '';
+    const cText = promptContext && promptContext.cText || '';
+    const articleList = batch.map((a, idx) =>
+        '[' + idx + '] Title: "' + a.title + '"\nSource: ' + (a.feedTitle || 'Unknown') + '\nDescription: ' + (a.description || '').slice(0, 160) + '\nCategories: ' + ((a.categories || []).join(', ') || 'N/A')
+    ).join('\n\n');
+    const prompt = 'You are an intelligent news curator. Rate each article 1-5 stars.\n5=Must Read (major world events, policy, AI/tech breakthroughs, financial impact)\n4=High Value (important analysis, industry news)\n3=Interesting (worth reading, not urgent)\n2=Low Value (minor/niche)\n1=Skip (clickbait, gossip, redundant)\nRules: +1 star for user interests, force 1 star for avoid topics.' + iText + aText + cText + '\n\n## Articles\n' + articleList + '\n\nRespond ONLY with JSON:\n{"ratings":[{"index":0,"stars":4,"reason":"Brief reason under 18 words"}]}';
+
+    for (let att = 0; att < 3; att++) {
+        try {
+            bgLog('rating', 'Rating articles', progressLabel);
+            const resp = await callAIServer(
+                [{ role: 'system', content: 'Return only valid JSON matching the schema.' }, { role: 'user', content: prompt }],
+                { temperature: 0.1, max_tokens: 3000, response_format: { type: 'json_object' }, task: 'categorize' },
+                settings
+            );
+            const ratings = parseServerRatingsResponse(resp);
+            const fresh = await readNewshuntData();
+            const appliedIndexes = new Set();
+            let applied = 0;
+
+            for (const r of ratings) {
+                if (appliedIndexes.has(r.index)) continue;
+                const art = batch[r.index];
+                if (!art) continue;
+                if (fresh.articles[art.guid]) {
+                    fresh.articles[art.guid].stars = r.stars;
+                    fresh.articles[art.guid].ratingReason = String(r.reason || '').trim();
+                    fresh.articles[art.guid].ratedAt = Date.now();
+                    appliedIndexes.add(r.index);
+                    applied++;
+                }
+            }
+
+            if (applied === 0) {
+                throw new Error('AI response contained no usable ratings for this batch');
+            }
+
+            await writeNewshuntData(fresh);
+
+            if (appliedIndexes.size === batch.length) {
+                return applied;
+            }
+
+            const missingArticles = batch.filter((_, index) => !appliedIndexes.has(index));
+            bgLog('rating', 'Retrying ' + missingArticles.length + ' articles missed by the previous rating response', progressLabel);
+            return applied + await rateServerArticleBatch(missingArticles, settings, promptContext, progressLabel);
+        } catch (e) {
+            if (att >= 2) {
+                if (batch.length > 1) {
+                    const midpoint = Math.ceil(batch.length / 2);
+                    bgLog('rating', 'Splitting rating batch after repeated failures', progressLabel);
+                    return await rateServerArticleBatch(batch.slice(0, midpoint), settings, promptContext, progressLabel)
+                        + await rateServerArticleBatch(batch.slice(midpoint), settings, promptContext, progressLabel);
+                }
+
+                console.error('[BG] Rating batch failed:', e.message);
+                throw e;
+            }
+
+            await new Promise(r => setTimeout(r, 1000 * (att + 1)));
+        }
+    }
+
+    return 0;
 }
 
 // Pass 1: Star-rate uncategorized articles in batches
@@ -2735,38 +3259,7 @@ async function bgRate(settings) {
     let total = 0;
     for (let i = 0; i < uncats.length; i += BATCH) {
         const batch = uncats.slice(i, i + BATCH);
-        bgLog('rating', 'Rating articles', Math.min(i + BATCH, uncats.length) + '/' + uncats.length);
-        const articleList = batch.map((a, idx) =>
-            '[' + idx + '] Title: "' + a.title + '"\nSource: ' + (a.feedTitle || 'Unknown') + '\nDescription: ' + (a.description || '').slice(0, 160) + '\nCategories: ' + ((a.categories || []).join(', ') || 'N/A')
-        ).join('\n\n');
-        const prompt = 'You are an intelligent news curator. Rate each article 1-5 stars.\n5=Must Read (major world events, policy, AI/tech breakthroughs, financial impact)\n4=High Value (important analysis, industry news)\n3=Interesting (worth reading, not urgent)\n2=Low Value (minor/niche)\n1=Skip (clickbait, gossip, redundant)\nRules: +1 star for user interests, force 1 star for avoid topics.' + iText + aText + cText + '\n\n## Articles\n' + articleList + '\n\nRespond ONLY with JSON:\n{"ratings":[{"index":0,"stars":4,"reason":"Brief reason under 18 words"}]}';
-        for (let att = 0; att < 3; att++) {
-            try {
-                const resp = await callAIServer(
-                    [{ role: 'system', content: 'Return only valid JSON matching the schema.' }, { role: 'user', content: prompt }],
-                    { temperature: 0.1, max_tokens: 3000, response_format: { type: 'json_object' }, task: 'categorize' },
-                    settings
-                );
-                const parsed = JSON.parse(cleanJson(resp));
-                const ratings = Array.isArray(parsed) ? parsed : (parsed.ratings || []);
-                const fresh = await readNewshuntData();
-                for (const r of ratings) {
-                    const art = batch[r.index];
-                    if (!art || !Number.isInteger(r.stars) || r.stars < 1 || r.stars > 5) continue;
-                    if (fresh.articles[art.guid]) {
-                        fresh.articles[art.guid].stars = r.stars;
-                        fresh.articles[art.guid].ratingReason = String(r.reason || '').trim();
-                        fresh.articles[art.guid].ratedAt = Date.now();
-                        total++;
-                    }
-                }
-                await writeNewshuntData(fresh);
-                break;
-            } catch (e) {
-                if (att >= 2) console.error('[BG] Rating batch failed:', e.message);
-                else await new Promise(r => setTimeout(r, 1000 * (att + 1)));
-            }
-        }
+        total += await rateServerArticleBatch(batch, settings, { iText, aText, cText }, Math.min(i + BATCH, uncats.length) + '/' + uncats.length);
         if (i + BATCH < uncats.length) await new Promise(r => setTimeout(r, 800));
     }
     return total;
@@ -2790,7 +3283,7 @@ async function bgGroupAndTag(settings) {
                 { temperature: 0.1, max_tokens: 4096, task: 'group' },
                 settings
             );
-            const result = JSON.parse(cleanJson(resp));
+            const result = parseServerJsonObjectResponse(resp);
             const fresh = await readNewshuntData();
             if (result.groups) {
                 for (const grp of result.groups) {
@@ -2817,9 +3310,126 @@ async function bgGroupAndTag(settings) {
                 }
             }
             await writeNewshuntData(fresh);
-        } catch (e) { console.error('[BG] Group batch failed:', e.message); }
+        } catch (e) { console.error('[BG] Group batch failed:', e.message); throw e; }
         if (i + BATCH < untagged.length) await new Promise(r => setTimeout(r, 800));
     }
+    return { grouped, tagged };
+}
+
+async function groupServerArticleBatchV2(batch, settings, progressLabel) {
+    if (!Array.isArray(batch) || batch.length === 0) return { grouped: 0, tagged: 0 };
+
+    const list = batch.map((a, idx) => '[' + idx + '] "' + a.title + '" (' + (a.feedTitle || 'Unknown') + ', ' + (a.stars || '?') + ' stars)').join('\n');
+    const prompt = 'You are a news editor. For these articles:\n1. Group articles covering the exact same news event and pick the best primary article.\n2. Assign 1-3 specific event tags to every article.\n\nUse specific event tags like \"Russia Ukraine War\" or \"ISRO Launch\", not broad labels like \"World News\" or \"Technology\".\n\n## Articles\n' + list + '\n\nRespond only with valid JSON in this shape:\n{"groups":[{"primaryIndex":0,"relatedIndices":[3],"groupLabel":"Specific event"}],"topics":[{"index":0,"tags":["Tag One","Tag Two"]}]}\n\nEvery article must appear in topics. Tags must be 2-4 words and title-cased.';
+
+    for (let att = 0; att < 3; att++) {
+        try {
+            bgLog('grouping', 'Grouping & tagging', progressLabel);
+            const resp = await callAIServer(
+                [{ role: 'system', content: 'Return only valid JSON. No markdown, no prose, no reasoning.' }, { role: 'user', content: prompt }],
+                { temperature: 0.1, max_tokens: 4096, response_format: { type: 'json_object' }, task: 'group' },
+                settings
+            );
+            const result = parseServerJsonObjectResponse(resp);
+            const fresh = await readNewshuntData();
+            let grouped = 0, tagged = 0;
+            const taggedIndexes = new Set();
+
+            if (Array.isArray(result.groups)) {
+                for (const grp of result.groups) {
+                    const primaryIndex = Number(grp && grp.primaryIndex);
+                    const primary = batch[primaryIndex];
+                    if (!Number.isInteger(primaryIndex) || !primary || !fresh.articles[primary.guid]) continue;
+                    const relatedIndices = Array.isArray(grp.relatedIndices)
+                        ? grp.relatedIndices.map(Number).filter(Number.isInteger)
+                        : [];
+                    const gid = primary.guid;
+                    Object.assign(fresh.articles[primary.guid], {
+                        groupId: gid,
+                        isGroupPrimary: true,
+                        groupLabel: String(grp.groupLabel || '').trim(),
+                        relatedCount: relatedIndices.length
+                    });
+                    for (const ri of relatedIndices) {
+                        const rel = batch[ri];
+                        if (rel && rel.guid !== primary.guid && fresh.articles[rel.guid]) {
+                            Object.assign(fresh.articles[rel.guid], {
+                                groupId: gid,
+                                isGroupPrimary: false,
+                                groupLabel: String(grp.groupLabel || '').trim(),
+                                relatedCount: 0
+                            });
+                            grouped++;
+                        }
+                    }
+                }
+            }
+
+            if (Array.isArray(result.topics)) {
+                for (const topicItem of result.topics) {
+                    const index = Number(topicItem && topicItem.index);
+                    const art = batch[index];
+                    const tags = Array.isArray(topicItem && topicItem.tags)
+                        ? topicItem.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 3)
+                        : [];
+                    if (Number.isInteger(index) && art && tags.length > 0 && fresh.articles[art.guid]) {
+                        fresh.articles[art.guid].topics = tags;
+                        taggedIndexes.add(index);
+                        tagged++;
+                    }
+                }
+            }
+
+            if (tagged === 0) {
+                throw new Error('AI response contained no usable topic tags for this batch');
+            }
+
+            await writeNewshuntData(fresh);
+
+            if (taggedIndexes.size === batch.length) {
+                return { grouped, tagged };
+            }
+
+            const missingArticles = batch.filter((_, index) => !taggedIndexes.has(index));
+            bgLog('grouping', 'Retrying ' + missingArticles.length + ' articles missed by the previous topic response', progressLabel);
+            const recovered = await groupServerArticleBatchV2(missingArticles, settings, progressLabel);
+            return { grouped: grouped + recovered.grouped, tagged: tagged + recovered.tagged };
+        } catch (e) {
+            if (att >= 2) {
+                if (batch.length > 1) {
+                    const midpoint = Math.ceil(batch.length / 2);
+                    bgLog('grouping', 'Splitting grouping batch after repeated failures', progressLabel);
+                    const left = await groupServerArticleBatchV2(batch.slice(0, midpoint), settings, progressLabel);
+                    const right = await groupServerArticleBatchV2(batch.slice(midpoint), settings, progressLabel);
+                    return { grouped: left.grouped + right.grouped, tagged: left.tagged + right.tagged };
+                }
+
+                console.error('[BG] Group batch failed:', e.message);
+                throw e;
+            }
+
+            await new Promise(r => setTimeout(r, 1000 * (att + 1)));
+        }
+    }
+
+    return { grouped: 0, tagged: 0 };
+}
+
+async function bgGroupAndTagV2(settings) {
+    const data = await readNewshuntData();
+    const untagged = Object.values(data.articles || {}).filter(a => !a.topics || a.topics.length === 0);
+    if (untagged.length === 0) return { grouped: 0, tagged: 0 };
+    const BATCH = 30;
+    let grouped = 0, tagged = 0;
+
+    for (let i = 0; i < untagged.length; i += BATCH) {
+        const batch = untagged.slice(i, i + BATCH);
+        const result = await groupServerArticleBatchV2(batch, settings, Math.min(i + BATCH, untagged.length) + '/' + untagged.length);
+        grouped += result.grouped;
+        tagged += result.tagged;
+        if (i + BATCH < untagged.length) await new Promise(r => setTimeout(r, 800));
+    }
+
     return { grouped, tagged };
 }
 
@@ -2839,7 +3449,7 @@ async function bgMergeTopics(settings) {
             { temperature: 0.0, max_tokens: 2000, task: 'group' },
             settings
         );
-        const merges = JSON.parse(cleanJson(resp));
+        const merges = parseServerJsonArrayResponse(resp);
         if (!Array.isArray(merges) || merges.length === 0) return 0;
         const fresh = await readNewshuntData();
         let count = 0;
@@ -2858,6 +3468,99 @@ async function bgMergeTopics(settings) {
         if (count > 0) await writeNewshuntData(fresh);
         return count;
     } catch (e) { console.error('[BG] Topic merge failed:', e.message); return 0; }
+}
+
+function parseServerTopicMergesResponse(responseText) {
+    try {
+        const parsed = parseServerJsonObjectResponse(responseText);
+        return Array.isArray(parsed.merges) ? parsed.merges : [];
+    } catch {
+        return parseServerJsonArrayResponse(responseText);
+    }
+}
+
+async function requestTopicMergeBatch(topicBatch, settings, progressLabel) {
+    if (!Array.isArray(topicBatch) || topicBatch.length < 2) return [];
+
+    const list = topicBatch.map((t, i) => '[' + i + '] "' + t[0] + '" (' + t[1] + ' articles)').join('\n');
+    const prompt = 'Identify duplicate or redundant topic labels that mean the same thing. Use only exact names from this list as aliases.\n\nTopics:\n' + list + '\n\nRespond only with valid JSON in this shape:\n{"merges":[{"primary":"Best name","aliases":["Alias to merge"]}]}\n\nIf none, return {"merges":[]}.';
+
+    for (let att = 0; att < 3; att++) {
+        try {
+            bgLog('merging', 'Merging redundant topic labels', progressLabel);
+            const resp = await callAIServer(
+                [{ role: 'system', content: 'Return only a valid JSON object. No markdown, no prose, no reasoning.' }, { role: 'user', content: prompt }],
+                { temperature: 0.0, max_tokens: 2500, response_format: { type: 'json_object' }, task: 'group' },
+                settings
+            );
+            return parseServerTopicMergesResponse(resp);
+        } catch (e) {
+            if (att >= 2) {
+                if (topicBatch.length > 30) {
+                    const midpoint = Math.ceil(topicBatch.length / 2);
+                    const left = await requestTopicMergeBatch(topicBatch.slice(0, midpoint), settings, progressLabel);
+                    const right = await requestTopicMergeBatch(topicBatch.slice(midpoint), settings, progressLabel);
+                    return [...left, ...right];
+                }
+
+                console.error('[BG] Topic merge batch failed:', e.message);
+                return [];
+            }
+
+            await new Promise(r => setTimeout(r, 1000 * (att + 1)));
+        }
+    }
+
+    return [];
+}
+
+async function bgMergeTopicsV2(settings) {
+    const data = await readNewshuntData();
+    const topicMap = {};
+    Object.values(data.articles || {}).forEach(a => (a.topics || []).forEach(t => {
+        const topic = String(t || '').trim();
+        if (topic) topicMap[topic] = (topicMap[topic] || 0) + 1;
+    }));
+
+    const topics = Object.entries(topicMap).sort((a, b) => b[1] - a[1]);
+    if (topics.length < 2) return 0;
+
+    const BATCH = 100;
+    const merges = [];
+    for (let i = 0; i < topics.length; i += BATCH) {
+        const batch = topics.slice(i, i + BATCH);
+        merges.push(...await requestTopicMergeBatch(batch, settings, Math.min(i + BATCH, topics.length) + '/' + topics.length));
+        if (i + BATCH < topics.length) await new Promise(r => setTimeout(r, 800));
+    }
+
+    if (merges.length === 0) return 0;
+
+    const fresh = await readNewshuntData();
+    let count = 0;
+    for (const merge of merges) {
+        if (!merge || !merge.primary || !Array.isArray(merge.aliases)) continue;
+        const primary = String(merge.primary).trim();
+        const aliases = merge.aliases.map(alias => String(alias || '').trim()).filter(alias => alias && alias !== primary);
+        if (!primary || aliases.length === 0) continue;
+
+        for (const art of Object.values(fresh.articles || {})) {
+            if (!Array.isArray(art.topics) || art.topics.length === 0) continue;
+            const s = new Set(art.topics);
+            let changed = false;
+            for (const alias of aliases) {
+                if (s.has(alias)) {
+                    s.delete(alias);
+                    s.add(primary);
+                    changed = true;
+                    count++;
+                }
+            }
+            if (changed) art.topics = Array.from(s);
+        }
+    }
+
+    if (count > 0) await writeNewshuntData(fresh);
+    return count;
 }
 
 // --- Main background job orchestrator ---
@@ -2884,18 +3587,16 @@ async function runBackgroundJob(opts) {
                 const { newArticles, errors } = await serverFetchAllFeeds(feeds);
                 bgJob.newArticlesCount = newArticles.length;
                 bgLog('saving', 'Saving ' + newArticles.length + ' new articles, ' + errors.length + ' errors');
-                if (newArticles.length > 0) {
-                    const fresh = await readNewshuntData();
-                    newArticles.forEach(a => { fresh.articles[a.guid] = a; });
-                    const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
-                    let purged = 0;
-                    for (const guid in fresh.articles) {
-                        if (new Date(fresh.articles[guid].pubDate || fresh.articles[guid].dateAdded || 0).getTime() < cutoff) {
-                            delete fresh.articles[guid]; purged++;
-                        }
-                    }
+                const fresh = await readNewshuntData();
+                newArticles.forEach(a => { fresh.articles[a.guid] = normalizeNewshuntArticleDateFields(a, { defaultDateAdded: true }); });
+                const cleanup = cleanupNewshuntArticles(fresh);
+
+                if (newArticles.length > 0 || cleanup.deletedCount > 0 || cleanup.normalizedDateCount > 0) {
                     await writeNewshuntData(fresh);
-                    if (purged > 0) bgLog('saving', 'Purged ' + purged + ' old articles');
+                }
+
+                if (cleanup.deletedCount > 0 || cleanup.normalizedDateCount > 0) {
+                    bgLog('saving', 'Cleanup complete: ' + cleanupSummary(cleanup));
                 }
             }
 
@@ -2906,15 +3607,34 @@ async function runBackgroundJob(opts) {
 
             const freshData = await readNewshuntData();
             const uncatCount = Object.values(freshData.articles || {}).filter(a => a.stars == null).length;
-            if (uncatCount === 0) { bgLog('done', 'All articles already categorized'); return; }
+            const untaggedCount = Object.values(freshData.articles || {}).filter(a => !a.topics || a.topics.length === 0).length;
+            if (uncatCount === 0 && untaggedCount === 0) {
+                const merged = await bgMergeTopicsV2(settings);
+                bgLog('done', 'All articles already categorized. Topics merged: ' + merged);
+                return;
+            }
 
-            const rated = await bgRate(settings);
-            bgLog('rating', 'Rated ' + rated + ' articles');
+            let rated = 0;
+            if (uncatCount > 0) {
+                rated = await bgRate(settings);
+                bgLog('rating', 'Rated ' + rated + ' articles');
+            } else {
+                bgLog('rating', 'No unrated articles');
+            }
 
-            const { grouped, tagged } = await bgGroupAndTag(settings);
-            bgLog('grouping', 'Grouped ' + grouped + ', tagged ' + tagged);
+            const afterRatingData = await readNewshuntData();
+            const needsTags = Object.values(afterRatingData.articles || {}).some(a => !a.topics || a.topics.length === 0);
+            let grouped = 0, tagged = 0;
+            if (needsTags) {
+                const groupedResult = await bgGroupAndTagV2(settings);
+                grouped = groupedResult.grouped;
+                tagged = groupedResult.tagged;
+                bgLog('grouping', 'Grouped ' + grouped + ', tagged ' + tagged);
+            } else {
+                bgLog('grouping', 'All articles already tagged');
+            }
 
-            const merged = await bgMergeTopics(settings);
+            const merged = await bgMergeTopicsV2(settings);
             bgLog('done', 'Complete — Rated: ' + rated + ', Grouped: ' + grouped + ', Tagged: ' + tagged + ', Topics merged: ' + merged);
 
         } catch (e) {
@@ -2931,16 +3651,12 @@ async function runBackgroundJob(opts) {
 }
 
 // ==========================================================================
-// DAILY AUTO-REFRESH SCHEDULER (5:00 AM IST)
+// NEWSHUNT AUTO-REFRESH SCHEDULER
 // ==========================================================================
-// Automatically triggers a full feed refresh + AI categorization every day
-// at 05:00 IST (Indian Standard Time, UTC+05:30) so the user wakes up to
-// fresh, categorized news without having to manually hit "Refresh Feeds".
+// Automatically triggers full feed refresh + AI categorization twice daily.
+// Defaults to 05:00 and 17:00 IST; override with NEWSHUNT_AUTO_REFRESH_TIMES.
 
 const autoRefresh = {
-    lastRunDate: null,   // 'YYYY-MM-DD' in IST — prevents double-fire
-    TARGET_HOUR: 5,      // 5:00 AM
-    TARGET_MINUTE: 0,
     IST_OFFSET_MS: 5.5 * 60 * 60 * 1000  // UTC+05:30
 };
 
@@ -2949,27 +3665,117 @@ function getISTNow() {
     return new Date(now.getTime() + autoRefresh.IST_OFFSET_MS + now.getTimezoneOffset() * 60000);
 }
 
-function checkAutoRefresh() {
-    // Skip if NewsHunt is disabled in dashboard settings
-    if (isAppDisabled('newshunt')) return;
+function parseNewshuntAutoRefreshSlots(value) {
+    const raw = (typeof value === 'string' && value.trim()) ? value : '05:00,17:00';
+    const slots = [];
 
-    const ist = getISTNow();
-    const todayIST = ist.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    for (const token of raw.split(',')) {
+        const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(token.trim());
+        if (!match) continue;
 
-    // Already ran today — skip
-    if (autoRefresh.lastRunDate === todayIST) return;
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        const label = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        slots.push({ hour, minute, label, totalMinutes: hour * 60 + minute });
+    }
 
-    // Check if it's the target time (5:00 AM IST)
-    if (ist.getHours() === autoRefresh.TARGET_HOUR && ist.getMinutes() === autoRefresh.TARGET_MINUTE) {
-        autoRefresh.lastRunDate = todayIST;
-        console.log(`[AutoRefresh] Triggering daily feed refresh at ${ist.toLocaleTimeString()} IST (${todayIST})`);
-        runBackgroundJob({ categorizeOnly: false });
+    const uniqueSlots = new Map();
+    slots.forEach(slot => uniqueSlots.set(slot.label, slot));
+
+    return (uniqueSlots.size ? [...uniqueSlots.values()] : [
+        { hour: 5, minute: 0, label: '05:00', totalMinutes: 5 * 60 },
+        { hour: 17, minute: 0, label: '17:00', totalMinutes: 17 * 60 }
+    ]).sort((a, b) => a.totalMinutes - b.totalMinutes);
+}
+
+const newshuntAutoRefresh = {
+    checking: false,
+    slots: parseNewshuntAutoRefreshSlots(process.env.NEWSHUNT_AUTO_REFRESH_TIMES)
+};
+
+function getNewshuntAutoRefreshRunKey(dateKey, slot) {
+    return `${dateKey}_${slot.label.replace(':', '')}`;
+}
+
+function getNewshuntAutoRefreshRunMap(settings) {
+    return isPlainObject(settings && settings._auto_refresh_runs)
+        ? { ...settings._auto_refresh_runs }
+        : {};
+}
+
+function pruneNewshuntAutoRefreshRunMap(runs, todayIST) {
+    const cutoff = new Date(`${todayIST}T00:00:00.000Z`);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 14);
+    const cutoffDateKey = cutoff.toISOString().slice(0, 10);
+
+    for (const key of Object.keys(runs)) {
+        if (key.slice(0, 10) < cutoffDateKey) delete runs[key];
+    }
+
+    return runs;
+}
+
+async function recordNewshuntAutoRefreshRuns(todayIST, records) {
+    const data = await readNewshuntData();
+    const runs = pruneNewshuntAutoRefreshRunMap(getNewshuntAutoRefreshRunMap(data.settings), todayIST);
+    const recordedAt = new Date().toISOString();
+
+    for (const record of records) {
+        runs[record.key] = { slot: record.slot, status: record.status, recordedAt };
+    }
+
+    data.settings = data.settings || {};
+    data.settings._auto_refresh_runs = runs;
+    await writeNewshuntData(data);
+}
+
+async function checkNewshuntAutoRefresh() {
+    if (newshuntAutoRefresh.checking) return;
+    newshuntAutoRefresh.checking = true;
+
+    try {
+        if (isAppDisabled('newshunt')) return;
+        if (bgJob.active) return;
+
+        const ist = getISTNow();
+        const todayIST = ist.toISOString().slice(0, 10);
+        const nowMinutes = ist.getHours() * 60 + ist.getMinutes();
+        const dueSlots = newshuntAutoRefresh.slots.filter(slot => nowMinutes >= slot.totalMinutes);
+        if (dueSlots.length === 0) return;
+
+        const data = await readNewshuntData();
+        const runs = getNewshuntAutoRefreshRunMap(data.settings);
+        const unrunSlots = dueSlots.filter(slot => !runs[getNewshuntAutoRefreshRunKey(todayIST, slot)]);
+        if (unrunSlots.length === 0) return;
+
+        const slotToRun = unrunSlots[unrunSlots.length - 1];
+        const started = await runBackgroundJob({ categorizeOnly: false });
+        if (!started) return;
+
+        const records = unrunSlots.slice(0, -1).map(slot => ({
+            key: getNewshuntAutoRefreshRunKey(todayIST, slot),
+            slot: slot.label,
+            status: 'skipped'
+        }));
+        records.push({
+            key: getNewshuntAutoRefreshRunKey(todayIST, slotToRun),
+            slot: slotToRun.label,
+            status: 'started'
+        });
+
+        await recordNewshuntAutoRefreshRuns(todayIST, records);
+        console.log(`[AutoRefresh] Triggering feed refresh for ${slotToRun.label} IST slot at ${ist.toLocaleTimeString()} IST (${todayIST})`);
+    } catch (error) {
+        console.error('[AutoRefresh] Check failed:', error.message || error);
+    } finally {
+        newshuntAutoRefresh.checking = false;
     }
 }
 
 // Check every 30 seconds — lightweight, no external cron dependency
-setInterval(checkAutoRefresh, 30 * 1000);
-console.log('[AutoRefresh] Scheduled daily feed refresh at 05:00 AM IST');
+setInterval(checkNewshuntAutoRefresh, 30 * 1000);
+setTimeout(checkNewshuntAutoRefresh, 10 * 1000);
+console.log(`[AutoRefresh] Scheduled feed refresh at ${newshuntAutoRefresh.slots.map(slot => slot.label).join(', ')} IST`);
 
 // POST /api/newshunt/refresh — trigger server-side RSS fetch + background categorization
 app.post('/api/newshunt/refresh', async (req, res) => {
@@ -3020,13 +3826,15 @@ app.post('/api/newshunt/sideload', async (req, res) => {
             serverData.articles = payload.articles;
         }
 
+        const cleanup = cleanupNewshuntArticles(serverData);
         const savedData = await writeNewshuntData(serverData);
         const normalized = normalizeNewshuntData(savedData);
         res.json({
             ok: true, message: 'Server data replaced successfully', counts: {
                 settings: Object.keys(normalized.settings).length,
                 feeds: normalized.feeds.length,
-                articles: Object.keys(normalized.articles).length
+                articles: Object.keys(normalized.articles).length,
+                deleted: cleanup.deletedCount
             }
         });
     } catch (error) {
@@ -3038,7 +3846,11 @@ app.post('/api/newshunt/sideload', async (req, res) => {
 // GET /api/newshunt/sync — pull all synced state
 app.get('/api/newshunt/sync', async (req, res) => {
     try {
-        const data = await readNewshuntData();
+        let data = await readNewshuntData();
+        const cleanup = cleanupNewshuntArticles(data);
+        if (cleanup.deletedCount > 0 || cleanup.normalizedDateCount > 0) {
+            data = normalizeNewshuntData(await writeNewshuntData(data));
+        }
         res.json(data);
     } catch (error) {
         console.error('Error in GET /api/newshunt/sync:', error);
@@ -3053,7 +3865,11 @@ app.post('/api/newshunt/sync', async (req, res) => {
         const serverData = await readNewshuntData();
 
         if (clientSettings !== undefined) {
+            const autoRefreshRuns = getNewshuntAutoRefreshRunMap(serverData.settings);
             serverData.settings = normalizeNewshuntSettings(clientSettings);
+            if (Object.keys(autoRefreshRuns).length > 0 && !serverData.settings._auto_refresh_runs) {
+                serverData.settings._auto_refresh_runs = autoRefreshRuns;
+            }
         }
 
         if (clientFeeds !== undefined) {
@@ -3064,6 +3880,7 @@ app.post('/api/newshunt/sync', async (req, res) => {
             serverData.articles = normalizeNewshuntArticles(clientArticles);
         }
 
+        cleanupNewshuntArticles(serverData);
         const savedData = await writeNewshuntData(serverData);
         res.json(normalizeNewshuntData(savedData));
     } catch (error) {
@@ -3129,9 +3946,10 @@ app.post('/api/newshunt/article', async (req, res) => {
     try {
         const { article } = req.body;
         if (!article || !article.guid) return res.status(400).json({ error: 'article and article.guid required' });
+        const normalizedArticle = normalizeNewshuntArticleDateFields(article, { defaultDateAdded: true });
 
         await applyNewshuntUpdate({
-            $set: { [`articles.${article.guid}`]: article }
+            $set: { [`articles.${article.guid}`]: normalizedArticle }
         });
         res.json({ ok: true });
     } catch (error) {
@@ -3149,7 +3967,7 @@ app.post('/api/newshunt/articles/batch', async (req, res) => {
         const articleUpdates = {};
         for (const article of articles) {
             if (article && article.guid) {
-                articleUpdates[`articles.${article.guid}`] = article;
+                articleUpdates[`articles.${article.guid}`] = normalizeNewshuntArticleDateFields(article, { defaultDateAdded: true });
             }
         }
 
@@ -3189,23 +4007,19 @@ app.delete('/api/newshunt/articles/feed', async (req, res) => {
 app.post('/api/newshunt/articles/purge', async (req, res) => {
     try {
         const { maxAgeDays } = req.body;
-        const days = Number(maxAgeDays) || 3;
-        const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+        const days = Math.max(1, Number(maxAgeDays) || NEWSHUNT_RETENTION_DAYS);
         
         const data = await readNewshuntData();
-        let deletedCount = 0;
-        
-        for (const guid in data.articles) {
-            const article = data.articles[guid];
-            const articleDate = new Date(article.pubDate || article.dateAdded || 0).getTime();
-            if (articleDate < cutoff) {
-                delete data.articles[guid];
-                if (data.articleContent[guid]) delete data.articleContent[guid];
-                deletedCount++;
-            }
-        }
+        const cleanup = cleanupNewshuntArticles(data, days);
         await writeNewshuntData(data);
-        res.json({ ok: true, deletedCount });
+        res.json({
+            ok: true,
+            deletedCount: cleanup.deletedCount,
+            oldArticleCount: cleanup.oldArticleCount,
+            invalidDateCount: cleanup.invalidDateCount,
+            normalizedDateCount: cleanup.normalizedDateCount,
+            contentDeletedCount: cleanup.contentDeletedCount
+        });
     } catch (error) {
         console.error('Error in POST /api/newshunt/articles/purge:', error);
         res.status(500).json({ error: 'Failed to purge articles' });
@@ -4187,5 +5001,6 @@ app.listen(PORT, async () => {
     // Load dashboard settings cache from MongoDB, then start conditional services
     await loadDashboardSettings();
     console.log('[Dashboard] Settings loaded. Disabled apps:', [..._disabledAppsCache]);
+    checkNewshuntAutoRefresh();
     await startDietPlanIfEnabled();
 });

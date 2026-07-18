@@ -67,7 +67,7 @@ const Reader = {
           <h1 class="reader__title">${Utils.escapeHtml(article.title)}</h1>
           <div class="reader__meta">
             <span class="reader__source-link">📰 ${Utils.escapeHtml(article.feedTitle || '')}</span>
-            <span>${Utils.formatDate(article.pubDate)}</span>
+            <span>${Utils.formatArticleDate(article)}</span>
             ${article.creator ? `<span>by ${Utils.escapeHtml(article.creator)}</span>` : ''}
             <a href="${Utils.escapeHtml(article.link)}" target="_blank" rel="noopener" class="reader__original-link">
               Read Original ↗

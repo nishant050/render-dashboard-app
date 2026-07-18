@@ -184,8 +184,8 @@ class NewsHuntDB {
     
     for (const guid in this.data.articles) {
         const article = this.data.articles[guid];
-        const articleDate = new Date(article.pubDate || article.dateAdded || 0).getTime();
-        if (articleDate < cutoff) {
+        const articleDate = Utils.getArticleTimestamp(article);
+        if (!articleDate || articleDate < cutoff) {
             delete this.data.articles[guid];
             if (this.data.articleContent[guid]) delete this.data.articleContent[guid];
             deletedCount++;

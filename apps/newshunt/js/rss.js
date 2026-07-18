@@ -53,7 +53,7 @@ const RSS = {
                 item.querySelector('description')?.textContent ||
                 item.querySelector('content\\:encoded, encoded')?.textContent || ''
             );
-            const pubDate = item.querySelector('pubDate')?.textContent || '';
+            const pubDate = Utils.normalizeDateString(item.querySelector('pubDate')?.textContent || '');
             const guid = item.querySelector('guid')?.textContent || link || Utils.hashString(title + link);
             const creator = item.querySelector('dc\\:creator, creator')?.textContent || '';
             const categories = [];
@@ -107,8 +107,8 @@ const RSS = {
                 entry.querySelector('summary')?.textContent ||
                 entry.querySelector('content')?.textContent || ''
             );
-            const published = entry.querySelector('published')?.textContent ||
-                entry.querySelector('updated')?.textContent || '';
+            const published = Utils.normalizeDateString(entry.querySelector('published')?.textContent ||
+                entry.querySelector('updated')?.textContent || '');
             const id = entry.querySelector('id')?.textContent || link;
             const author = entry.querySelector('author > name')?.textContent || '';
             const categories = [];
