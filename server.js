@@ -12,7 +12,7 @@ const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 
 // --- MongoDB Configuration ---
 const MONGO_URI = 'mongodb://admin:admin123@ac-wnbtpbs-shard-00-00.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-01.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-02.42f6xm7.mongodb.net:27017/render-dashboard?ssl=true&replicaSet=atlas-usm1o0-shard-0&authSource=admin&retryWrites=true&w=majority&appName=diet-plan';
@@ -224,6 +224,208 @@ app.use('/dietplan', (req, res, next) => {
         '^/dietplan': ''
     }
 }));
+
+// --- Jupyter Lab Process & Proxy Setup ---
+const JUPYTER_PORT = process.env.JUPYTER_PORT || 8888;
+const JUPYTER_TOKEN = process.env.JUPYTER_TOKEN || 'jupyter-workspace';
+const JUPYTER_ROOT_DIR = process.env.JUPYTER_ROOT_DIR || path.resolve(__dirname);
+
+let jupyterProcess = null;
+let isJupyterStarting = false;
+let isJupyterReady = false;
+let jupyterCheckTimer = null;
+
+async function checkJupyterHealth() {
+    try {
+        const resp = await axios.get(`http://127.0.0.1:${JUPYTER_PORT}/jupyter/api/status?token=${JUPYTER_TOKEN}`, {
+            timeout: 2000,
+            validateStatus: () => true
+        });
+        if (resp.status >= 200 && resp.status < 400) {
+            isJupyterReady = true;
+            isJupyterStarting = false;
+            return true;
+        }
+    } catch {
+        // Server not responding yet
+    }
+    isJupyterReady = false;
+    return false;
+}
+
+function pollJupyterUntilReady(maxAttempts = 40) {
+    if (jupyterCheckTimer) clearInterval(jupyterCheckTimer);
+    let attempts = 0;
+    jupyterCheckTimer = setInterval(async () => {
+        attempts++;
+        const ready = await checkJupyterHealth();
+        if (ready) {
+            console.log(`[Jupyter] Server is live and healthy on port ${JUPYTER_PORT}`);
+            clearInterval(jupyterCheckTimer);
+            jupyterCheckTimer = null;
+        } else if (attempts >= maxAttempts) {
+            console.warn('[Jupyter] Health check polling completed (still starting or waiting for connection).');
+            isJupyterStarting = false;
+            clearInterval(jupyterCheckTimer);
+            jupyterCheckTimer = null;
+        }
+    }, 1500);
+}
+
+async function startJupyterIfEnabled() {
+    if (isAppDisabled('jupyter')) {
+        console.log('[Jupyter] App is disabled — skipping subprocess launch.');
+        return;
+    }
+    if (jupyterProcess) {
+        console.log('[Jupyter] Subprocess already running.');
+        return;
+    }
+
+    isJupyterStarting = true;
+    isJupyterReady = false;
+
+    const jupyterArgs = [
+        '-m', 'jupyter', 'lab',
+        `--port=${JUPYTER_PORT}`,
+        '--ip=127.0.0.1',
+        '--no-browser',
+        '--ServerApp.base_url=/jupyter/',
+        `--IdentityProvider.token=${JUPYTER_TOKEN}`,
+        `--ServerApp.token=${JUPYTER_TOKEN}`,
+        '--ServerApp.allow_origin=*',
+        '--ServerApp.disable_check_xsrf=True',
+        `--ServerApp.root_dir=${JUPYTER_ROOT_DIR}`,
+        '--MappingKernelManager.cull_idle_timeout=0',
+        '--ServerApp.shutdown_no_activity_timeout=0'
+    ];
+
+    try {
+        jupyterProcess = spawn(pythonCmd, jupyterArgs, {
+            cwd: JUPYTER_ROOT_DIR,
+            env: {
+                ...process.env,
+                PYTHONUNBUFFERED: '1'
+            }
+        });
+
+        jupyterProcess.stdout.on('data', d => {
+            const msg = d.toString();
+            if (msg.includes('Jupyter Server') && msg.includes('running at')) {
+                isJupyterReady = true;
+                isJupyterStarting = false;
+            }
+        });
+
+        jupyterProcess.stderr.on('data', d => {
+            const msg = d.toString();
+            if (msg.includes('Jupyter Server') && msg.includes('running at')) {
+                isJupyterReady = true;
+                isJupyterStarting = false;
+            }
+        });
+
+        jupyterProcess.on('exit', (code, signal) => {
+            console.log(`[Jupyter] Process exited (code: ${code}, signal: ${signal})`);
+            jupyterProcess = null;
+            isJupyterReady = false;
+            isJupyterStarting = false;
+        });
+
+        console.log(`[Jupyter] Subprocess spawned (PID: ${jupyterProcess.pid}, Port: ${JUPYTER_PORT}, Root: ${JUPYTER_ROOT_DIR})`);
+        pollJupyterUntilReady();
+    } catch (err) {
+        console.error('[Jupyter] Failed to spawn process:', err.message);
+        isJupyterStarting = false;
+    }
+}
+
+function stopJupyter() {
+    if (jupyterCheckTimer) {
+        clearInterval(jupyterCheckTimer);
+        jupyterCheckTimer = null;
+    }
+    if (jupyterProcess) {
+        console.log('[Jupyter] Stopping subprocess...');
+        try {
+            jupyterProcess.kill('SIGTERM');
+        } catch {}
+        jupyterProcess = null;
+    }
+    isJupyterReady = false;
+    isJupyterStarting = false;
+}
+
+async function restartJupyter() {
+    stopJupyter();
+    await new Promise(r => setTimeout(r, 1000));
+    await startJupyterIfEnabled();
+    return { ok: true };
+}
+
+// Jupyter Proxy Middleware with WebSockets and frame-protection stripping
+const jupyterProxy = createProxyMiddleware({
+    target: `http://127.0.0.1:${JUPYTER_PORT}`,
+    pathFilter: '/jupyter',
+    changeOrigin: true,
+    ws: true,
+    on: {
+        proxyReq: fixRequestBody,
+        proxyRes: (proxyRes) => {
+            delete proxyRes.headers['x-frame-options'];
+            delete proxyRes.headers['content-security-policy'];
+            delete proxyRes.headers['content-security-policy-report-only'];
+        },
+        error: (err, req, res) => {
+            if (res.writeHead && !res.headersSent) {
+                res.writeHead(502, { 'Content-Type': 'text/html' });
+                res.end(`
+                    <html>
+                    <body style="font-family:system-ui,sans-serif;text-align:center;padding:50px;background:#0e131f;color:#f0f4f8;">
+                        <h2>🪐 Jupyter Lab is initializing...</h2>
+                        <p style="color:#94a3b8;">The server is starting up or reloading. Please wait a few seconds and refresh.</p>
+                        <p><a href="/apps/jupyter/index.html" style="color:#f97316;font-weight:600;text-decoration:none;">Return to Jupyter Dashboard</a></p>
+                    </body>
+                    </html>
+                `);
+            }
+        }
+    }
+});
+
+// Protect & route /jupyter
+app.use('/jupyter', (req, res, next) => {
+    if (isAppDisabled('jupyter')) {
+        return res.status(503).send('<h2>Jupyter Lab is currently disabled.</h2><p>Enable it from the dashboard settings.</p>');
+    }
+    next();
+});
+
+app.use(jupyterProxy);
+
+// Jupyter status and management APIs
+app.get('/api/jupyter/status', async (req, res) => {
+    if (!isJupyterReady && jupyterProcess) {
+        await checkJupyterHealth();
+    }
+    res.json({
+        running: isJupyterReady,
+        starting: isJupyterStarting,
+        token: JUPYTER_TOKEN,
+        port: JUPYTER_PORT,
+        rootDir: JUPYTER_ROOT_DIR,
+        url: `/jupyter/lab?token=${encodeURIComponent(JUPYTER_TOKEN)}`
+    });
+});
+
+app.post('/api/jupyter/restart', async (req, res) => {
+    try {
+        await restartJupyter();
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
 
 // --- Finance Login API ---
 app.post('/api/finance-login', (req, res) => {
@@ -1349,6 +1551,11 @@ app.post('/api/dashboard/settings', async (req, res) => {
         // Update the in-memory cache immediately
         _disabledAppsCache = new Set(filtered);
         console.log('[Dashboard] Disabled apps updated:', filtered);
+        if (_disabledAppsCache.has('jupyter')) {
+            stopJupyter();
+        } else if (!jupyterProcess) {
+            startJupyterIfEnabled();
+        }
         res.json({ ok: true, disabledApps: filtered });
     } catch (e) {
         console.error('Error saving dashboard settings:', e);
@@ -5077,11 +5284,19 @@ Promise.all([probeYtDlp(), probeFfmpeg()])
     });
 
 // --- Server Start ---
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     // Load dashboard settings cache from MongoDB, then start conditional services
     await loadDashboardSettings();
     console.log('[Dashboard] Settings loaded. Disabled apps:', [..._disabledAppsCache]);
     checkNewshuntAutoRefresh();
     await startDietPlanIfEnabled();
+    await startJupyterIfEnabled();
+});
+
+// WebSocket upgrade forwarding for JupyterLab interactive kernels & terminals
+server.on('upgrade', (req, socket, head) => {
+    if (req.url && req.url.startsWith('/jupyter')) {
+        jupyterProxy.upgrade(req, socket, head);
+    }
 });
