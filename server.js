@@ -189,6 +189,11 @@ const requireFinanceAuth = (req, res, next) => {
     }
 };
 
+// --- Server Monitor & Live Traffic Service ---
+const monitorService = require('./apps/monitor/server/monitorService');
+app.use(monitorService.middleware());
+app.use('/api/monitor', monitorService.router);
+
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
@@ -5286,6 +5291,7 @@ Promise.all([probeYtDlp(), probeFfmpeg()])
 // --- Server Start ---
 const server = app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    monitorService.setServer(server);
     // Load dashboard settings cache from MongoDB, then start conditional services
     await loadDashboardSettings();
     console.log('[Dashboard] Settings loaded. Disabled apps:', [..._disabledAppsCache]);
