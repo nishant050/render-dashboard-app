@@ -42,7 +42,7 @@ jobs:
       - name: Build Debug APK with Gradle
         working-directory: ./android
         run: |
-          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
             echo "::error::Gradle Build Failed! Check the summary below."
             echo "### ❌ Gradle Build Error Details" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -50,6 +50,8 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             exit 1
           }
+          echo "=== APK SEARCH IN ANDROID DIR ==="
+          find . -name "*.apk"
 
       - name: Upload Build Log on Failure
         if: failure()
@@ -61,13 +63,14 @@ jobs:
       - name: Rename APK for Distribution
         run: |
           mkdir -p build-output
-          APK_PATH=$(find android -name "*.apk" | grep -i "debug" | head -n 1)
+          APK_PATH=$(find . -name "*.apk" | grep -i "debug" | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find android -name "*.apk" | head -n 1)
+            APK_PATH=$(find . -name "*.apk" | head -n 1)
           fi
           echo "Found generated APK at: $APK_PATH"
           if [ -z "$APK_PATH" ]; then
-            echo "::error::No APK file found in android directory after build!"
+            echo "::error::No APK file found in repository after build!"
+            find . -name "build" -type d
             exit 1
           fi
           cp "$APK_PATH" build-output/FileHub.apk
