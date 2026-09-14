@@ -8,6 +8,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const https = require('https');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
@@ -145,7 +146,287 @@ const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Finance App Password Protection ---
+// Disable Express fingerprinting
+app.disable('x-powered-by');
+
+// --- HTTP Security Headers (Mozilla MDN HTTP Observatory Compliance) ---
+app.use((req, res, next) => {
+    // 2. Referrer Policy: strict
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+    // 3. Strict-Transport-Security (HSTS: 2 years, includeSubDomains, preload)
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+
+    // 5. X-Content-Type-Options: nosniff
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    // 6. X-Frame-Options: SAMEORIGIN (protects against clickjacking while allowing dashboard iframes)
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+
+    // Extra security: modern browser protections
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+
+    // For Proxy Browser requests, relax CORP & CSP so arbitrary proxied web pages can load their assets
+    if (req.path.startsWith('/api/proxy')) {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        return next();
+    }
+
+    // 7. Cross-Origin-Resource-Policy (CORP): same-origin
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+
+    // 1. Content Security Policy (CSP)
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
+        "font-src 'self' https://fonts.gstatic.com data:; " +
+        "img-src 'self' data: https: blob:; " +
+        "media-src 'self' blob: https:; " +
+        "connect-src 'self' https: wss: ws:; " +
+        "frame-src 'self' blob: data: https:; " +
+        "frame-ancestors 'self'; " +
+        "object-src 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'; " +
+        "upgrade-insecure-requests;"
+    );
+
+    next();
+});
+
+// Middleware to parse JSON & URL-encoded bodies (placed before auth routes)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// --- Universal Master Password Authentication Configuration ---
+// Priority: If DASHBOARD_PASSWORD is set in environment, ONLY that password is valid.
+// 'admin123' is only a temporary zero-config fallback if DASHBOARD_PASSWORD is not set.
+const MASTER_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin123';
+const IS_CUSTOM_PASSWORD_SET = Boolean(process.env.DASHBOARD_PASSWORD);
+
+if (IS_CUSTOM_PASSWORD_SET) {
+    console.log('[Auth] DASHBOARD_PASSWORD environment variable is active. Default fallback "admin123" is disabled.');
+} else {
+    console.warn('[Auth] WARNING: DASHBOARD_PASSWORD is not set. Using temporary fallback "admin123". Please configure DASHBOARD_PASSWORD in Render environment variables.');
+}
+
+// Session secret key (persists in process memory or can be configured via SESSION_SECRET)
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const activeSessions = new Map(); // token -> { expiresAt }
+
+// Brute-force protection: ip -> { count, lockedUntil }
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+function verifyMasterPassword(inputPassword) {
+    if (typeof inputPassword !== 'string' || !inputPassword) return false;
+    const inputHash = crypto.createHash('sha256').update(inputPassword).digest();
+    const targetHash = crypto.createHash('sha256').update(MASTER_PASSWORD).digest();
+    return crypto.timingSafeEqual(inputHash, targetHash);
+}
+
+function createSessionToken() {
+    const sessionId = crypto.randomBytes(24).toString('hex');
+    const timestamp = Date.now().toString(36);
+    const payload = `${sessionId}.${timestamp}`;
+    const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+    return `${payload}.${hmac}`;
+}
+
+function isValidSession(token) {
+    if (!token || typeof token !== 'string') return false;
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const [sessionId, timestamp, providedHmac] = parts;
+    const payload = `${sessionId}.${timestamp}`;
+    const expectedHmac = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+
+    const bufA = Buffer.from(providedHmac, 'hex');
+    const bufB = Buffer.from(expectedHmac, 'hex');
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+        return false;
+    }
+
+    const session = activeSessions.get(token);
+    if (!session || Date.now() > session.expiresAt) {
+        activeSessions.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function getSessionCookie(req) {
+    const cookies = String(req.headers.cookie || '').split(';');
+    for (const cookie of cookies) {
+        const [key, ...value] = cookie.trim().split('=');
+        if (key === 'dashboard_session') return decodeURIComponent(value.join('='));
+    }
+    return null;
+}
+
+// Clean up expired sessions periodically (every hour)
+setInterval(() => {
+    const now = Date.now();
+    for (const [tok, data] of activeSessions.entries()) {
+        if (now > data.expiresAt) activeSessions.delete(tok);
+    }
+}, 60 * 60 * 1000);
+
+// --- Public Authentication Endpoints ---
+
+// Healthcheck (public for Render keep-alive / external monitors)
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: Math.round(process.uptime()) });
+});
+
+// Login Page UI
+app.get('/login', (req, res) => {
+    const token = getSessionCookie(req);
+    if (isValidSession(token)) {
+        const returnUrl = typeof req.query.returnUrl === 'string' && req.query.returnUrl.startsWith('/') && !req.query.returnUrl.startsWith('//')
+            ? req.query.returnUrl
+            : '/';
+        return res.redirect(returnUrl);
+    }
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.get('/login.html', (req, res) => {
+    const returnParam = req.query.returnUrl ? `?returnUrl=${encodeURIComponent(req.query.returnUrl)}` : '';
+    res.redirect(`/login${returnParam}`);
+});
+
+// Check authentication status
+app.get('/api/auth/status', (req, res) => {
+    const token = getSessionCookie(req);
+    const authenticated = isValidSession(token);
+    res.json({ authenticated, isCustomPasswordSet: IS_CUSTOM_PASSWORD_SET });
+});
+
+// Login POST Handler
+app.post('/api/auth/login', (req, res) => {
+    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const attempt = loginAttempts.get(clientIp) || { count: 0, lockedUntil: 0 };
+
+    if (attempt.lockedUntil && now < attempt.lockedUntil) {
+        const remainingMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
+        return res.status(429).json({
+            error: `Too many failed attempts. Access locked for ${remainingMinutes} minute(s).`
+        });
+    }
+
+    const { password, returnUrl } = req.body || {};
+    if (!verifyMasterPassword(password)) {
+        attempt.count = (attempt.count || 0) + 1;
+        if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
+            attempt.lockedUntil = now + LOCKOUT_DURATION_MS;
+            loginAttempts.set(clientIp, attempt);
+            return res.status(429).json({
+                error: 'Too many failed login attempts. Locked out for 15 minutes.'
+            });
+        }
+        loginAttempts.set(clientIp, attempt);
+        return res.status(401).json({
+            error: `Incorrect master password. (${MAX_LOGIN_ATTEMPTS - attempt.count} attempt(s) remaining)`
+        });
+    }
+
+    // Success: clear rate limit tracker
+    loginAttempts.delete(clientIp);
+
+    const token = createSessionToken();
+    activeSessions.set(token, { expiresAt: now + SESSION_TTL_MS });
+
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const cookieFlags = [
+        `dashboard_session=${encodeURIComponent(token)}`,
+        'Path=/',
+        'HttpOnly',
+        'SameSite=Lax',
+        `Max-Age=${30 * 24 * 3600}`,
+        ...(isSecure ? ['Secure'] : [])
+    ];
+    res.setHeader('Set-Cookie', cookieFlags.join('; '));
+
+    const safeReturnUrl = typeof returnUrl === 'string' && returnUrl.startsWith('/') && !returnUrl.startsWith('//')
+        ? returnUrl
+        : '/';
+
+    return res.json({ ok: true, returnUrl: safeReturnUrl });
+});
+
+// Logout Handler
+const handleLogout = (req, res) => {
+    const token = getSessionCookie(req);
+    if (token) {
+        activeSessions.delete(token);
+    }
+    res.setHeader('Set-Cookie', 'dashboard_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    if (req.method === 'POST') {
+        return res.json({ ok: true });
+    }
+    return res.redirect('/login');
+};
+app.post('/api/auth/logout', handleLogout);
+app.get('/logout', handleLogout);
+
+// --- Universal Default-Deny (Zero-Trust) Gatekeeper Middleware ---
+// Protects ALL current and future pages, sub-apps, uploads, static files, and APIs.
+// Guarantees that any new app or URL added in the future is locked down by default.
+app.use((req, res, next) => {
+    const reqPath = req.path;
+
+    // 1. Explicit Public Whitelist
+    if (
+        reqPath === '/login' ||
+        reqPath === '/login.html' ||
+        reqPath === '/logout' ||
+        reqPath === '/favicon.ico' ||
+        reqPath === '/api/auth/login' ||
+        reqPath === '/api/auth/status' ||
+        reqPath === '/api/auth/logout' ||
+        reqPath === '/api/health'
+    ) {
+        return next();
+    }
+
+    // Allow static font assets for the login page
+    if (reqPath.startsWith('/assets/fonts/')) {
+        return next();
+    }
+
+    // 2. Validate Session
+    const token = getSessionCookie(req);
+    if (isValidSession(token)) {
+        return next();
+    }
+
+    // 3. Deny Unauthenticated Access
+    // For API calls: return 401 Unauthorized JSON
+    if (reqPath.startsWith('/api/')) {
+        return res.status(401).json({
+            error: 'Authentication required. Please log in.',
+            code: 'AUTH_REQUIRED'
+        });
+    }
+
+    // For browser pages (including /, /apps/*, /dietplan, /jupyter, /finance, /p/*, etc.)
+    const originalUrl = req.originalUrl || '/';
+    return res.redirect(`/login?returnUrl=${encodeURIComponent(originalUrl)}`);
+});
+
+// --- Server Monitor & Live Traffic Service ---
+const monitorService = require('./apps/monitor/server/monitorService');
+app.use(monitorService.middleware());
+app.use('/api/monitor', monitorService.router);
+
+// --- Finance App Password Protection (Compatibility) ---
 const FINANCE_PASSWORD_FILE = path.join(__dirname, 'finance-password.json');
 const loadFinancePassword = () => {
     try {
@@ -157,11 +438,6 @@ const loadFinancePassword = () => {
 };
 let FINANCE_PASSWORD = loadFinancePassword();
 const financeAuth = new Map(); // sessionId -> true (authenticated)
-
-// Generate a simple session token
-const generateSessionToken = () => {
-    return Math.random().toString(36).substring(2) + Date.now().toString(36);
-};
 
 const getCookieValue = (req, name) => {
     const cookies = String(req.headers.cookie || '').split(';');
@@ -178,25 +454,43 @@ const getFinanceSessionToken = (req) => (
     getCookieValue(req, 'financeSession')
 );
 
-// Finance authentication middleware - protects /finance and /api/finance routes
+// Finance authentication middleware - accepts master dashboard session or legacy finance session
 const requireFinanceAuth = (req, res, next) => {
     const sessionToken = getFinanceSessionToken(req);
+    const dashboardToken = getSessionCookie(req);
 
-    if (financeAuth.has(sessionToken)) {
+    if (isValidSession(dashboardToken) || financeAuth.has(sessionToken)) {
         next();
     } else {
         res.status(401).json({ error: 'Authentication required', code: 'FINANCE_AUTH_REQUIRED' });
     }
 };
 
-// --- Server Monitor & Live Traffic Service ---
-const monitorService = require('./apps/monitor/server/monitorService');
-app.use(monitorService.middleware());
-app.use('/api/monitor', monitorService.router);
-
-// Middleware to parse JSON bodies
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+// Helper to reliably terminate child process trees cross-platform (Windows & Linux)
+function killProcessTree(childProc, signal = 'SIGTERM') {
+    if (!childProc || !childProc.pid) return;
+    const pid = childProc.pid;
+    if (process.platform === 'win32') {
+        try {
+            spawn('taskkill', ['/pid', pid.toString(), '/f', '/t']);
+        } catch (e) {
+            try { childProc.kill('SIGKILL'); } catch {}
+        }
+    } else {
+        try {
+            process.kill(-pid, signal);
+        } catch {
+            try { childProc.kill(signal); } catch {}
+        }
+        setTimeout(() => {
+            try {
+                process.kill(-pid, 'SIGKILL');
+            } catch {
+                try { childProc.kill('SIGKILL'); } catch {}
+            }
+        }, 2000);
+    }
+}
 
 // --- DietPlan Proxy & Process Setup ---
 const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
@@ -208,13 +502,35 @@ async function startDietPlanIfEnabled() {
         console.log('[DietPlan] App is disabled — skipping subprocess launch.');
         return;
     }
-    dietPlanProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'main:app', '--port', '8005', '--host', '127.0.0.1', '--root-path', '/dietplan'], {
-        cwd: path.join(__dirname, 'apps', 'DietPlan'),
-        env: process.env
-    });
-    dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
-    dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
-    console.log('[DietPlan] Subprocess started.');
+    if (dietPlanProcess) {
+        console.log('[DietPlan] Subprocess already running.');
+        return;
+    }
+    try {
+        dietPlanProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'main:app', '--port', '8005', '--host', '127.0.0.1', '--root-path', '/dietplan'], {
+            cwd: path.join(__dirname, 'apps', 'DietPlan'),
+            env: process.env
+        });
+        dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
+        dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
+        dietPlanProcess.on('exit', (code, signal) => {
+            console.log(`[DietPlan] Process exited (code: ${code}, signal: ${signal})`);
+            dietPlanProcess = null;
+        });
+        console.log(`[DietPlan] Subprocess started (PID: ${dietPlanProcess.pid}).`);
+    } catch (err) {
+        console.error('[DietPlan] Failed to start subprocess:', err.message);
+        dietPlanProcess = null;
+    }
+}
+
+function stopDietPlan() {
+    if (dietPlanProcess) {
+        console.log(`[DietPlan] Stopping subprocess (PID: ${dietPlanProcess.pid})...`);
+        killProcessTree(dietPlanProcess);
+        dietPlanProcess = null;
+        console.log('[DietPlan] Subprocess stopped.');
+    }
 }
 
 app.use('/dietplan', (req, res, next) => {
@@ -351,11 +667,10 @@ function stopJupyter() {
         jupyterCheckTimer = null;
     }
     if (jupyterProcess) {
-        console.log('[Jupyter] Stopping subprocess...');
-        try {
-            jupyterProcess.kill('SIGTERM');
-        } catch {}
+        console.log(`[Jupyter] Stopping subprocess (PID: ${jupyterProcess.pid})...`);
+        killProcessTree(jupyterProcess);
         jupyterProcess = null;
+        console.log('[Jupyter] Subprocess stopped.');
     }
     isJupyterReady = false;
     isJupyterStarting = false;
@@ -407,6 +722,14 @@ app.use('/jupyter', (req, res, next) => {
 });
 
 app.use(jupyterProxy);
+
+// Guard /api/jupyter
+app.use('/api/jupyter', (req, res, next) => {
+    if (isAppDisabled('jupyter')) {
+        return res.status(503).json({ error: 'Jupyter Lab is currently disabled. Enable it from dashboard settings.' });
+    }
+    next();
+});
 
 // Jupyter status and management APIs
 app.get('/api/jupyter/status', async (req, res) => {
@@ -483,12 +806,29 @@ app.get('/api/finance-auth-check', (req, res) => {
 
 // --- Crawler API Routes ---
 const crawlerRoutes = require('./apps/crawler/server/routes');
-app.use('/api/crawler', crawlerRoutes);
-app.use('/uploads/crawler', express.static(path.join(__dirname, 'uploads', 'crawler')));
 const crawlerEngine = require('./apps/crawler/server/engine');
-crawlerEngine.startBackgroundWorker();
-// Pass the isAppDisabled check into the crawler engine so its worker loop can skip when disabled
 crawlerEngine.setDisabledCheck(() => isAppDisabled('crawler'));
+
+async function stopCrawler() {
+    console.log('[Crawler] Stopping background worker and all active runs/browsers...');
+    await crawlerEngine.stopAllCrawlerRuns('Crawler app disabled from dashboard settings.');
+    console.log('[Crawler] Background worker and active runs stopped.');
+}
+
+// Guard /api/crawler routes
+app.use('/api/crawler', (req, res, next) => {
+    if (isAppDisabled('crawler')) {
+        return res.status(503).json({ error: 'Crawler Engine is currently disabled. Enable it from dashboard settings.' });
+    }
+    next();
+}, crawlerRoutes);
+
+app.use('/uploads/crawler', (req, res, next) => {
+    if (isAppDisabled('crawler')) {
+        return res.status(503).send('Crawler is disabled.');
+    }
+    next();
+}, express.static(path.join(__dirname, 'uploads', 'crawler')));
 
 // --- AI Proxy for NVIDIA (CORS Bypass) ---
 app.post('/api/ai/nvidia-proxy', async (req, res) => {
@@ -1422,12 +1762,12 @@ app.use('/api/finance', requireFinanceAuth, financeRoutes);
 // Custom middleware to protect static files under /finance
 const protectFinanceStatic = (req, res, next) => {
     const sessionToken = getFinanceSessionToken(req);
+    const dashboardToken = getSessionCookie(req);
 
-    if (financeAuth.has(sessionToken)) {
+    if (isValidSession(dashboardToken) || financeAuth.has(sessionToken)) {
         next();
     } else {
-        // Redirect to login page or return auth required
-        res.redirect('/finance-login.html');
+        res.redirect(`/login?returnUrl=${encodeURIComponent(req.originalUrl)}`);
     }
 };
 
@@ -1531,6 +1871,59 @@ app.use((req, res, next) => {
     next();
 });
 
+// --- App Lifecycle Management ---
+async function syncAppService(appId, isNowDisabled) {
+    console.log(`[Lifecycle] Syncing service for '${appId}' (disabled: ${isNowDisabled})...`);
+    switch (appId) {
+        case 'dietplan':
+            if (isNowDisabled) {
+                stopDietPlan();
+            } else {
+                await startDietPlanIfEnabled();
+            }
+            break;
+        case 'jupyter':
+            if (isNowDisabled) {
+                stopJupyter();
+            } else {
+                await startJupyterIfEnabled();
+            }
+            break;
+        case 'crawler':
+            if (isNowDisabled) {
+                await stopCrawler();
+            } else {
+                await crawlerEngine.startBackgroundWorker();
+            }
+            break;
+        case 'newshunt':
+            if (isNowDisabled) {
+                stopNewshuntJob();
+            } else {
+                startNewshuntScheduler();
+            }
+            break;
+        case 'server-monitor':
+            if (isNowDisabled) {
+                monitorService.closeActiveSseClients();
+            }
+            break;
+        case 'ytdownloader':
+            if (isNowDisabled) {
+                stopYtDownloader();
+            }
+            break;
+    }
+}
+
+async function syncAllAppServices() {
+    console.log('[Lifecycle] Synchronizing all app background services...');
+    const knownApps = ['dietplan', 'jupyter', 'crawler', 'newshunt', 'server-monitor', 'ytdownloader'];
+    for (const id of knownApps) {
+        await syncAppService(id, isAppDisabled(id));
+    }
+}
+
 // --- Dashboard Settings API ---
 app.get('/api/dashboard/settings', async (req, res) => {
     try {
@@ -1553,19 +1946,66 @@ app.post('/api/dashboard/settings', async (req, res) => {
         if (!doc) doc = new DashboardSettings();
         doc.disabledApps = filtered;
         await doc.save();
+
+        const previousDisabled = new Set(_disabledAppsCache);
         // Update the in-memory cache immediately
         _disabledAppsCache = new Set(filtered);
         console.log('[Dashboard] Disabled apps updated:', filtered);
-        if (_disabledAppsCache.has('jupyter')) {
-            stopJupyter();
-        } else if (!jupyterProcess) {
-            startJupyterIfEnabled();
+
+        // Synchronize lifecycle for any apps whose state changed
+        const allChecked = new Set([...previousDisabled, ..._disabledAppsCache]);
+        for (const appId of allChecked) {
+            const wasDisabled = previousDisabled.has(appId);
+            const isNowDisabled = _disabledAppsCache.has(appId);
+            if (wasDisabled !== isNowDisabled) {
+                await syncAppService(appId, isNowDisabled);
+            }
         }
+
         res.json({ ok: true, disabledApps: filtered });
     } catch (e) {
         console.error('Error saving dashboard settings:', e);
         res.status(500).json({ error: 'Failed to save settings' });
     }
+});
+
+// Middleware to block direct access to disabled app static pages (to stop background client JS polling)
+app.use('/apps/:appName', (req, res, next) => {
+    const appFolder = req.params.appName;
+    const folderToAppId = {
+        'monitor': 'server-monitor',
+        'Fretboard-Trainer': 'fretboard-trainer',
+        'DietPlan': 'dietplan'
+    };
+    const appId = folderToAppId[appFolder] || appFolder.toLowerCase();
+    if (isAppDisabled(appId)) {
+        if (req.accepts('html')) {
+            return res.status(503).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>App Disabled</title>
+                    <style>
+                        body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 60px 20px; }
+                        h1 { color: #f97316; margin-bottom: 8px; }
+                        p { color: #94a3b8; font-size: 1.1rem; line-height: 1.6; }
+                        a { display: inline-block; margin-top: 20px; color: #38bdf8; text-decoration: none; font-weight: bold; border: 1px solid #38bdf8; padding: 8px 16px; border-radius: 8px; }
+                        a:hover { background: #38bdf8; color: #0f172a; }
+                    </style>
+                </head>
+                <body>
+                    <h1>App is Disabled</h1>
+                    <p>This application and its background services have been disabled to conserve system memory.</p>
+                    <p>Enable it from the Dashboard Settings if you wish to use it.</p>
+                    <a href="/">← Return to Dashboard</a>
+                </body>
+                </html>
+            `);
+        }
+        return res.status(503).json({ error: 'App is currently disabled. Enable it from dashboard settings.' });
+    }
+    next();
 });
 
 // --- Static File Serving ---
@@ -3551,6 +3991,10 @@ async function bgRate(settings) {
     const BATCH = 8;
     let total = 0;
     for (let i = 0; i < uncats.length; i += BATCH) {
+        if (isAppDisabled('newshunt')) {
+            console.log('[NewsHunt] bgRate aborted: app is disabled.');
+            break;
+        }
         const batch = uncats.slice(i, i + BATCH);
         total += await rateServerArticleBatch(batch, settings, { iText, aText, cText }, Math.min(i + BATCH, uncats.length) + '/' + uncats.length);
         if (i + BATCH < uncats.length) await new Promise(r => setTimeout(r, 800));
@@ -3716,6 +4160,10 @@ async function bgGroupAndTagV2(settings) {
     let grouped = 0, tagged = 0;
 
     for (let i = 0; i < untagged.length; i += BATCH) {
+        if (isAppDisabled('newshunt')) {
+            console.log('[NewsHunt] bgGroupAndTagV2 aborted: app is disabled.');
+            break;
+        }
         const batch = untagged.slice(i, i + BATCH);
         const result = await groupServerArticleBatchV2(batch, settings, Math.min(i + BATCH, untagged.length) + '/' + untagged.length);
         grouped += result.grouped;
@@ -3858,6 +4306,7 @@ async function bgMergeTopicsV2(settings) {
 
 // --- Main background job orchestrator ---
 async function runBackgroundJob(opts) {
+    if (isAppDisabled('newshunt')) return false;
     const categorizeOnly = opts && opts.categorizeOnly;
     if (bgJob.active) return false;
     bgJob.active = true;
@@ -3870,6 +4319,11 @@ async function runBackgroundJob(opts) {
     // Runs async — does NOT block the HTTP response
     (async () => {
         try {
+            if (isAppDisabled('newshunt')) {
+                bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled');
+                return;
+            }
+
             const data = await readNewshuntData();
             const settings = data.settings || {};
 
@@ -3878,6 +4332,12 @@ async function runBackgroundJob(opts) {
                 const feeds = Array.isArray(data.feeds) ? data.feeds : [];
                 if (feeds.length === 0) { bgLog('done', 'No feeds configured'); return; }
                 const { newArticles, errors } = await serverFetchAllFeeds(feeds);
+
+                if (isAppDisabled('newshunt')) {
+                    bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled');
+                    return;
+                }
+
                 bgJob.newArticlesCount = newArticles.length;
                 bgLog('saving', 'Saving ' + newArticles.length + ' new articles, ' + errors.length + ' errors');
                 const fresh = await readNewshuntData();
@@ -3891,6 +4351,11 @@ async function runBackgroundJob(opts) {
                 if (cleanup.deletedCount > 0 || cleanup.normalizedDateCount > 0) {
                     bgLog('saving', 'Cleanup complete: ' + cleanupSummary(cleanup));
                 }
+            }
+
+            if (isAppDisabled('newshunt')) {
+                bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled');
+                return;
             }
 
             const hasKey = Object.values(SRV_AI).some(p => !!process.env[p.env])
@@ -3915,6 +4380,11 @@ async function runBackgroundJob(opts) {
                 bgLog('rating', 'No unrated articles');
             }
 
+            if (isAppDisabled('newshunt')) {
+                bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled');
+                return;
+            }
+
             const afterRatingData = await readNewshuntData();
             const needsTags = Object.values(afterRatingData.articles || {}).some(a => !a.topics || a.topics.length === 0);
             let grouped = 0, tagged = 0;
@@ -3925,6 +4395,11 @@ async function runBackgroundJob(opts) {
                 bgLog('grouping', 'Grouped ' + grouped + ', tagged ' + tagged);
             } else {
                 bgLog('grouping', 'All articles already tagged');
+            }
+
+            if (isAppDisabled('newshunt')) {
+                bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled');
+                return;
             }
 
             const merged = await bgMergeTopicsV2(settings);
@@ -4065,10 +4540,51 @@ async function checkNewshuntAutoRefresh() {
     }
 }
 
-// Check every 30 seconds — lightweight, no external cron dependency
-setInterval(checkNewshuntAutoRefresh, 30 * 1000);
-setTimeout(checkNewshuntAutoRefresh, 10 * 1000);
-console.log(`[AutoRefresh] Scheduled feed refresh at ${newshuntAutoRefresh.slots.map(slot => slot.label).join(', ')} IST`);
+let newshuntSchedulerTimer = null;
+let newshuntInitialTimeout = null;
+
+function startNewshuntScheduler() {
+    if (isAppDisabled('newshunt')) {
+        console.log('[AutoRefresh] NewsHunt is disabled — skipping scheduler start.');
+        return;
+    }
+    if (!newshuntSchedulerTimer) {
+        newshuntSchedulerTimer = setInterval(checkNewshuntAutoRefresh, 30 * 1000);
+        newshuntInitialTimeout = setTimeout(checkNewshuntAutoRefresh, 10 * 1000);
+        console.log(`[AutoRefresh] Scheduled feed refresh at ${newshuntAutoRefresh.slots.map(slot => slot.label).join(', ')} IST`);
+    }
+}
+
+function stopNewshuntScheduler() {
+    if (newshuntSchedulerTimer) {
+        clearInterval(newshuntSchedulerTimer);
+        newshuntSchedulerTimer = null;
+    }
+    if (newshuntInitialTimeout) {
+        clearTimeout(newshuntInitialTimeout);
+        newshuntInitialTimeout = null;
+    }
+    console.log('[AutoRefresh] NewsHunt scheduler stopped.');
+}
+
+function stopNewshuntJob() {
+    stopNewshuntScheduler();
+    if (bgJob.active) {
+        bgJob.active = false;
+        bgJob.error = 'NewsHunt was disabled from dashboard settings.';
+        bgJob.finishedAt = Date.now();
+        bgLog('cancelled', 'NewsHunt background job cancelled because app was disabled.');
+        console.log('[NewsHunt] Active background job cancelled.');
+    }
+}
+
+// Guard all /api/newshunt routes when disabled
+app.use('/api/newshunt', (req, res, next) => {
+    if (isAppDisabled('newshunt')) {
+        return res.status(503).json({ error: 'NewsHunt is currently disabled. Enable it from dashboard settings.' });
+    }
+    next();
+});
 
 // POST /api/newshunt/refresh — trigger server-side RSS fetch + background categorization
 app.post('/api/newshunt/refresh', async (req, res) => {
@@ -4644,12 +5160,42 @@ const getFfmpegCandidates = () => {
     });
 };
 
+const activeYtProcesses = new Set();
+
+function stopYtDownloader() {
+    console.log(`[YT Downloader] Terminating ${activeYtProcesses.size} active download processes...`);
+    for (const child of activeYtProcesses) {
+        killProcessTree(child);
+    }
+    activeYtProcesses.clear();
+
+    // Mark any running downloads as cancelled
+    if (typeof downloads !== 'undefined') {
+        for (const [id, d] of downloads.entries()) {
+            if (d.status === 'downloading' || d.status === 'starting' || d.status === 'processing') {
+                downloads.set(id, {
+                    ...d,
+                    status: 'cancelled',
+                    message: 'Download cancelled because YT Downloader was disabled.',
+                    error: 'App disabled by user.',
+                    updatedAt: Date.now()
+                });
+            }
+        }
+    }
+    console.log('[YT Downloader] All active download processes stopped.');
+}
+
 const runCommand = (command, args, options = {}) => new Promise((resolve, reject) => {
+    if (isAppDisabled('ytdownloader')) {
+        return reject(new Error('YT Downloader is disabled.'));
+    }
     const child = spawn(command, args, {
         cwd: options.cwd || __dirname,
         env: process.env,
         shell: false
     });
+    activeYtProcesses.add(child);
 
     let stdout = '';
     let stderr = '';
@@ -4657,7 +5203,7 @@ const runCommand = (command, args, options = {}) => new Promise((resolve, reject
 
     if (options.timeoutMs) {
         timer = setTimeout(() => {
-            child.kill('SIGTERM');
+            killProcessTree(child);
         }, options.timeoutMs);
     }
 
@@ -4673,11 +5219,13 @@ const runCommand = (command, args, options = {}) => new Promise((resolve, reject
     });
 
     child.on('error', (error) => {
+        activeYtProcesses.delete(child);
         if (timer) clearTimeout(timer);
         reject(error);
     });
 
     child.on('close', (code) => {
+        activeYtProcesses.delete(child);
         if (timer) clearTimeout(timer);
         if (code === 0) {
             resolve({ stdout, stderr });
@@ -5063,6 +5611,14 @@ const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
     }
 };
 
+// Guard YT Downloader endpoints when disabled
+app.use(['/api/video-info', '/api/download', '/api/download-progress', '/api/dependencies', '/api/library', '/api/video'], (req, res, next) => {
+    if (isAppDisabled('ytdownloader')) {
+        return res.status(503).json({ error: 'YT Downloader is currently disabled. Enable it from dashboard settings.' });
+    }
+    next();
+});
+
 app.get('/api/video-info', async (req, res) => {
     const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
     if (!rawUrl) {
@@ -5292,16 +5848,23 @@ Promise.all([probeYtDlp(), probeFfmpeg()])
 const server = app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     monitorService.setServer(server);
-    // Load dashboard settings cache from MongoDB, then start conditional services
+    // Load dashboard settings cache from MongoDB
     await loadDashboardSettings();
     console.log('[Dashboard] Settings loaded. Disabled apps:', [..._disabledAppsCache]);
-    checkNewshuntAutoRefresh();
-    await startDietPlanIfEnabled();
-    await startJupyterIfEnabled();
+    // Connect monitorService disabled check
+    monitorService.setDisabledCheck(() => isAppDisabled('server-monitor'));
+    // Synchronize all background services and subprocesses according to loaded settings
+    await syncAllAppServices();
 });
 
 // WebSocket upgrade forwarding for JupyterLab interactive kernels & terminals
 server.on('upgrade', (req, socket, head) => {
+    const token = getSessionCookie(req);
+    if (!isValidSession(token)) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+    }
     if (req.url && req.url.startsWith('/jupyter')) {
         jupyterProxy.upgrade(req, socket, head);
     }

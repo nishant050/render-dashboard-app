@@ -902,16 +902,64 @@ async function cleanupStaleRuns() {
     }
 }
 
+let workerInterval = null;
+
 async function startBackgroundWorker() {
     await cleanupStaleRuns();
-    setInterval(crawlerWorkerLoop, 60000);
-    console.log('\x1b[32m[Startup]\x1b[0m Background crawler started (60s tick).');
+    if (!workerInterval) {
+        workerInterval = setInterval(crawlerWorkerLoop, 60000);
+        console.log('\x1b[32m[Startup]\x1b[0m Background crawler started (60s tick).');
+    }
+}
+
+function stopBackgroundWorker() {
+    if (workerInterval) {
+        clearInterval(workerInterval);
+        workerInterval = null;
+        console.log('\x1b[33m[Crawler]\x1b[0m Background worker interval stopped.');
+    }
+}
+
+async function stopAllCrawlerRuns(reason = 'Crawler app disabled from dashboard settings.') {
+    stopBackgroundWorker();
+
+    // Terminate all in-memory active browsers
+    const runIds = Array.from(activeBrowsers.keys());
+    for (const runId of runIds) {
+        requestStopRun(runId);
+        await killActiveRunBrowser(runId).catch(() => {});
+    }
+
+    // Also mark any running runs in MongoDB as stopped
+    try {
+        const runningRuns = await CrawlerRun.find({ status: 'running' });
+        for (const run of runningRuns) {
+            requestStopRun(run._id);
+            await killActiveRunBrowser(run._id).catch(() => {});
+            run.status = 'stopped';
+            run.endTime = new Date();
+            run.activityLog = run.activityLog || [];
+            run.activityLog.push(`[System] Terminated: ${reason}`);
+            if (!run.finalSummary) {
+                run.finalSummary = `# Crawl Stopped\n\n${reason}`;
+            }
+            await run.save().catch(() => {});
+        }
+        if (runningRuns.length > 0) {
+            console.log(`\x1b[33m[Crawler]\x1b[0m Stopped ${runningRuns.length} running crawler runs.`);
+        }
+    } catch (err) {
+        console.error('\x1b[31m[Crawler]\x1b[0m Error terminating active runs:', err.message);
+    }
 }
 
 module.exports = {
     startBackgroundWorker,
+    stopBackgroundWorker,
+    stopAllCrawlerRuns,
     executeCrawlerRun,
     requestStopRun,
     killActiveRunBrowser,
     setDisabledCheck
 };
+

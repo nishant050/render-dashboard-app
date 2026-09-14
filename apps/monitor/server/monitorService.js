@@ -245,8 +245,38 @@ async function collectMetrics() {
     };
 }
 
+// Active SSE clients
+const activeSseClients = new Set();
+let _isDisabledFn = () => false;
+
+function setDisabledCheck(fn) {
+    _isDisabledFn = fn;
+    if (typeof fn === 'function' && fn()) {
+        closeActiveSseClients();
+    }
+}
+
+function isMonitoringDisabled() {
+    try {
+        return typeof _isDisabledFn === 'function' && _isDisabledFn();
+    } catch {
+        return false;
+    }
+}
+
+function closeActiveSseClients() {
+    for (const res of activeSseClients) {
+        try {
+            res.write(`event: disabled\ndata: ${JSON.stringify({ message: 'Server Monitor is disabled' })}\n\n`);
+            res.end();
+        } catch {}
+    }
+    activeSseClients.clear();
+}
+
 // Background ticker to record history even if no client is actively polling
 setInterval(async () => {
+    if (isMonitoringDisabled()) return;
     try {
         calculateCpuUsage();
         pruneStaleUsers();
@@ -270,6 +300,7 @@ setInterval(async () => {
 // --- Traffic Tracking Middleware ---
 function trackingMiddleware() {
     return (req, res, next) => {
+        if (isMonitoringDisabled()) return next();
         // Skip noise: don't track monitoring SSE stream or static fonts/icons requests as separate user page hits
         const path = req.path || '';
         if (path.startsWith('/api/monitor/stream')) {
@@ -318,6 +349,9 @@ function trackingMiddleware() {
 
 // REST Metrics
 router.get('/metrics', async (req, res) => {
+    if (isMonitoringDisabled()) {
+        return res.status(503).json({ error: 'Server Monitor is disabled. Enable it from dashboard settings.' });
+    }
     try {
         const metrics = await collectMetrics();
         res.json(metrics);
@@ -328,10 +362,15 @@ router.get('/metrics', async (req, res) => {
 
 // Real-time SSE Stream
 router.get('/stream', async (req, res) => {
+    if (isMonitoringDisabled()) {
+        return res.status(503).send('Server Monitor is disabled');
+    }
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering (Nginx / Render)
+
+    activeSseClients.add(res);
 
     // Send initial immediate payload
     try {
@@ -341,6 +380,12 @@ router.get('/stream', async (req, res) => {
 
     // Push every 1000ms
     const interval = setInterval(async () => {
+        if (isMonitoringDisabled()) {
+            clearInterval(interval);
+            activeSseClients.delete(res);
+            try { res.end(); } catch {}
+            return;
+        }
         try {
             const data = await collectMetrics();
             res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -351,11 +396,14 @@ router.get('/stream', async (req, res) => {
 
     req.on('close', () => {
         clearInterval(interval);
+        activeSseClients.delete(res);
     });
 });
 
 module.exports = {
     router,
     middleware: trackingMiddleware,
-    setServer: (server) => { httpServer = server; }
+    setServer: (server) => { httpServer = server; },
+    setDisabledCheck,
+    closeActiveSseClients
 };
