@@ -1,11 +1,30 @@
 # Dependencies
 node_modules/
 
-# Uploaded files (Render will create this folder)
+# Environment and Secrets
+.env
+.env.*
+*.env
+!.env.example
+finance-password.json
+*-password.json
+credentials.json
+*.pem
+*.key
+
+# Cookie files & tokens
+*cookie*.txt
+*cookies*.txt
+
+# Diagnostic and scratch test scripts
+test_*.js
+
+# Uploaded files (Render / persistent storage creates this folder)
 uploads/
 
-# Local log files
+# Local log files & cache
 *.log
 *.out.log
 *.err.log
 .cache/
+.kilo/

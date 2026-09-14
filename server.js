@@ -1,3 +1,32 @@
+// Load environment variables from .env file if present
+(function loadEnv() {
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.join(__dirname, '.env');
+    if (fs.existsSync(envPath)) {
+        try {
+            const content = fs.readFileSync(envPath, 'utf8');
+            content.split(/\r?\n/).forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) return;
+                const match = trimmed.match(/^([\w.-]+)\s*=\s*(.*)$/);
+                if (match) {
+                    const key = match[1];
+                    let val = match[2] || '';
+                    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                        val = val.slice(1, -1);
+                    }
+                    if (process.env[key] === undefined) {
+                        process.env[key] = val;
+                    }
+                }
+            });
+        } catch (err) {
+            console.warn('[Env] Could not read .env file:', err.message);
+        }
+    }
+})();
+
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -16,10 +45,15 @@ const mongoose = require('mongoose');
 const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 
 // --- MongoDB Configuration ---
-const MONGO_URI = 'mongodb://admin:admin123@ac-wnbtpbs-shard-00-00.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-01.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-02.42f6xm7.mongodb.net:27017/render-dashboard?ssl=true&replicaSet=atlas-usm1o0-shard-0&authSource=admin&retryWrites=true&w=majority&appName=diet-plan';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/render-dashboard';
+if (process.env.MONGO_URI) {
+    console.log('[DB] Connecting to configured MongoDB URI...');
+} else {
+    console.warn('[DB] WARNING: MONGO_URI environment variable is not set. Falling back to local mongodb://127.0.0.1:27017/render-dashboard.');
+}
 mongoose.connect(MONGO_URI)
     .then(() => console.log('Connected to MongoDB (render-dashboard)'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => console.error('MongoDB connection error:', err.message));
 
 // --- Schemas & Models ---
 
@@ -140,8 +174,7 @@ function isAppDisabled(appId) {
 }
 
 // Scrape.do API key - set via SCRAPE_DO_API_KEY environment variable
-// Default to user-provided key if not set, will fall back to manual links
-const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '942211ddfd1b40c5aaac053e55d17fb2bacb64a543d';
+const SCRAPE_DO_API_KEY = process.env.SCRAPE_DO_API_KEY || '';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -485,12 +518,23 @@ app.use('/api/monitor', monitorService.router);
 // --- Finance App Password Protection (Compatibility) ---
 const FINANCE_PASSWORD_FILE = path.join(__dirname, 'finance-password.json');
 const loadFinancePassword = () => {
-    try {
-        const data = JSON.parse(fs.readFileSync(FINANCE_PASSWORD_FILE, 'utf8'));
-        return typeof data.password === 'string' && data.password ? data.password : 'admin123';
-    } catch {
-        return 'admin123';
+    if (process.env.FINANCE_PASSWORD) {
+        return process.env.FINANCE_PASSWORD;
     }
+    if (process.env.DASHBOARD_PASSWORD) {
+        return process.env.DASHBOARD_PASSWORD;
+    }
+    try {
+        if (fs.existsSync(FINANCE_PASSWORD_FILE)) {
+            const data = JSON.parse(fs.readFileSync(FINANCE_PASSWORD_FILE, 'utf8'));
+            if (typeof data.password === 'string' && data.password) {
+                return data.password;
+            }
+        }
+    } catch {
+        // Fallback below
+    }
+    return 'admin123';
 };
 let FINANCE_PASSWORD = loadFinancePassword();
 const financeAuth = new Map(); // sessionId -> true (authenticated)

@@ -9,53 +9,33 @@ const Settings = require('./models/Settings');
 
 const defaultMonthlyPlan = () => ({
     incomes: [
-        { name: 'My Salary', amount: 75000 },
-        { name: 'Wife Salary', amount: 2000 }
+        { name: 'Primary Salary', amount: 60000 },
+        { name: 'Secondary Income', amount: 15000 }
     ],
     expenses: [
-        { name: 'Savings', amount: 22059.01, store: 'PNB' },
-        { name: 'Rent', amount: 8000, store: 'SBI' },
-        { name: 'Petrol', amount: 1400, store: 'BOI' },
-        { name: 'Electricity', amount: 1200, store: 'BOI' },
-        { name: 'Mobile', amount: 700, store: 'BOI' },
-        { name: 'Dairy', amount: 2500, store: 'Mobikwik Wallet' },
-        { name: 'Fresh Vegetable and Fruits', amount: 6500, store: 'Mobikwik Wallet' },
-        { name: 'Groceries', amount: 5000, store: 'Amazon Pay Credit Card' },
-        { name: 'Protein', amount: 4000, store: 'Amazon Pay Credit Card' },
-        { name: 'Vitamins', amount: 1500, store: 'Amazon Pay Credit Card' },
-        { name: 'Hyderabad Trip', amount: 3000, store: 'SBI' },
-        { name: 'Hisar Trip', amount: 5000, store: 'SBI' },
-        { name: 'Wife Gift', amount: 5000, store: 'SBI' },
-        { name: 'Wife Daily', amount: 10000, store: 'PNB' }
+        { name: 'Rent & Housing', amount: 16000, store: 'Bank Account' },
+        { name: 'Groceries & Supplies', amount: 9000, store: 'Debit Card' },
+        { name: 'Utilities & Bills', amount: 3500, store: 'Bank Account' },
+        { name: 'Fuel & Transport', amount: 2500, store: 'Debit Card' },
+        { name: 'Health & Wellness', amount: 3000, store: 'Credit Card' },
+        { name: 'Dining & Leisure', amount: 4000, store: 'Credit Card' },
+        { name: 'Emergency Savings', amount: 10000, store: 'Bank Account' },
+        { name: 'Monthly Investments', amount: 15000, store: 'Bank Account' }
     ],
     stores: [
-        { name: 'PNB', amount: 22059, purpose: 'Savings in MF' },
-        { name: 'SBI', amount: 21000, purpose: 'Rent and Trip MF' },
-        { name: 'Mobikwik Wallet', amount: 10400, purpose: 'All dairy, fruits' },
-        { name: 'BOI', amount: 1900, purpose: 'Electricity and Mobile' },
-        { name: 'Amazon Pay Credit Card', amount: 10500, purpose: 'Groceries, Protein and vitamins' }
+        { name: 'Bank Account', amount: 44500, purpose: 'Fixed expenses, bills and SIPs' },
+        { name: 'Debit Card', amount: 11500, purpose: 'Groceries and daily fuel' },
+        { name: 'Credit Card', amount: 7000, purpose: 'Health, leisure, and shopping' }
     ],
     investments: [
-        { fund: 'ICICI Prudential Liquid Fund SIP', amount: 3000, purpose: 'Hyderabad Trip' },
-        { fund: 'Axis Liquid Fund SIP', amount: 5000, purpose: 'Hisar Trip' },
-        { fund: 'Nippon India Liquid Fund SIP', amount: 5000, purpose: 'Wife Gift' },
-        { fund: 'Parag Parikh Flexi Cap Direct Growth', amount: 7036.02, purpose: 'Education + Retirement' },
-        { fund: 'Nippon India Small Cap Direct Growth', amount: 1298.30, purpose: 'Child Marriage' },
-        { fund: 'HDFC Mid-Cap Opportunities Direct', amount: 4013.58, purpose: 'Retirement' },
-        { fund: 'HDFC Balanced Advantage Direct Growth', amount: 6456.86, purpose: 'Car' },
-        { fund: 'SBI Gold Fund Direct', amount: 3254.26, purpose: 'Gold' },
-        { fund: 'Kotak Equity Arbitrage Direct Growth', amount: 16064.35, purpose: 'Honey Moon' }
+        { fund: 'Broad Market Index Fund SIP', amount: 7500, purpose: 'Long-term retirement' },
+        { fund: 'Liquid Reserve Fund SIP', amount: 4500, purpose: 'Emergency fund cushion' },
+        { fund: 'Balanced Hybrid Fund SIP', amount: 3000, purpose: 'Medium-term wealth building' }
     ],
     goals: [
-        { name: 'Children Education after 12th', expectedAmount: 1000000, years: 19, interestRate: 13, monthlyEmi: 1015.65, fund: 'Parag Parikh Flexi Cap Direct Growth', important: true },
-        { name: 'Children Marriage', expectedAmount: 3500000, years: 25, interestRate: 14, monthlyEmi: 1298.30, fund: 'Nippon India Small Cap Direct Growth', important: true },
-        { name: 'My Retirement', expectedAmount: 15000000, years: 22, interestRate: 13, monthlyEmi: 10033.95, fund: 'Parag Parikh Flexi Cap Direct Growth + HDFC Mid-Cap Opportunities Direct', important: true },
-        { name: 'Purchase a car', expectedAmount: 500000, years: 5, interestRate: 10, monthlyEmi: 6456.86, fund: 'HDFC Balanced Advantage Direct Growth', important: true },
-        { name: 'Canada Trip', expectedAmount: 900000, years: 4, interestRate: 10, monthlyEmi: 15326.33, fund: 'ICICI Prudential Balanced Advantage Direct Growth', important: false },
-        { name: 'Child birth hospital fees', expectedAmount: 150000, years: 2, interestRate: 8, monthlyEmi: 5784.09, fund: 'Tata Arbitrage Direct Growth', important: false },
-        { name: 'Purchase of land 150Jag', expectedAmount: 7500000, years: 8, interestRate: 10, monthlyEmi: 51306.23, fund: 'HDFC Balanced Advantage Direct Growth + Parag Parikh Flexi Cap Direct', important: false },
-        { name: '18 Gram Gold', expectedAmount: 252000, years: 5, interestRate: 10, monthlyEmi: 3254.26, fund: 'SBI Gold Fund Direct', important: true },
-        { name: 'Honeymoon Trip', expectedAmount: 200000, years: 1, interestRate: 8, monthlyEmi: 16064.35, fund: 'Kotak Equity Arbitrage Direct Growth', important: true }
+        { name: 'Emergency Reserve (6 Months)', expectedAmount: 300000, years: 2, interestRate: 7, monthlyEmi: 11600, fund: 'Liquid Reserve Fund', important: true },
+        { name: 'Retirement Corpus', expectedAmount: 10000000, years: 25, interestRate: 12, monthlyEmi: 5300, fund: 'Broad Market Index Fund', important: true },
+        { name: 'Home Renovation / Downpayment', expectedAmount: 800000, years: 4, interestRate: 9, monthlyEmi: 13900, fund: 'Balanced Hybrid Fund', important: false }
     ]
 });
 

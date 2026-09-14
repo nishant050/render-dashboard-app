@@ -6,9 +6,7 @@ import os
 import motor.motor_asyncio
 from datetime import datetime
 
-DEFAULT_MONGO_URI = (
-    "mongodb+srv://admin:admin123@diet-plan.42f6xm7.mongodb.net/?appName=diet-plan"
-)
+DEFAULT_MONGO_URI = "mongodb://localhost:27017"
 
 MONGO_URI = os.environ.get("MONGO_URI", DEFAULT_MONGO_URI)
 DB_NAME = os.environ.get("DB_NAME", "dietplan")
@@ -89,7 +87,12 @@ async def init_db():
     # Seed default admin
     if await db.admin.count_documents({}) == 0:
         from passlib.hash import bcrypt
-        hashed = bcrypt.hash("admin123")
+        default_admin_pass = (
+            os.environ.get("DIETPLAN_ADMIN_PASSWORD")
+            or os.environ.get("DASHBOARD_PASSWORD")
+            or "admin123"
+        )
+        hashed = bcrypt.hash(default_admin_pass)
         await db.admin.insert_one({
             "username": "admin", 
             "password_hash": hashed,

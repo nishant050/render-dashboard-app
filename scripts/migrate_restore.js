@@ -1,9 +1,36 @@
+const path = require('path');
+const fs = require('fs');
 const mongoose = require('mongoose');
 
-const MONGO_URI = 'mongodb://admin:admin123@ac-wnbtpbs-shard-00-00.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-01.42f6xm7.mongodb.net:27017,ac-wnbtpbs-shard-00-02.42f6xm7.mongodb.net:27017/render-dashboard?ssl=true&replicaSet=atlas-usm1o0-shard-0&authSource=admin&retryWrites=true&w=majority&appName=diet-plan';
+// Attempt to load .env from repo root
+const envPath = path.resolve(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+    try {
+        const content = fs.readFileSync(envPath, 'utf8');
+        content.split(/\r?\n/).forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return;
+            const match = trimmed.match(/^([\w.-]+)\s*=\s*(.*)$/);
+            if (match && process.env[match[1]] === undefined) {
+                let val = match[2] || '';
+                if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                    val = val.slice(1, -1);
+                }
+                process.env[match[1]] = val;
+            }
+        });
+    } catch (_) {}
+}
+
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+    console.error('Error: MONGO_URI environment variable is required.');
+    console.error('Please set MONGO_URI in your environment or in the .env file.');
+    process.exit(1);
+}
 
 async function run() {
-    console.log('Connecting to MongoDB Atlas...');
+    console.log('Connecting to MongoDB...');
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
 
