@@ -1,6 +1,7 @@
 package com.render.filehub;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -29,20 +30,36 @@ public class ShareActivity extends Activity {
         }
 
         Intent intent = getIntent();
-        String action = intent.getAction();
-        String type = intent.getType();
+        String action = intent != null ? intent.getAction() : null;
+        String type = intent != null ? intent.getType() : null;
 
         ArrayList<Uri> urisToUpload = new ArrayList<>();
 
-        if (Intent.ACTION_SEND.equals(action) && type != null) {
-            Uri imageUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-            if (imageUri != null) {
-                urisToUpload.add(imageUri);
+        if (intent != null) {
+            if (Intent.ACTION_SEND.equals(action)) {
+                Uri singleUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (singleUri != null) {
+                    urisToUpload.add(singleUri);
+                }
+            } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+                ArrayList<Uri> multiUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (multiUris != null) {
+                    urisToUpload.addAll(multiUris);
+                }
             }
-        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null) {
-            ArrayList<Uri> imageUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-            if (imageUris != null) {
-                urisToUpload.addAll(imageUris);
+
+            // Fallback to ClipData if EXTRA_STREAM was empty
+            if (urisToUpload.isEmpty() && intent.getClipData() != null) {
+                int count = intent.getClipData().getItemCount();
+                for (int i = 0; i < count; i++) {
+                    Uri u = intent.getClipData().getItemAt(i).getUri();
+                    if (u != null) urisToUpload.add(u);
+                }
+            }
+
+            // Fallback to data URI
+            if (urisToUpload.isEmpty() && intent.getData() != null) {
+                urisToUpload.add(intent.getData());
             }
         }
 
@@ -50,6 +67,21 @@ public class ShareActivity extends Activity {
             Intent serviceIntent = new Intent(this, UploadService.class);
             serviceIntent.setAction(UploadService.ACTION_ENQUEUE);
             serviceIntent.putParcelableArrayListExtra(UploadService.EXTRA_URIS, urisToUpload);
+
+            // Forward URI read permissions to background service via ClipData and flags
+            ClipData clipData = ClipData.newRawUri("FileHub Share Upload", urisToUpload.get(0));
+            for (int i = 1; i < urisToUpload.size(); i++) {
+                clipData.addItem(new ClipData.Item(urisToUpload.get(i)));
+            }
+            serviceIntent.setClipData(clipData);
+            serviceIntent.setData(urisToUpload.get(0));
+            serviceIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            for (Uri uri : urisToUpload) {
+                try {
+                    grantUriPermission(getPackageName(), uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);

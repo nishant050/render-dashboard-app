@@ -16,6 +16,9 @@ import android.provider.OpenableColumns;
 
 import androidx.core.app.NotificationCompat;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,10 +41,12 @@ public class UploadService extends Service {
         public final String id;
         public final Uri uri;
         public final String filename;
-        public final long size;
+        public long size;
         public int progress = 0;
         public String status = "Queued"; // Queued, Uploading, Completed, Error
         public String errorMessage = null;
+        public File stagedFile = null;
+        public String mimeType = null;
 
         public UploadTask(String id, Uri uri, String filename, long size) {
             this.id = id;
@@ -54,6 +59,7 @@ public class UploadService extends Service {
     public static final List<UploadTask> uploadQueue = Collections.synchronizedList(new ArrayList<>());
 
     private ExecutorService executor;
+    private ExecutorService stagingExecutor;
     private NotificationManager notificationManager;
     private boolean isRunning = false;
 
@@ -61,14 +67,36 @@ public class UploadService extends Service {
     public void onCreate() {
         super.onCreate();
         executor = Executors.newSingleThreadExecutor();
+        stagingExecutor = Executors.newSingleThreadExecutor();
         notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         createNotificationChannel();
+    }
+
+    private File getStagingDir() {
+        File dir = new File(getCacheDir(), "staged_uploads");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return dir;
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_ENQUEUE.equals(intent.getAction())) {
             ArrayList<Uri> uris = intent.getParcelableArrayListExtra(EXTRA_URIS);
+            if (uris == null || uris.isEmpty()) {
+                if (intent.getClipData() != null) {
+                    uris = new ArrayList<>();
+                    for (int i = 0; i < intent.getClipData().getItemCount(); i++) {
+                        Uri u = intent.getClipData().getItemAt(i).getUri();
+                        if (u != null) uris.add(u);
+                    }
+                } else if (intent.getData() != null) {
+                    uris = new ArrayList<>();
+                    uris.add(intent.getData());
+                }
+            }
+
             if (uris != null && !uris.isEmpty()) {
                 for (Uri uri : uris) {
                     enqueueUri(uri);
@@ -83,10 +111,42 @@ public class UploadService extends Service {
     private void enqueueUri(Uri uri) {
         String filename = getFileName(uri);
         long size = getFileSize(uri);
-        String id = System.currentTimeMillis() + "_" + Math.random();
+        String mime = null;
+        try {
+            mime = getContentResolver().getType(uri);
+        } catch (Exception ignored) {}
+
+        String id = System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
         UploadTask task = new UploadTask(id, uri, filename, size);
+        task.mimeType = mime;
         uploadQueue.add(task);
         broadcastUpdate();
+
+        // Immediately stage the file into private cache while URI permission is fresh
+        stagingExecutor.execute(() -> stageTaskFile(task));
+    }
+
+    private void stageTaskFile(UploadTask task) {
+        if (task.uri == null) return;
+        try {
+            File dest = new File(getStagingDir(), task.id + "_" + task.filename);
+            try (InputStream in = getContentResolver().openInputStream(task.uri);
+                 FileOutputStream out = new FileOutputStream(dest)) {
+                if (in != null) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    long total = 0;
+                    while ((len = in.read(buf)) != -1) {
+                        out.write(buf, 0, len);
+                        total += len;
+                    }
+                    task.stagedFile = dest;
+                    task.size = total;
+                }
+            }
+        } catch (Exception ignored) {
+            // Staging fallback: will attempt direct openInputStream during upload
+        }
     }
 
     private synchronized void processNextUpload() {
@@ -133,10 +193,26 @@ public class UploadService extends Service {
             String password = prefs.getString("dashboard_password", "");
             String targetFolder = prefs.getString("upload_folder", "");
 
-            try (InputStream is = getContentResolver().openInputStream(currentTask.uri)) {
+            InputStream is = null;
+            try {
+                if (currentTask.stagedFile != null && currentTask.stagedFile.exists()) {
+                    is = new FileInputStream(currentTask.stagedFile);
+                    if (currentTask.size <= 0) {
+                        currentTask.size = currentTask.stagedFile.length();
+                    }
+                } else {
+                    is = getContentResolver().openInputStream(currentTask.uri);
+                }
+
                 if (is == null) throw new Exception("Cannot read file from device storage");
 
-                String mime = getContentResolver().getType(currentTask.uri);
+                String mime = currentTask.mimeType;
+                if (mime == null && currentTask.uri != null) {
+                    try {
+                        mime = getContentResolver().getType(currentTask.uri);
+                    } catch (Exception ignored) {}
+                }
+
                 Response response = ApiClient.getInstance().uploadFile(
                         serverUrl,
                         password,
@@ -166,6 +242,12 @@ public class UploadService extends Service {
                 currentTask.status = "Error";
                 currentTask.errorMessage = e.getMessage() != null ? e.getMessage() : "Upload failed";
             } finally {
+                if (is != null) {
+                    try { is.close(); } catch (Exception ignored) {}
+                }
+                if (currentTask.stagedFile != null && currentTask.stagedFile.exists()) {
+                    try { currentTask.stagedFile.delete(); } catch (Exception ignored) {}
+                }
                 isRunning = false;
                 broadcastUpdate();
                 processNextUpload();
@@ -253,6 +335,7 @@ public class UploadService extends Service {
     @Override
     public void onDestroy() {
         if (executor != null) executor.shutdownNow();
+        if (stagingExecutor != null) stagingExecutor.shutdownNow();
         super.onDestroy();
     }
 }
