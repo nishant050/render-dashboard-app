@@ -116,17 +116,29 @@ public class AppUpdater {
                         currentVersion = activity.getPackageManager().getPackageInfo(activity.getPackageName(), 0).versionName;
                     } catch (Exception ignored) {}
 
-                    String cleanTag = tagName.replaceAll("^[vV]", "").trim();
-                    String cleanCurrent = currentVersion.replaceAll("^[vV]", "").trim();
+                    String remoteVersion = extractSemanticVersion(releaseName);
+                    if (remoteVersion.isEmpty()) {
+                        remoteVersion = extractSemanticVersion(tagName);
+                    }
+                    String localSemantic = extractSemanticVersion(currentVersion);
+                    if (localSemantic.isEmpty()) localSemantic = currentVersion;
 
-                    boolean isUpToDate = (!cleanCurrent.isEmpty() && cleanCurrent.equalsIgnoreCase(cleanTag))
-                            || (!lastInstalledTag.isEmpty() && lastInstalledTag.equalsIgnoreCase(tagName));
+                    boolean isNewer = false;
+                    if (!remoteVersion.isEmpty() && !localSemantic.isEmpty()) {
+                        isNewer = compareVersionStrings(remoteVersion, localSemantic) > 0;
+                    } else {
+                        String cleanTag = tagName.replaceAll("^[vV]", "").trim();
+                        String cleanCurrent = currentVersion.replaceAll("^[vV]", "").trim();
+                        isNewer = !cleanCurrent.isEmpty() && !cleanCurrent.equalsIgnoreCase(cleanTag)
+                                && !lastInstalledTag.equalsIgnoreCase(tagName);
+                    }
 
-                    if (isUpToDate) {
+                    if (!isNewer) {
                         if (showFeedbackIfUpToDate) {
+                            final String displayVer = !localSemantic.isEmpty() ? localSemantic : currentVersion;
                             mainHandler.post(() -> {
                                 if (!activity.isFinishing()) {
-                                    Toast.makeText(activity, "App is up to date (" + tagName + ")", Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(activity, "App is up to date (v" + displayVer + ")", Toast.LENGTH_SHORT).show();
                                 }
                             });
                         }
@@ -266,6 +278,37 @@ public class AppUpdater {
             activity.startActivity(intent);
         } catch (Exception e) {
             Toast.makeText(activity, "Failed to launch installer: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private static String extractSemanticVersion(String text) {
+        if (text == null) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("[vV]?(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(text);
+        if (m.find()) {
+            return m.group(1);
+        }
+        return "";
+    }
+
+    private static int compareVersionStrings(String v1, String v2) {
+        String[] parts1 = v1.split("\\.");
+        String[] parts2 = v2.split("\\.");
+        int len = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < len; i++) {
+            int p1 = (i < parts1.length) ? parseSafeInt(parts1[i]) : 0;
+            int p2 = (i < parts2.length) ? parseSafeInt(parts2[i]) : 0;
+            if (p1 != p2) {
+                return Integer.compare(p1, p2);
+            }
+        }
+        return 0;
+    }
+
+    private static int parseSafeInt(String s) {
+        try {
+            return Integer.parseInt(s.replaceAll("[^0-9]", ""));
+        } catch (Exception e) {
+            return 0;
         }
     }
 }

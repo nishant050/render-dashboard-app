@@ -59,6 +59,10 @@ public class MainActivity extends AppCompatActivity {
     private SwipeRefreshLayout swipeRefresh;
     private RecyclerView recyclerView;
     private View emptyView;
+    private View layoutAuthRequired;
+    private View layoutNetworkError;
+    private TextView tvAuthTitle;
+    private TextView tvAuthDesc;
     private FileAdapter adapter;
     private String currentPath = "";
 
@@ -101,11 +105,24 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh = findViewById(R.id.swipe_refresh);
         recyclerView = findViewById(R.id.recycler_files);
         emptyView = findViewById(R.id.empty_view);
+        layoutAuthRequired = findViewById(R.id.layout_auth_required);
+        layoutNetworkError = findViewById(R.id.layout_network_error);
+        tvAuthTitle = findViewById(R.id.tv_auth_title);
+        tvAuthDesc = findViewById(R.id.tv_auth_desc);
         FloatingActionButton fabUpload = findViewById(R.id.fab_upload);
 
         btnHome.setOnClickListener(v -> navigateToHome());
         btnUpFolder.setOnClickListener(v -> navigateUp());
         tvBreadcrumb.setOnClickListener(v -> navigateToHome());
+
+        View btnGoSettings = findViewById(R.id.btn_go_to_settings);
+        if (btnGoSettings != null) {
+            btnGoSettings.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_settings));
+        }
+        View btnRetryFiles = findViewById(R.id.btn_retry_files);
+        if (btnRetryFiles != null) {
+            btnRetryFiles.setOnClickListener(v -> loadFiles());
+        }
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
@@ -210,6 +227,11 @@ public class MainActivity extends AppCompatActivity {
             public String getServerUrl() {
                 return prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
             }
+
+            @JavascriptInterface
+            public String getPassword() {
+                return prefs.getString("dashboard_password", "");
+            }
         }, "AndroidBridge");
 
         webViewInvesting.setWebViewClient(new WebViewClient() {
@@ -300,8 +322,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadInvestingCourse() {
         progressBarInvesting.setVisibility(View.VISIBLE);
-        String server = prefs.getString("server_url", "https://dashboard-mszb.onrender.com").replaceAll("/+$", "");
-        webViewInvesting.loadUrl(server + "/apps/learn-investing/index.html");
+        webViewInvesting.loadUrl("file:///android_asset/learn-investing/index.html");
         isInvestingLoaded = true;
     }
 
@@ -389,7 +410,24 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadFiles() {
         String serverUrl = prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
-        String password = prefs.getString("dashboard_password", "");
+        String password = prefs.getString("dashboard_password", "").trim();
+
+        if (password.isEmpty()) {
+            swipeRefresh.setRefreshing(false);
+            if (recyclerView != null) recyclerView.setVisibility(View.GONE);
+            if (emptyView != null) emptyView.setVisibility(View.GONE);
+            if (layoutNetworkError != null) layoutNetworkError.setVisibility(View.GONE);
+            if (layoutAuthRequired != null) {
+                layoutAuthRequired.setVisibility(View.VISIBLE);
+                if (tvAuthTitle != null) tvAuthTitle.setText("Master Password Required");
+                if (tvAuthDesc != null) tvAuthDesc.setText("Please configure your Master Password in Settings to access FileHub files.");
+            }
+            return;
+        }
+
+        // Hide auth and error screens while fetching
+        if (layoutAuthRequired != null) layoutAuthRequired.setVisibility(View.GONE);
+        if (layoutNetworkError != null) layoutNetworkError.setVisibility(View.GONE);
 
         swipeRefresh.setRefreshing(true);
 
@@ -397,6 +435,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSuccess(List<FileItem> items) {
                 swipeRefresh.setRefreshing(false);
+                if (layoutAuthRequired != null) layoutAuthRequired.setVisibility(View.GONE);
+                if (layoutNetworkError != null) layoutNetworkError.setVisibility(View.GONE);
+                if (recyclerView != null) recyclerView.setVisibility(View.VISIBLE);
+
                 adapter = new FileAdapter(MainActivity.this, serverUrl, password, currentPath, new FileAdapter.OnItemClickListener() {
                     @Override
                     public void onItemClick(FileItem item) {
@@ -429,7 +471,21 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onError(String errorMessage) {
                 swipeRefresh.setRefreshing(false);
-                Toast.makeText(MainActivity.this, errorMessage, Toast.LENGTH_LONG).show();
+                if (recyclerView != null) recyclerView.setVisibility(View.GONE);
+                if (emptyView != null) emptyView.setVisibility(View.GONE);
+
+                if (errorMessage != null && (errorMessage.contains("401") || errorMessage.toLowerCase().contains("unauthorized") || errorMessage.toLowerCase().contains("password"))) {
+                    if (layoutNetworkError != null) layoutNetworkError.setVisibility(View.GONE);
+                    if (layoutAuthRequired != null) {
+                        layoutAuthRequired.setVisibility(View.VISIBLE);
+                        if (tvAuthTitle != null) tvAuthTitle.setText("Incorrect Password");
+                        if (tvAuthDesc != null) tvAuthDesc.setText("The server rejected your Master Password. Please check Settings.");
+                    }
+                } else {
+                    if (layoutAuthRequired != null) layoutAuthRequired.setVisibility(View.GONE);
+                    if (layoutNetworkError != null) layoutNetworkError.setVisibility(View.VISIBLE);
+                }
+                Toast.makeText(MainActivity.this, errorMessage, Toast.LENGTH_SHORT).show();
             }
         });
     }

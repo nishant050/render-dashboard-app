@@ -139,6 +139,102 @@
                                 android:textColor="@color/text_muted"
                                 android:textSize="15sp" />
                         </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layout_auth_required"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:padding="24dp"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🔒"
+                                android:textSize="48sp" />
+
+                            <TextView
+                                android:id="@+id/tv_auth_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="Master Password Required"
+                                android:textColor="@color/text_primary"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_auth_desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:text="Configure your Server URL and Master Password in Settings to access FileHub files."
+                                android:textColor="@color/text_muted"
+                                android:textSize="14sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_go_to_settings"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:text="Configure in Settings"
+                                android:textColor="@color/text_primary"
+                                app:backgroundTint="@color/primary"
+                                app:cornerRadius="8dp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layout_network_error"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:padding="24dp"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="⚠️"
+                                android:textSize="48sp" />
+
+                            <TextView
+                                android:id="@+id/tv_error_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="Connection Failed"
+                                android:textColor="@color/text_primary"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_error_desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:text="Could not reach the server. Please check your network or server status."
+                                android:textColor="@color/text_muted"
+                                android:textSize="14sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_retry_files"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:text="Retry"
+                                android:textColor="@color/text_primary"
+                                app:backgroundTint="@color/bg_card_secondary"
+                                app:strokeColor="@color/border"
+                                app:strokeWidth="1dp"
+                                app:cornerRadius="8dp" />
+                        </LinearLayout>
                     </FrameLayout>
                 </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
             </LinearLayout>

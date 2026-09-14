@@ -235,6 +235,18 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
+// --- Global CORS Middleware for API Endpoints ---
+app.use('/api', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-dashboard-password, x-api-key, Range');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Type');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
+
 // --- Universal Master Password Authentication Configuration ---
 // Priority: If DASHBOARD_PASSWORD is set in environment, ONLY that password is valid.
 // 'admin123' is only a temporary zero-config fallback if DASHBOARD_PASSWORD is not set.
@@ -464,13 +476,21 @@ app.use((req, res, next) => {
         reqPath === '/api/auth/logout' ||
         reqPath === '/api/health' ||
         reqPath === '/api/filehub/download-apk' ||
-        reqPath === '/api/dashboard/download-apk'
+        reqPath === '/api/dashboard/download-apk' ||
+        reqPath === '/api/learn-investing/state' ||
+        reqPath === '/api/stream/youtube' ||
+        reqPath === '/api/stream/youtube/info'
     ) {
         return next();
     }
 
-    // Allow static font assets for the login page and downloads
-    if (reqPath.startsWith('/assets/fonts/') || reqPath.startsWith('/downloads/')) {
+    // Allow static font assets for the login page, downloads, and Learn Investing app assets
+    if (
+        reqPath.startsWith('/assets/fonts/') ||
+        reqPath.startsWith('/downloads/') ||
+        reqPath.startsWith('/apps/learn-investing/') ||
+        reqPath === '/apps/learn-investing'
+    ) {
         return next();
     }
 

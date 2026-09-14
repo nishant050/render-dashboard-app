@@ -2,339 +2,168 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Market Mastery 6.0 | Complete Hindi Course</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stock Market Mastery 6.0</title>
+    <link rel="stylesheet" href="style.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-            font-family: 'Inter', sans-serif;
+        .stream-toggle-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.8rem;
         }
-        
-        ::-webkit-scrollbar {
-            width: 6px;
+        .stream-mode-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-weight: 600;
+            color: var(--primary);
         }
-        
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+        .stream-toggle-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.3rem 0.65rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
         }
-        
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 3px;
+        .stream-toggle-btn:hover {
+            border-color: var(--primary);
+            background: var(--bg-hover);
         }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+        .dns-tip-banner {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: var(--radius-md);
+            padding: 0.6rem 0.85rem;
+            margin-top: 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
         }
-        
-        .module-gradient-1 {
-            background: linear-gradient(135deg, #10b981, #059669);
-        }
-        
-        .module-gradient-2 {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-        }
-        
-        .module-gradient-3 {
-            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-        }
-
-        .module-gradient-4 {
-            background: linear-gradient(135deg, #f43f5e, #be123c);
-        }
-
-        .module-gradient-5 {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-        }
-
-        .module-gradient-6 {
-            background: linear-gradient(135deg, #06b6d4, #0891b2);
-        }
-        
-        .progress-ring {
-            transform: rotate(-90deg);
-        }
-        
-        .video-item.completed {
-            opacity: 0.7;
-        }
-        
-        .video-item.current {
-            border-left: 3px solid #10b981;
-            background: #f0fdf4;
-        }
-        
-        .fade-in {
-            animation: fadeIn 0.3s ease-in-out;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .pulse-dot {
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .modal-backdrop {
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(4px);
-        }
-
-        .profile-card {
-            transition: all 0.2s ease;
-        }
-
-        .profile-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-
-        .avatar-gradient {
-            background: linear-gradient(135deg, #10b981, #3b82f6);
+        .dns-tip-banner strong {
+            color: var(--primary);
         }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
-    <nav>
-	<a href="../../index.html">&larr; Back to Dashboard</a>
-</nav>
-    <!-- Profile Selection Modal -->
-    <div id="profileModal" class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop">
-        <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden fade-in">
-            <!-- Modal Header -->
-            <div class="bg-gradient-to-r from-emerald-500 to-teal-600 p-8 text-center text-white">
-                <div class="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-chart-line text-3xl"></i>
-                </div>
-                <h2 class="text-2xl font-bold mb-2">Stock Market Mastery 6.0</h2>
-                <p class="text-sm opacity-90">Complete Hindi Course</p>
-            </div>
-
-            <!-- Modal Content -->
-            <div class="p-6">
-                <!-- Existing Profiles -->
-                <div id="existingProfiles" class="mb-6 hidden">
-                    <h3 class="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
-                        <i class="fas fa-users text-slate-400"></i>
-                        Select Your Profile
-                    </h3>
-                    <div id="profilesList" class="space-y-2 max-h-48 overflow-y-auto">
-                        <!-- Profiles will be rendered here -->
-                    </div>
-                    <div class="relative my-5">
-                        <hr class="border-slate-200">
-                        <span class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-xs text-slate-400">or</span>
-                    </div>
-                </div>
-
-                <!-- Create New Profile -->
-                <div id="createProfileSection">
-                    <h3 class="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
-                        <i class="fas fa-user-plus text-slate-400"></i>
-                        <span id="createProfileTitle">Create Your Profile</span>
-                    </h3>
-                    <div class="flex gap-3">
-                        <input type="text" id="newProfileName" placeholder="Enter your name" 
-                            class="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-slate-700"
-                            onkeypress="if(event.key === 'Enter') createProfile()">
-                        <button onclick="createProfile()" 
-                            class="px-5 py-3 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2">
-                            <i class="fas fa-arrow-right"></i>
-                        </button>
-                    </div>
-                    <p id="profileError" class="text-red-500 text-xs mt-2 hidden">Please enter your name</p>
-                </div>
-            </div>
-
-            <!-- Footer Note -->
-            <div class="px-6 pb-6">
-                <div class="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
-                    <i class="fas fa-info-circle text-slate-400 mt-0.5"></i>
-                    <p class="text-xs text-slate-500">Your progress is saved to MongoDB so the same profiles and course progress are available across your devices.</p>
-                </div>
-            </div>
-        </div>
-    </div>
+<body>
 
     <!-- Header -->
-    <header id="mainHeader" class="bg-white border-b border-slate-200 sticky top-0 z-50 hidden">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-chart-line text-white text-lg"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-slate-800 text-lg">Stock Market Mastery 6.0</h1>
-                    <p class="text-xs text-slate-500">Complete Hindi Course</p>
-                </div>
+    <header>
+        <div class="header-brand">
+            <div class="brand-icon">📈</div>
+            <div>
+                <div class="brand-title">Stock Market Mastery 6.0</div>
+                <div class="brand-sub">Complete Hindi Course</div>
             </div>
-            <div class="flex items-center gap-4">
-                <!-- User Profile Badge -->
-                <button onclick="showProfileSwitcher()" class="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-full transition-colors">
-                    <div class="w-6 h-6 avatar-gradient rounded-full flex items-center justify-center">
-                        <span id="headerUserInitial" class="text-white text-xs font-bold">U</span>
-                    </div>
-                    <span id="headerUserName" class="text-sm font-medium text-slate-700 max-w-[100px] truncate hidden sm:block">User</span>
-                    <i class="fas fa-chevron-down text-xs text-slate-400"></i>
-                </button>
-                <div class="hidden sm:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full">
-                    <svg class="w-5 h-5 text-emerald-600" viewBox="0 0 36 36">
-                        <circle class="progress-ring" stroke="#e2e8f0" stroke-width="3" fill="none" r="15" cx="18" cy="18"/>
-                        <circle class="progress-ring" id="headerProgress" stroke="#10b981" stroke-width="3" fill="none" r="15" cx="18" cy="18" 
-                            stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round"/>
-                    </svg>
-                    <span class="text-sm font-medium text-slate-700"><span id="headerPercent">0</span>% Complete</span>
-                </div>
-                <button onclick="resetProgress()" class="text-slate-400 hover:text-red-500 transition-colors" title="Reset Progress">
-                    <i class="fas fa-redo text-sm"></i>
-                </button>
-            </div>
+        </div>
+        <div class="header-actions">
+            <button class="profile-btn" onclick="showProfileModal()" title="Switch Student Profile">
+                <div class="profile-avatar" id="headerAvatar">U</div>
+                <span id="headerName">User</span>
+            </button>
         </div>
     </header>
 
-    <!-- Main App Container -->
-    <div id="mainApp" class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 hidden">
-        <!-- Sidebar -->
-        <aside class="lg:w-80 flex-shrink-0">
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-24">
-                <!-- Next Up Card -->
-                <div id="nextUpCard" class="p-5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="pulse-dot w-2 h-2 bg-white rounded-full"></span>
-                        <span class="text-xs font-medium uppercase tracking-wide opacity-90">Continue Learning</span>
-                    </div>
-                    <h3 id="nextVideoTitle" class="font-semibold text-lg mb-1 line-clamp-2">Loading...</h3>
-                    <p id="nextVideoModule" class="text-sm opacity-80 mb-3">Module</p>
-                    <button onclick="watchNextVideo()" class="bg-white text-emerald-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50 transition-colors flex items-center gap-2">
-                        <i class="fas fa-play text-sm"></i>
-                        Play Now
+    <!-- App Container -->
+    <div class="app-container">
+        
+        <!-- Video Player Main Section -->
+        <div class="player-section">
+            <!-- Stream Mode Toggle Banner -->
+            <div class="stream-toggle-bar">
+                <div class="stream-mode-badge" id="streamModeBadge">
+                    <span>⚡ Direct YouTube Mode</span>
+                </div>
+                <button class="stream-toggle-btn" id="btnToggleMode" onclick="toggleStreamMode()">
+                    Switch to Render Proxy 🛡️
+                </button>
+            </div>
+
+            <div class="video-wrapper">
+                <div id="videoPlaceholder" class="video-placeholder">
+                    <span style="font-size: 2.5rem;">▶️</span>
+                    <span>Select a lecture below to start playing</span>
+                </div>
+                <iframe id="videoIframe" class="hidden" src="" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
+                <video id="localVideo" class="hidden" controls playsinline controlsList="nodownload"></video>
+            </div>
+
+            <div class="video-meta-card">
+                <span class="badge" id="moduleBadge">Module 1</span>
+                <h1 class="video-title" id="videoTitle">Welcome to Stock Market Mastery</h1>
+                <div class="video-channel" id="videoChannel">Select any lesson from the curriculum</div>
+
+                <div class="video-actions">
+                    <button class="btn btn-primary" id="btnPlay" onclick="playSelectedVideo()">
+                        <span>▶ Play Video</span>
                     </button>
+                    <button class="btn btn-secondary" id="btnComplete" onclick="toggleCompleted()">
+                        <span id="btnCompleteText">✓ Mark Done</span>
+                    </button>
+                    <button class="btn btn-secondary" id="btnNext" onclick="playNextVideo()">
+                        <span>Next ❯</span>
+                    </button>
+                    <a class="btn btn-secondary" id="btnOpenExternal" href="#" target="_blank" style="margin-left: auto;">
+                        <span>Open in Browser ↗</span>
+                    </a>
                 </div>
 
-                <!-- Progress Summary -->
-                <div class="p-5 border-b border-slate-100">
-                    <h4 class="text-sm font-medium text-slate-500 mb-4">Your Progress</h4>
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm text-slate-600">Videos Completed</span>
-                            <span class="font-semibold text-slate-800"><span id="completedCount">0</span>/<span id="totalCount">0</span></span>
-                        </div>
-                        <div class="w-full bg-slate-100 rounded-full h-2">
-                            <div id="progressBar" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                        </div>
-                    </div>
+                <div class="dns-tip-banner" id="dnsTip">
+                    💡 <strong>DNS Note:</strong> If videos fail on Direct Mode, your DNS must allow <code>youtube-nocookie.com</code> and <code>googlevideo.com</code>. Or click <strong>Switch to Render Proxy</strong> above to stream 100% through your Render server with zero DNS restrictions.
                 </div>
-
-                <!-- Module Navigation -->
-                <nav class="p-4 max-h-[400px] overflow-y-auto">
-                    <div class="space-y-2" id="moduleNav">
-                        <!-- Generated dynamically -->
-                    </div>
-                </nav>
             </div>
-        </aside>
+        </div>
 
-        <!-- Main Content -->
-        <main class="flex-1 min-w-0">
-            <!-- Current Video Info Section -->
-            <div id="videoSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 fade-in">
-                <div class="p-6">
-                    <div class="relative bg-slate-950 rounded-xl overflow-hidden aspect-video mb-5">
-                        <div id="youtubePlayer" class="w-full h-full"></div>
-                        <video id="renderVideoPlayer" class="w-full h-full hidden" controls playsinline controlsList="nodownload"></video>
-                        <div id="playerPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900">
-                            <i class="fab fa-youtube text-5xl text-red-500 mb-3"></i>
-                            <p class="text-sm font-medium">Select a lecture to play it here</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start justify-between gap-4 mb-4">
-                        <div class="flex-1">
-                            <span id="currentModuleBadge" class="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full mb-2">Module 1</span>
-                            <h2 id="currentVideoTitle" class="text-xl font-bold text-slate-800">Welcome to Stock Market Mastery 6.0</h2>
-                            <p id="currentVideoChannel" class="text-sm text-slate-500 mt-1">Select a video from the curriculum below</p>
-                            <p id="currentVideoDesc" class="text-sm text-slate-400 mt-2"></p>
-                            <p id="playbackStatus" class="text-xs text-emerald-600 mt-2 hidden"></p>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-100">
-                        <button id="watchNowBtn" onclick="playCurrentVideo()" class="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2 hidden">
-                            <i class="fas fa-play text-sm"></i>
-                            <span>Play in App</span>
-                        </button>
-                        <button id="markCompleteBtn" onclick="toggleComplete()" class="px-4 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2">
-                            <i class="fas fa-check"></i>
-                            <span>Mark Complete</span>
-                        </button>
-                        <button id="streamModeToggleBtn" onclick="toggleStreamMode()" class="px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" title="Switch between Render Proxy Stream (bypasses DNS blocks) and Direct YouTube">
-                            <i class="fas fa-shield-alt text-indigo-500"></i>
-                            <span id="streamModeLabel">Render Stream: Proxy Mode</span>
-                        </button>
-                        <div class="flex items-center gap-2 ml-auto">
-                            <button id="prevBtn" onclick="playPrevVideo()" class="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
-                                <i class="fas fa-chevron-left"></i>
-                                Prev
-                            </button>
-                            <button id="nextBtn" onclick="playNextVideoInSequence()" class="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
-                                Next
-                                <i class="fas fa-chevron-right"></i>
-                            </button>
-                            <button id="autoPlayBtn" onclick="toggleAutoPlay()" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors flex items-center gap-1" title="Auto-play next video when current ends">
-                                <i class="fas fa-play-circle"></i>
-                                <span class="hidden sm:inline">Auto-Play</span>
-                            </button>
-                        </div>
-                        </div>
-                    </div>
+        <!-- Sidebar / Curriculum Navigation -->
+        <div class="sidebar">
+            <div class="progress-card">
+                <div class="progress-header">
+                    <span>Course Progress</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar" style="width: 0%;"></div>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: right;">
+                    <span id="completedCount">0</span> of <span id="totalCount">0</span> lessons completed
                 </div>
             </div>
 
-            <!-- Course Curriculum -->
-            <div class="space-y-6" id="curriculum">
-                <!-- Generated dynamically -->
-            </div>
-        </main>
-    </div>
-
-    <!-- Profile Switcher Modal -->
-    <div id="profileSwitcherModal" class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop hidden">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden fade-in">
-            <div class="p-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 class="font-semibold text-slate-800">Switch Profile</h3>
-                <button onclick="hideProfileSwitcher()" class="text-slate-400 hover:text-slate-600">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="switcherProfilesList" class="p-4 max-h-64 overflow-y-auto space-y-2">
-                <!-- Profiles will be rendered here -->
-            </div>
-            <div class="p-4 border-t border-slate-100">
-                <button onclick="hideProfileSwitcher(); showProfileModal();" class="w-full px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
-                    <i class="fas fa-user-plus text-sm"></i>
-                    Add New Profile
-                </button>
+            <!-- Curriculum Modules Accordion -->
+            <div class="module-list" id="moduleContainer">
+                <!-- Dynamically populated -->
             </div>
         </div>
     </div>
 
-    <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 z-50">
-        <i id="toastIcon" class="fas fa-check-circle text-emerald-400"></i>
-        <span id="toastMessage">Progress saved!</span>
+    <!-- Profile Modal -->
+    <div id="profileModal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="font-size: 1.1rem; font-weight: 700;">Student Profiles (MongoDB Sync)</h3>
+                <button onclick="hideProfileModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.3rem; cursor:pointer;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="profileList" style="margin-bottom: 1rem;"></div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="newProfileInput" class="input-field" placeholder="Enter student name..." style="margin-bottom: 0;">
+                    <button class="btn btn-primary" onclick="addNewProfile()">Add</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        // Course Data Structure
-        const courseVersion = "6.0";
+                const courseVersion = "6.0";
         const courseData = {
             modules: [
                 {
@@ -772,32 +601,12 @@
             ]
         };
 
-        // Multi-User State Management
+
+        // State
+        let currentVideo = null;
         let profiles = {};
         let currentProfileId = null;
-        let state = {
-            courseVersion,
-            currentVideoId: null,
-            completedVideos: [],
-            lastWatched: null,
-            playback: {}
-        };
-        let youtubePlayer = null;
-        let youtubeApiReady = false;
-        let youtubePlayerReady = false;
-        let pendingVideoLoad = null;
-        let playbackSaveInterval = null;
-        let autoPlayNextVideo = true; // Enable auto-play of next video by default
-
-        // Generate unique ID
-        function generateId() {
-            return 'profile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        }
-
-        // Get initials from name
-        function getInitials(name) {
-            return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-        }
+        let streamMode = localStorage.getItem('learn_investing_stream_mode') || 'direct'; // 'direct' or 'proxy'
 
         function getApiBaseUrl() {
             if (typeof window !== 'undefined' && window.AndroidBridge && typeof window.AndroidBridge.getServerUrl === 'function') {
@@ -806,52 +615,93 @@
                     if (base) return base.replace(/\/+$/, '');
                 } catch (e) {}
             }
-            if (typeof window !== 'undefined' && window.FILEHUB_SERVER_URL) {
-                return window.FILEHUB_SERVER_URL.replace(/\/+$/, '');
+            if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
+                return window.location.origin.replace(/\/+$/, '');
+            }
+            return 'https://dashboard-mszb.onrender.com';
+        }
+
+        function getApiPassword() {
+            if (typeof window !== 'undefined' && window.AndroidBridge && typeof window.AndroidBridge.getPassword === 'function') {
+                try {
+                    return window.AndroidBridge.getPassword() || '';
+                } catch (e) {}
             }
             return '';
         }
 
         async function courseApi(method = 'GET', body = null) {
-            const options = { method };
+            const baseUrl = getApiBaseUrl();
+            const options = { method, headers: {} };
+            const pass = getApiPassword();
+            if (pass) {
+                options.headers['x-dashboard-password'] = pass;
+            }
             if (body) {
-                options.headers = { 'Content-Type': 'application/json' };
+                options.headers['Content-Type'] = 'application/json';
                 options.body = JSON.stringify(body);
             }
-
-            const baseUrl = getApiBaseUrl();
-            const response = await fetch(`${baseUrl}/api/learn-investing/state`, options);
-            if (!response.ok) {
-                throw new Error('Failed to sync learn-investing state');
-            }
-
-            return response.json();
+            const res = await fetch(`${baseUrl}/api/learn-investing/state`, options);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
         }
 
-        // Load all profiles from MongoDB, with localStorage migration as fallback
+        function normalizeProfile(p, id) {
+            if (!p) return { id, name: 'Student', completed: [] };
+            const completedList = Array.isArray(p.completed) ? p.completed
+                : (p.progress && Array.isArray(p.progress.completedVideos)) ? p.progress.completedVideos
+                : [];
+            return {
+                id: p.id || id,
+                name: p.name || 'Student',
+                completed: completedList,
+                progress: p.progress || { completedVideos: completedList }
+            };
+        }
+
+        function getCurrentProfile() {
+            if (!currentProfileId || !profiles[currentProfileId]) {
+                const keys = Object.keys(profiles);
+                if (keys.length > 0) currentProfileId = keys[0];
+                else {
+                    const defId = 'profile_' + Date.now();
+                    profiles[defId] = { id: defId, name: 'Nishant', completed: [] };
+                    currentProfileId = defId;
+                }
+            }
+            return profiles[currentProfileId];
+        }
+
         async function loadProfiles() {
-            const saved = localStorage.getItem('stockMarketCourseProfiles');
-            const localProfiles = saved ? JSON.parse(saved) : {};
-            const localCurrentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile');
-
+            // 1. Load local cache first
             try {
-                const remoteState = await courseApi();
+                const cached = localStorage.getItem('stockMarketCourseProfiles');
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    Object.keys(parsed).forEach(id => {
+                        profiles[id] = normalizeProfile(parsed[id], id);
+                    });
+                }
+                currentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile') || null;
+            } catch (e) {}
+
+            // 2. Fetch remote MongoDB state
+            try {
+                const remoteState = await courseApi('GET');
                 const remoteProfiles = remoteState?.profiles || {};
-                const remoteCurrentProfileId = remoteState?.currentProfileId || null;
+                const remoteCurrent = remoteState?.currentProfileId || null;
 
-                // Merge remote profiles and any local-only profiles
-                profiles = { ...localProfiles, ...remoteProfiles };
+                Object.keys(remoteProfiles).forEach(id => {
+                    profiles[id] = normalizeProfile(remoteProfiles[id], id);
+                });
 
-                // Respect local selection first if still valid
-                if (localCurrentProfileId && profiles[localCurrentProfileId]) {
-                    currentProfileId = localCurrentProfileId;
-                } else if (remoteCurrentProfileId && profiles[remoteCurrentProfileId]) {
-                    currentProfileId = remoteCurrentProfileId;
-                } else {
-                    // Prioritize Nishant if present, or first available profile
+                // Auto-select: prioritize Nishant, or remote selection, or first profile
+                if (!currentProfileId || !profiles[currentProfileId]) {
                     const nishant = Object.values(profiles).find(p => p.name && p.name.toLowerCase().includes('nishant'));
                     if (nishant) {
                         currentProfileId = nishant.id;
+                    } else if (remoteCurrent && profiles[remoteCurrent]) {
+                        currentProfileId = remoteCurrent;
                     } else {
                         const keys = Object.keys(profiles);
                         currentProfileId = keys.length > 0 ? keys[0] : null;
@@ -861,1004 +711,325 @@
                 localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
                 if (currentProfileId) {
                     localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
-                } else {
-                    localStorage.removeItem('stockMarketCourseCurrentProfile');
                 }
-            } catch (error) {
-                console.warn('Falling back to local storage for learn-investing:', error.message);
-                profiles = localProfiles;
-                currentProfileId = localCurrentProfileId;
-                if (!currentProfileId && Object.keys(profiles).length > 0) {
-                    const nishant = Object.values(profiles).find(p => p.name && p.name.toLowerCase().includes('nishant'));
-                    currentProfileId = nishant ? nishant.id : Object.keys(profiles)[0];
-                }
+            } catch (err) {
+                console.warn('[Learn Investing] Remote sync offline/failed, using local cache:', err.message);
             }
+
+            if (Object.keys(profiles).length === 0) {
+                const defId = 'profile_' + Date.now();
+                profiles[defId] = { id: defId, name: 'Nishant', completed: [] };
+                currentProfileId = defId;
+            }
+
+            updateHeaderProfile();
+            renderCurriculum();
         }
 
-        // Save all profiles to MongoDB and keep a local cache
-        async function saveProfiles() {
+        async function saveProfileData() {
             localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
-            if (currentProfileId) {
-                localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
-            } else {
-                localStorage.removeItem('stockMarketCourseCurrentProfile');
-            }
+            localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
 
             try {
+                const p = getCurrentProfile();
+                if (p) {
+                    if (!p.progress) p.progress = {};
+                    p.progress.completedVideos = p.completed;
+                    if (currentVideo) p.progress.currentVideoId = currentVideo.id;
+                }
                 await courseApi('POST', { profiles, currentProfileId });
-            } catch (error) {
-                console.warn('Failed to sync learn-investing state:', error.message);
+            } catch (err) {
+                console.warn('[Learn Investing] Server save error:', err.message);
             }
         }
 
-        // Save current user's state
-        function saveState() {
-            if (!currentProfileId) return;
-            state.courseVersion = courseVersion;
-            profiles[currentProfileId].progress = state;
-            void saveProfiles();
-        }
-
-        // Load current user's state
-        function loadCurrentUserState() {
-            if (!currentProfileId || !profiles[currentProfileId]) return;
-            state = profiles[currentProfileId].progress || {
-                courseVersion,
-                currentVideoId: null,
-                completedVideos: [],
-                lastWatched: null,
-                playback: {}
-            };
-            sanitizeCourseState();
-        }
-
-        // Create new profile
-        async function createProfile() {
-            const nameInput = document.getElementById('newProfileName');
-            const name = nameInput.value.trim();
-            const errorEl = document.getElementById('profileError');
-
-            if (!name) {
-                errorEl.classList.remove('hidden');
-                nameInput.focus();
-                return;
-            }
-
-            errorEl.classList.add('hidden');
-
-            const profileId = generateId();
-            profiles[profileId] = {
-                id: profileId,
-                name: name,
-                createdAt: new Date().toISOString(),
-                progress: {
-                    courseVersion,
-                    currentVideoId: null,
-                    completedVideos: [],
-                    lastWatched: null,
-                    playback: {}
-                }
-            };
-
-            currentProfileId = profileId;
-            await saveProfiles();
-            loadCurrentUserState();
-            
-            hideProfileModal();
-            showMainApp();
-            updateHeaderUserInfo();
-            initCourse();
-            
-            showToast(`Welcome, ${name}! Let's start learning 🚀`, 'user-check', 'emerald');
-        }
-
-        // Select existing profile
-        async function selectProfile(profileId) {
-            currentProfileId = profileId;
-            await saveProfiles();
-            loadCurrentUserState();
-            
-            hideProfileModal();
-            hideProfileSwitcher();
-            showMainApp();
-            updateHeaderUserInfo();
-            initCourse();
-            
-            const profile = profiles[profileId];
-            showToast(`Welcome back, ${profile.name}!`, 'user-check', 'emerald');
-        }
-
-        // Delete profile
-        async function deleteProfile(profileId, event) {
-            event.stopPropagation();
-            const profile = profiles[profileId];
-            
-            if (confirm(`Delete profile "${profile.name}"? All progress will be lost.`)) {
-                delete profiles[profileId];
-
-                if (currentProfileId === profileId) {
-                    currentProfileId = null;
-                }
-                await saveProfiles();
-                
-                renderProfilesList();
-                renderSwitcherProfilesList();
-                showToast('Profile deleted', 'trash', 'red');
-                
-                // If no more profiles, show create new
-                if (Object.keys(profiles).length === 0) {
-                    hideProfileSwitcher();
-                    showProfileModal();
-                }
+        function updateStreamModeUI() {
+            const badge = document.getElementById('streamModeBadge');
+            const btn = document.getElementById('btnToggleMode');
+            if (streamMode === 'proxy') {
+                if (badge) badge.innerHTML = '🛡️ Render Proxy Mode (Zero DNS Block)';
+                if (btn) btn.innerHTML = 'Switch to Direct YouTube ⚡';
+            } else {
+                if (badge) badge.innerHTML = '⚡ Direct YouTube Mode';
+                if (btn) btn.innerHTML = 'Switch to Render Proxy 🛡️';
             }
         }
 
-        // Render profiles list in initial modal
-        function renderProfilesList() {
-            const container = document.getElementById('profilesList');
-            const existingSection = document.getElementById('existingProfiles');
-            const createTitle = document.getElementById('createProfileTitle');
-            const profilesArray = Object.values(profiles);
-
-            if (profilesArray.length === 0) {
-                existingSection.classList.add('hidden');
-                createTitle.textContent = 'Create Your Profile';
-                return;
+        function toggleStreamMode() {
+            streamMode = streamMode === 'proxy' ? 'direct' : 'proxy';
+            localStorage.setItem('learn_investing_stream_mode', streamMode);
+            updateStreamModeUI();
+            if (currentVideo) {
+                playSelectedVideo();
             }
+        }
 
-            existingSection.classList.remove('hidden');
-            createTitle.textContent = 'Add New Profile';
+        function renderCurriculum() {
+            const container = document.getElementById('moduleContainer');
+            if (!container) return;
+            container.innerHTML = '';
 
-            container.innerHTML = profilesArray.map(profile => {
-                const completedCount = getValidCompletedVideos(profile.progress).length;
-                const totalVideos = getAllVideos().length;
-                const percent = Math.round((completedCount / totalVideos) * 100);
+            const profile = getCurrentProfile();
+            let totalLessons = 0;
+            let completedLessons = 0;
 
-                return `
-                    <button onclick="selectProfile('${profile.id}')" 
-                        class="profile-card w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all group">
-                        <div class="w-10 h-10 avatar-gradient rounded-full flex items-center justify-center flex-shrink-0">
-                            <span class="text-white font-bold text-sm">${getInitials(profile.name)}</span>
-                        </div>
-                        <div class="flex-1 text-left min-w-0">
-                            <p class="font-medium text-slate-800 truncate">${profile.name}</p>
-                            <p class="text-xs text-slate-500">${percent}% complete • ${completedCount}/${totalVideos} videos</p>
-                        </div>
-                        <button onclick="deleteProfile('${profile.id}', event)" 
-                            class="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 transition-all">
-                            <i class="fas fa-trash text-xs"></i>
-                        </button>
-                        <i class="fas fa-chevron-right text-slate-300"></i>
-                    </button>
+            courseData.modules.forEach((mod, modIdx) => {
+                const card = document.createElement('div');
+                card.className = 'module-card';
+
+                const header = document.createElement('div');
+                header.className = 'module-header';
+                header.innerHTML = `
+                    <div class="module-info">
+                        <div class="module-title">${mod.title}</div>
+                        <div class="module-count">${mod.topics.length} Lessons • ${mod.subtitle}</div>
+                    </div>
+                    <span style="font-size: 0.9rem; color: var(--text-muted);" id="toggle-icon-${mod.id}">▼</span>
                 `;
-            }).join('');
-        }
 
-        // Render profiles in switcher modal
-        function renderSwitcherProfilesList() {
-            const container = document.getElementById('switcherProfilesList');
-            const profilesArray = Object.values(profiles);
+                const topicList = document.createElement('div');
+                topicList.className = 'topic-list';
+                topicList.id = 'topics-' + mod.id;
 
-            container.innerHTML = profilesArray.map(profile => {
-                const isActive = profile.id === currentProfileId;
-                const completedCount = getValidCompletedVideos(profile.progress).length;
-                const totalVideos = getAllVideos().length;
-                const percent = Math.round((completedCount / totalVideos) * 100);
+                mod.topics.forEach((topic, topIdx) => {
+                    totalLessons++;
+                    const isDone = profile.completed.includes(topic.id);
+                    if (isDone) completedLessons++;
 
-                return `
-                    <button onclick="selectProfile('${profile.id}')" 
-                        class="w-full flex items-center gap-3 p-3 ${isActive ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 hover:bg-slate-100'} rounded-xl transition-all group">
-                        <div class="w-10 h-10 avatar-gradient rounded-full flex items-center justify-center flex-shrink-0">
-                            <span class="text-white font-bold text-sm">${getInitials(profile.name)}</span>
+                    const item = document.createElement('div');
+                    item.className = 'topic-item' + (currentVideo && currentVideo.id === topic.id ? ' active' : '');
+                    item.onclick = () => selectVideo(topic, mod);
+
+                    item.innerHTML = `
+                        <div class="topic-status-icon ${isDone ? 'done' : ''}">
+                            ${isDone ? '✓' : (topIdx + 1)}
                         </div>
-                        <div class="flex-1 text-left min-w-0">
-                            <div class="flex items-center gap-2">
-                                <p class="font-medium text-slate-800 truncate">${profile.name}</p>
-                                ${isActive ? '<span class="px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] rounded-full">Active</span>' : ''}
-                            </div>
-                            <p class="text-xs text-slate-500">${percent}% complete</p>
+                        <div class="topic-text">
+                            <div class="topic-title">${topic.title}</div>
+                            <div class="topic-channel">${topic.channel} ${topic.type === 'playlist' ? '• (Playlist)' : ''}</div>
                         </div>
-                        <button onclick="deleteProfile('${profile.id}', event)" 
-                            class="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 transition-all">
-                            <i class="fas fa-trash text-xs"></i>
-                        </button>
-                    </button>
-                `;
-            }).join('');
+                    `;
+                    topicList.appendChild(item);
+                });
+
+                header.onclick = () => {
+                    topicList.classList.toggle('hidden');
+                    const icon = document.getElementById('toggle-icon-' + mod.id);
+                    if (icon) icon.textContent = topicList.classList.contains('hidden') ? '▶' : '▼';
+                };
+
+                card.appendChild(header);
+                card.appendChild(topicList);
+                container.appendChild(card);
+            });
+
+            // Update Progress Bar
+            document.getElementById('totalCount').textContent = totalLessons;
+            document.getElementById('completedCount').textContent = completedLessons;
+            const pct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+            document.getElementById('progressPercent').textContent = pct + '%';
+            document.getElementById('progressBar').style.width = pct + '%';
         }
 
-        // Update header with current user info
-        function updateHeaderUserInfo() {
-            if (!currentProfileId || !profiles[currentProfileId]) return;
-            const profile = profiles[currentProfileId];
-            document.getElementById('headerUserName').textContent = profile.name;
-            document.getElementById('headerUserInitial').textContent = getInitials(profile.name);
+        function selectVideo(topic, module) {
+            currentVideo = { ...topic, moduleTitle: module.title };
+
+            document.getElementById('videoTitle').textContent = topic.title;
+            document.getElementById('videoChannel').textContent = topic.channel + ' — ' + (topic.description || '');
+            document.getElementById('moduleBadge').textContent = module.title;
+            document.getElementById('btnOpenExternal').href = topic.url || '#';
+
+            updateCompleteButton();
+            renderCurriculum();
+            playSelectedVideo();
         }
 
-        // Modal controls
+        function playSelectedVideo() {
+            if (!currentVideo) return;
+
+            const placeholder = document.getElementById('videoPlaceholder');
+            const iframe = document.getElementById('videoIframe');
+            const video = document.getElementById('localVideo');
+
+            placeholder.classList.add('hidden');
+
+            let videoId = currentVideo.embedId;
+            if (videoId.includes('watch?v=')) {
+                videoId = videoId.split('watch?v=')[1].split('&')[0];
+            } else if (videoId.includes('videoseries?list=')) {
+                videoId = videoId.split('list=')[1].split('&')[0];
+            }
+
+            if (streamMode === 'proxy') {
+                iframe.classList.add('hidden');
+                iframe.src = '';
+                video.classList.remove('hidden');
+
+                const baseUrl = getApiBaseUrl();
+                video.src = `${baseUrl}/api/stream/youtube?v=${encodeURIComponent(videoId)}`;
+                video.onended = () => {
+                    handleVideoCompletion();
+                };
+                video.play().catch(e => {
+                    console.log('Video play waiting or user interaction required');
+                });
+            } else {
+                video.pause();
+                video.classList.add('hidden');
+                video.src = '';
+
+                let embedUrl = '';
+                if (currentVideo.type === 'playlist' && currentVideo.url.includes('list=')) {
+                    const listId = currentVideo.url.split('list=')[1].split('&')[0];
+                    embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${listId}&autoplay=1&rel=0`;
+                } else {
+                    embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+                }
+
+                iframe.src = embedUrl;
+                iframe.classList.remove('hidden');
+            }
+
+            if (window.innerWidth < 1024) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function toggleCompleted() {
+            if (!currentVideo) return;
+            const profile = getCurrentProfile();
+            const idx = profile.completed.indexOf(currentVideo.id);
+
+            if (idx === -1) {
+                profile.completed.push(currentVideo.id);
+            } else {
+                profile.completed.splice(idx, 1);
+            }
+            saveProfileData();
+            updateCompleteButton();
+            renderCurriculum();
+        }
+
+        function handleVideoCompletion() {
+            if (!currentVideo) return;
+            const profile = getCurrentProfile();
+            if (!profile.completed.includes(currentVideo.id)) {
+                profile.completed.push(currentVideo.id);
+                saveProfileData();
+                updateCompleteButton();
+                renderCurriculum();
+            }
+            playNextVideo();
+        }
+
+        function updateCompleteButton() {
+            if (!currentVideo) return;
+            const profile = getCurrentProfile();
+            const isDone = profile.completed.includes(currentVideo.id);
+            const btn = document.getElementById('btnComplete');
+            const txt = document.getElementById('btnCompleteText');
+
+            if (isDone) {
+                btn.className = 'btn btn-completed';
+                txt.textContent = '✓ Completed';
+            } else {
+                btn.className = 'btn btn-secondary';
+                txt.textContent = 'Mark Done';
+            }
+        }
+
+        function playNextVideo() {
+            let found = false;
+            let nextTopic = null;
+            let nextModule = null;
+
+            for (const mod of courseData.modules) {
+                for (const topic of mod.topics) {
+                    if (found) {
+                        nextTopic = topic;
+                        nextModule = mod;
+                        break;
+                    }
+                    if (currentVideo && topic.id === currentVideo.id) {
+                        found = true;
+                    }
+                }
+                if (nextTopic) break;
+            }
+
+            if (nextTopic && nextModule) {
+                selectVideo(nextTopic, nextModule);
+            }
+        }
+
+        // Profile Management
         function showProfileModal() {
+            renderProfileList();
             document.getElementById('profileModal').classList.remove('hidden');
-            document.getElementById('newProfileName').value = '';
-            document.getElementById('profileError').classList.add('hidden');
-            renderProfilesList();
         }
 
         function hideProfileModal() {
             document.getElementById('profileModal').classList.add('hidden');
         }
 
-        function showProfileSwitcher() {
-            renderSwitcherProfilesList();
-            document.getElementById('profileSwitcherModal').classList.remove('hidden');
-        }
-
-        function hideProfileSwitcher() {
-            document.getElementById('profileSwitcherModal').classList.add('hidden');
-        }
-
-        function showMainApp() {
-            document.getElementById('mainHeader').classList.remove('hidden');
-            document.getElementById('mainApp').classList.remove('hidden');
-        }
-
-        function hideMainApp() {
-            document.getElementById('mainHeader').classList.add('hidden');
-            document.getElementById('mainApp').classList.add('hidden');
-        }
-
-        // Get all videos as flat array
-        function getAllVideos() {
-            const videos = [];
-            courseData.modules.forEach(module => {
-                module.topics.forEach(topic => {
-                    videos.push({ ...topic, moduleId: module.id, moduleTitle: module.title, moduleColor: module.color });
-                });
-            });
-            return videos;
-        }
-
-        function getValidCompletedVideos(progress) {
-            const validIds = new Set(getAllVideos().map(video => video.id));
-            return (progress?.completedVideos || []).filter(id => validIds.has(id));
-        }
-
-        function sanitizeCourseState() {
-            const validIds = new Set(getAllVideos().map(video => video.id));
-            const completedVideos = (state.completedVideos || []).filter(id => validIds.has(id));
-
-            state = {
-                courseVersion,
-                currentVideoId: validIds.has(state.currentVideoId) ? state.currentVideoId : null,
-                completedVideos,
-                lastWatched: validIds.has(state.lastWatched) ? state.lastWatched : null,
-                playback: Object.fromEntries(
-                    Object.entries(state.playback || {}).filter(([id]) => validIds.has(id))
-                )
-            };
-        }
-
-        // Get next video to watch
-        function getNextVideo() {
-            const allVideos = getAllVideos();
-            if (state.lastWatched) {
-                const lastIndex = allVideos.findIndex(v => v.id === state.lastWatched);
-                if (lastIndex !== -1 && !state.completedVideos.includes(state.lastWatched)) {
-                    return allVideos[lastIndex];
-                }
-                if (lastIndex !== -1 && lastIndex < allVideos.length - 1) {
-                    const next = allVideos[lastIndex + 1];
-                    if (!state.completedVideos.includes(next.id)) {
-                        return next;
-                    }
-                }
-            }
-            return allVideos.find(v => !state.completedVideos.includes(v.id)) || allVideos[0];
-        }
-
-        // Get video by ID
-        function getVideoById(id) {
-            const allVideos = getAllVideos();
-            return allVideos.find(v => v.id === id);
-        }
-
-        function getModuleBadgeClass(color) {
-            const badgeClasses = {
-                emerald: 'bg-emerald-100 text-emerald-700',
-                blue: 'bg-blue-100 text-blue-700',
-                indigo: 'bg-indigo-100 text-indigo-700',
-                rose: 'bg-rose-100 text-rose-700',
-                amber: 'bg-amber-100 text-amber-700',
-                cyan: 'bg-cyan-100 text-cyan-700'
-            };
-
-            return `inline-block px-3 py-1 text-xs font-medium rounded-full mb-2 ${badgeClasses[color] || 'bg-slate-100 text-slate-700'}`;
-        }
-
-        function formatTime(totalSeconds = 0) {
-            const seconds = Math.max(0, Math.floor(totalSeconds));
-            const minutes = Math.floor(seconds / 60);
-            const remainingSeconds = seconds % 60;
-            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-        }
-
-        function getPlayback(videoId) {
-            return state.playback?.[videoId] || { seconds: 0, playlistIndex: 0, duration: 0 };
-        }
-
-        function updatePlaybackStatus(videoId) {
-            const status = document.getElementById('playbackStatus');
-            const playback = getPlayback(videoId);
-
-            if (!videoId || !playback.seconds || playback.seconds < 5) {
-                status.classList.add('hidden');
-                status.textContent = '';
-                return;
-            }
-
-            const durationText = playback.duration ? ` / ${formatTime(playback.duration)}` : '';
-            const playlistText = playback.playlistIndex ? `, playlist item ${playback.playlistIndex + 1}` : '';
-            status.textContent = `Resume point: ${formatTime(playback.seconds)}${durationText}${playlistText}`;
-            status.classList.remove('hidden');
-        }
-
-        function getYouTubeId(url) {
-            try {
-                const parsed = new URL(url);
-                if (parsed.hostname.includes('youtu.be')) {
-                    return parsed.pathname.replace('/', '');
-                }
-                return parsed.searchParams.get('v');
-            } catch (error) {
-                return null;
-            }
-        }
-
-        function getYouTubePlaylistId(url) {
-            try {
-                return new URL(url).searchParams.get('list');
-            } catch (error) {
-                return null;
-            }
-        }
-
-        function getYouTubeLessonConfig(video) {
-            return {
-                videoId: getYouTubeId(video.url) || video.embedId,
-                playlistId: getYouTubePlaylistId(video.url),
-                isPlaylist: video.type === 'playlist'
-            };
-        }
-
-        let useRenderProxy = localStorage.getItem('learn_investing_stream_mode') === 'proxy' || 
-                             navigator.userAgent.includes('RenderDashboardApp') ||
-                             window.isRenderApp === true;
-
-        function updateStreamModeUI() {
-            const btn = document.getElementById('streamModeToggleBtn');
-            const label = document.getElementById('streamModeLabel');
-            if (!btn || !label) return;
-
-            if (useRenderProxy) {
-                btn.className = "px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100";
-                label.textContent = "Stream: Render Proxy (DNS Bypass)";
-            } else {
-                btn.className = "px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100";
-                label.textContent = "Stream: Direct YouTube";
-            }
-        }
-
-        function toggleStreamMode() {
-            useRenderProxy = !useRenderProxy;
-            localStorage.setItem('learn_investing_stream_mode', useRenderProxy ? 'proxy' : 'direct');
-            updateStreamModeUI();
-            if (state.currentVideoId) {
-                loadVideoIntoPlayer(state.currentVideoId, true);
-            }
-        }
-
-        function ensureYouTubeApi() {
-            if (useRenderProxy) return;
-
-            if (window.YT?.Player) {
-                youtubeApiReady = true;
-                createYouTubePlayer();
-                return;
-            }
-
-            if (document.getElementById('youtubeIframeApi')) return;
-
-            const script = document.createElement('script');
-            script.id = 'youtubeIframeApi';
-            script.src = 'https://www.youtube.com/iframe_api';
-            script.onerror = () => {
-                console.warn('[Learn Investing] YouTube API blocked by network/DNS. Switching to Render Proxy Stream.');
-                useRenderProxy = true;
-                updateStreamModeUI();
-                if (pendingVideoLoad) {
-                    const pending = pendingVideoLoad;
-                    pendingVideoLoad = null;
-                    loadVideoIntoPlayer(pending.videoId, pending.autoplay);
-                }
-            };
-            document.head.appendChild(script);
-        }
-
-        function onYouTubeIframeAPIReady() {
-            youtubeApiReady = true;
-            createYouTubePlayer();
-        }
-
-        function createYouTubePlayer() {
-            if (!youtubeApiReady || youtubePlayer) return;
-
-            youtubePlayer = new YT.Player('youtubePlayer', {
-                width: '100%',
-                height: '100%',
-                playerVars: {
-                    enablejsapi: 1,
-                    playsinline: 1,
-                    rel: 0,
-                    modestbranding: 1
-                },
-                events: {
-                    onReady: onYouTubePlayerReady,
-                    onStateChange: onYouTubePlayerStateChange
-                }
-            });
-        }
-
-        function onYouTubePlayerReady() {
-            youtubePlayerReady = true;
-            if (pendingVideoLoad) {
-                const pending = pendingVideoLoad;
-                pendingVideoLoad = null;
-                loadVideoIntoPlayer(pending.videoId, pending.autoplay);
-            }
-        }
-
-        function onYouTubePlayerStateChange(event) {
-            if (event.data === YT.PlayerState.PLAYING) {
-                startPlaybackAutosave();
-            }
-
-            if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-                savePlaybackPosition();
-            }
-
-            if (event.data === YT.PlayerState.ENDED) {
-                handleVideoCompletion();
-            }
-        }
-
-        function handleVideoCompletion() {
-            if (!state.currentVideoId) return;
-            // Mark current video as complete if not already done
-            if (!state.completedVideos.includes(state.currentVideoId)) {
-                state.completedVideos.push(state.currentVideoId);
-                saveState();
-                updateUI();
-            }
-
-            // Auto-play next video if enabled
-            if (autoPlayNextVideo) {
-                const allVideos = getAllVideos();
-                const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
-                
-                if (currentIndex !== -1 && currentIndex < allVideos.length - 1) {
-                    const nextVideo = allVideos[currentIndex + 1];
-                    setTimeout(() => {
-                        playVideo(nextVideo.id, true);
-                    }, 500);
-                } else if (currentIndex === allVideos.length - 1) {
-                    showToast('🎉 Course Completed! Excellent work!', 'trophy', 'emerald');
-                }
-            }
-        }
-
-        function loadVideoIntoPlayer(videoId, autoplay = false) {
-            const video = getVideoById(videoId);
-            if (!video) return;
-
-            const ytContainer = document.getElementById('youtubePlayer');
-            const renderVideo = document.getElementById('renderVideoPlayer');
-            const placeholder = document.getElementById('playerPlaceholder');
-
-            updateStreamModeUI();
-
-            if (useRenderProxy) {
-                // Use Render Server Video Proxy (Bypasses YouTube DNS blocks!)
-                if (youtubePlayer && youtubePlayer.pauseVideo) {
-                    try { youtubePlayer.pauseVideo(); } catch (e) {}
-                }
-                ytContainer.classList.add('hidden');
-                renderVideo.classList.remove('hidden');
-
-                const config = getYouTubeLessonConfig(video);
-                const actualVideoId = config.videoId;
-                const playback = getPlayback(videoId);
-                const startSeconds = Math.max(0, Math.floor(playback.seconds || 0));
-
-                renderVideo.src = `/api/stream/youtube?v=${encodeURIComponent(actualVideoId)}`;
-                renderVideo.currentTime = startSeconds;
-                
-                renderVideo.onplay = () => startPlaybackAutosave();
-                renderVideo.onpause = () => savePlaybackPosition();
-                renderVideo.onended = () => {
-                    savePlaybackPosition();
-                    handleVideoCompletion();
-                };
-
-                if (autoplay) {
-                    renderVideo.play().catch(() => {});
-                }
-                if (placeholder) placeholder.classList.add('hidden');
-                return;
-            }
-
-            // Standard YouTube iFrame player
-            renderVideo.classList.add('hidden');
-            renderVideo.pause();
-            ytContainer.classList.remove('hidden');
-
-            ensureYouTubeApi();
-            if (!youtubePlayerReady) {
-                pendingVideoLoad = { videoId, autoplay };
-                return;
-            }
-
-            const config = getYouTubeLessonConfig(video);
-            const playback = getPlayback(videoId);
-            const startSeconds = Math.max(0, Math.floor(playback.seconds || 0));
-            const playlistIndex = Math.max(0, playback.playlistIndex || 0);
-
-            if (config.isPlaylist && config.playlistId) {
-                const playlistConfig = {
-                    listType: 'playlist',
-                    list: config.playlistId,
-                    index: playlistIndex,
-                    startSeconds
-                };
-                autoplay ? youtubePlayer.loadPlaylist(playlistConfig) : youtubePlayer.cuePlaylist(playlistConfig);
-            } else if (config.videoId) {
-                const videoConfig = { videoId: config.videoId, startSeconds };
-                autoplay ? youtubePlayer.loadVideoById(videoConfig) : youtubePlayer.cueVideoById(videoConfig);
-            }
-
-            if (placeholder) placeholder.classList.add('hidden');
-        }
-
-        function savePlaybackPosition() {
-            if (!state.currentVideoId) return;
-
-            if (useRenderProxy) {
-                const renderVideo = document.getElementById('renderVideoPlayer');
-                if (!renderVideo) return;
-                const seconds = renderVideo.currentTime || 0;
-                const duration = renderVideo.duration || 0;
-                state.playback = state.playback || {};
-                state.playback[state.currentVideoId] = {
-                    seconds: Math.floor(seconds),
-                    duration: Math.floor(duration),
-                    updatedAt: new Date().toISOString()
-                };
-                saveState();
-                return;
-            }
-
-            if (!youtubePlayerReady) return;
-
-            try {
-                const seconds = youtubePlayer.getCurrentTime?.() || 0;
-                const duration = youtubePlayer.getDuration?.() || 0;
-                const playlistIndex = youtubePlayer.getPlaylistIndex?.() || 0;
-
-                state.playback = state.playback || {};
-                state.playback[state.currentVideoId] = {
-                    seconds: Math.floor(seconds),
-                    duration: Math.floor(duration),
-                    playlistIndex: Math.max(0, playlistIndex),
-                    updatedAt: new Date().toISOString()
-                };
-                saveState();
-                updatePlaybackStatus(state.currentVideoId);
-            } catch (error) {
-                console.warn('Unable to save playback position:', error.message);
-            }
-        }
-
-        function startPlaybackAutosave() {
-            if (playbackSaveInterval) return;
-            playbackSaveInterval = setInterval(savePlaybackPosition, 5000);
-        }
-
-        // Play video
-        function playVideo(videoId, autoplay = false) {
-            savePlaybackPosition();
-            const video = getVideoById(videoId);
-            if (!video) return;
-
-            state.currentVideoId = videoId;
-            state.lastWatched = videoId;
-            saveState();
-
-            document.getElementById('currentVideoTitle').textContent = video.title;
-            document.getElementById('currentVideoChannel').textContent = video.channel;
-            document.getElementById('currentVideoDesc').textContent = video.description;
-            
-            const badge = document.getElementById('currentModuleBadge');
-            badge.textContent = video.moduleTitle;
-            badge.className = getModuleBadgeClass(video.moduleColor);
-
-            document.getElementById('watchNowBtn').classList.remove('hidden');
-            updatePlaybackStatus(videoId);
-            loadVideoIntoPlayer(videoId, autoplay);
-            updateCompleteButton();
-            updateVideoHighlights();
-            updateNextUpCard();
-
-            if (window.innerWidth < 1024) {
-                document.getElementById('videoSection').scrollIntoView({ behavior: 'smooth' });
-            }
-        }
-
-        // Start current video in the embedded player
-        function playCurrentVideo() {
-            if (!state.currentVideoId) {
-                showToast('Please select a video first', 'info-circle', 'blue');
-                return;
-            }
-            loadVideoIntoPlayer(state.currentVideoId, true);
-        }
-
-        // Play video directly in the embedded player
-        function playVideoInApp(videoId) {
-            playVideo(videoId, true);
-        }
-
-        // Watch next video
-        function watchNextVideo() {
-            const next = getNextVideo();
-            if (next) {
-                playVideo(next.id, true);
-            }
-        }
-
-        // Play next in sequence
-        function playNextVideoInSequence() {
-            const allVideos = getAllVideos();
-            const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
-            if (currentIndex !== -1 && currentIndex < allVideos.length - 1) {
-                playVideo(allVideos[currentIndex + 1].id, true);
-            }
-        }
-
-        // Play previous video
-        function playPrevVideo() {
-            const allVideos = getAllVideos();
-            const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
-            if (currentIndex > 0) {
-                playVideo(allVideos[currentIndex - 1].id, true);
-            }
-        }
-
-        // Toggle complete status
-        function toggleComplete() {
-            if (!state.currentVideoId) return;
-            toggleCompleteById(state.currentVideoId);
-        }
-
-        // Toggle complete by video ID
-        function toggleCompleteById(videoId) {
-            const index = state.completedVideos.indexOf(videoId);
-            if (index === -1) {
-                state.completedVideos.push(videoId);
-                showToast('Video marked as complete! 🎉', 'check-circle', 'emerald');
-            } else {
-                state.completedVideos.splice(index, 1);
-                showToast('Video marked as incomplete', 'times-circle', 'red');
-            }
-            
-            saveState();
-            updateUI();
-        }
-
-        // Update complete button
-        function updateCompleteButton() {
-            const btn = document.getElementById('markCompleteBtn');
-            const isComplete = state.completedVideos.includes(state.currentVideoId);
-            
-            if (isComplete) {
-                btn.innerHTML = '<i class="fas fa-check-circle"></i><span>Completed</span>';
-                btn.className = 'flex-shrink-0 px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-300 transition-colors flex items-center gap-2';
-            } else {
-                btn.innerHTML = '<i class="fas fa-check"></i><span>Mark Complete</span>';
-                btn.className = 'flex-shrink-0 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2';
-            }
-        }
-
-        // Toggle auto-play next video
-        function toggleAutoPlay() {
-            autoPlayNextVideo = !autoPlayNextVideo;
-            const btn = document.getElementById('autoPlayBtn');
-            
-            if (autoPlayNextVideo) {
-                btn.classList.remove('bg-slate-400', 'hover:bg-slate-500');
-                btn.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                btn.innerHTML = '<i class="fas fa-play-circle"></i><span class="hidden sm:inline">Auto-Play</span>';
-                showToast('Auto-play enabled: Next video will play automatically', 'play-circle', 'blue');
-            } else {
-                btn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
-                btn.classList.add('bg-slate-400', 'hover:bg-slate-500');
-                btn.innerHTML = '<i class="fas fa-pause-circle"></i><span class="hidden sm:inline">Auto-Play Off</span>';
-                showToast('Auto-play disabled', 'pause-circle', 'slate');
-            }
-        }
-
-        // Update auto-play button state
-        function updateAutoPlayButton() {
-            const btn = document.getElementById('autoPlayBtn');
-            if (!btn) return;
-            
-            if (autoPlayNextVideo) {
-                btn.classList.remove('bg-slate-400', 'hover:bg-slate-500');
-                btn.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                btn.innerHTML = '<i class="fas fa-play-circle"></i><span class="hidden sm:inline">Auto-Play</span>';
-            } else {
-                btn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
-                btn.classList.add('bg-slate-400', 'hover:bg-slate-500');
-                btn.innerHTML = '<i class="fas fa-pause-circle"></i><span class="hidden sm:inline">Auto-Play Off</span>';
-            }
-        }
-
-        // Update video highlights
-        function updateVideoHighlights() {
-            document.querySelectorAll('.video-item').forEach(item => {
-                const videoId = item.dataset.videoId;
-                item.classList.remove('current', 'completed');
-                
-                if (videoId === state.currentVideoId) {
-                    item.classList.add('current');
-                }
-                if (state.completedVideos.includes(videoId)) {
-                    item.classList.add('completed');
-                }
-            });
-        }
-
-        // Update next up card
-        function updateNextUpCard() {
-            const next = getNextVideo();
-            if (next) {
-                document.getElementById('nextVideoTitle').textContent = next.title;
-                document.getElementById('nextVideoModule').textContent = next.moduleTitle;
-            } else {
-                document.getElementById('nextVideoTitle').textContent = 'Course Completed! 🎉';
-                document.getElementById('nextVideoModule').textContent = 'Congratulations!';
-            }
-        }
-
-        // Update progress stats
-        function updateProgress() {
-            const allVideos = getAllVideos();
-            const total = allVideos.length;
-            const completed = getValidCompletedVideos(state).length;
-            const percent = Math.round((completed / total) * 100);
-
-            document.getElementById('completedCount').textContent = completed;
-            document.getElementById('totalCount').textContent = total;
-            document.getElementById('progressBar').style.width = `${percent}%`;
-            document.getElementById('headerPercent').textContent = percent;
-
-            const ring = document.getElementById('headerProgress');
-            const circumference = 94.2;
-            ring.style.strokeDashoffset = circumference - (percent / 100) * circumference;
-        }
-
-        // Update module nav
-        function updateModuleNav() {
-            const nav = document.getElementById('moduleNav');
-            nav.innerHTML = courseData.modules.map(module => {
-                const moduleVideos = module.topics.map(t => t.id);
-                const completed = moduleVideos.filter(id => state.completedVideos.includes(id)).length;
-                const total = moduleVideos.length;
-                const percent = Math.round((completed / total) * 100);
-                
-                const colorClasses = {
-                    emerald: 'bg-emerald-500',
-                    blue: 'bg-blue-500',
-                    indigo: 'bg-indigo-500',
-                    rose: 'bg-rose-500',
-                    amber: 'bg-amber-500',
-                    cyan: 'bg-cyan-500'
-                };
-
-                return `
-                    <button onclick="scrollToModule(${module.id})" 
-                        class="w-full text-left p-3 rounded-xl hover:bg-slate-50 transition-colors">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm font-medium text-slate-700">${module.title}</span>
-                            <span class="text-xs text-slate-500">${completed}/${total}</span>
-                        </div>
-                        <div class="w-full bg-slate-100 rounded-full h-1.5">
-                            <div class="${colorClasses[module.color]} h-1.5 rounded-full transition-all duration-500" style="width: ${percent}%"></div>
-                        </div>
-                    </button>
-                `;
-            }).join('');
-        }
-
-        // Scroll to module
-        function scrollToModule(moduleId) {
-            document.getElementById(`module-${moduleId}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-
-        // Render curriculum
-        function renderCurriculum() {
-            const container = document.getElementById('curriculum');
-            
-            container.innerHTML = courseData.modules.map(module => {
-                const colorClasses = {
-                    emerald: { bg: 'bg-emerald-500', light: 'bg-emerald-50', text: 'text-emerald-600' },
-                    blue: { bg: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-600' },
-                    indigo: { bg: 'bg-indigo-500', light: 'bg-indigo-50', text: 'text-indigo-600' },
-                    rose: { bg: 'bg-rose-500', light: 'bg-rose-50', text: 'text-rose-600' },
-                    amber: { bg: 'bg-amber-500', light: 'bg-amber-50', text: 'text-amber-600' },
-                    cyan: { bg: 'bg-cyan-500', light: 'bg-cyan-50', text: 'text-cyan-600' }
-                };
-                const colors = colorClasses[module.color];
-
-                return `
-                    <div id="module-${module.id}" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div class="${module.gradient} p-6 text-white">
-                            <div class="flex items-center gap-2 mb-1">
-                                <span class="text-xs font-medium uppercase tracking-wide opacity-80">Module ${module.id}</span>
-                            </div>
-                            <h3 class="text-xl font-bold mb-1">${module.title}</h3>
-                            <p class="text-sm opacity-90">${module.subtitle}</p>
-                        </div>
-                        <div class="divide-y divide-slate-100">
-                            ${module.topics.map((topic, index) => {
-                                const isCompleted = state.completedVideos.includes(topic.id);
-                                return `
-                                    <div class="video-item p-4 hover:bg-slate-50 transition-colors ${isCompleted ? 'completed' : ''}" 
-                                        data-video-id="${topic.id}">
-                                        <div class="flex items-start gap-4">
-                                            <div class="flex-shrink-0 w-8 h-8 rounded-full ${isCompleted ? colors.bg + ' text-white' : colors.light + ' ' + colors.text} flex items-center justify-center">
-                                                ${isCompleted ? '<i class="fas fa-check text-sm"></i>' : `<span class="text-sm font-medium">${index + 1}</span>`}
-                                            </div>
-                                            <div class="flex-1 min-w-0">
-                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
-                                                    <h4 class="font-medium text-slate-800">${topic.title}</h4>
-                                                    ${topic.type === 'playlist' ? `<span class="flex-shrink-0 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full"><i class="fas fa-list mr-1"></i>Playlist</span>` : `<span class="flex-shrink-0 px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full"><i class="fas fa-video mr-1"></i>Video</span>`}
-                                                </div>
-                                                <p class="text-sm text-slate-500 mb-1">${topic.channel}</p>
-                                                <p class="text-xs text-slate-400 mb-3">${topic.description}</p>
-                                                <div class="flex items-center gap-2 flex-wrap">
-                                                    <button onclick="playVideoInApp('${topic.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors">
-                                                        <i class="fas fa-play"></i>
-                                                        Play in App
-                                                    </button>
-                                                    <button onclick="event.stopPropagation(); toggleCompleteById('${topic.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 ${isCompleted ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-emerald-500 text-white hover:bg-emerald-600'} text-xs font-medium rounded-lg transition-colors">
-                                                        <i class="fas fa-${isCompleted ? 'check-circle' : 'check'}"></i>
-                                                        ${isCompleted ? 'Completed' : 'Mark Done'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
+        function renderProfileList() {
+            const list = document.getElementById('profileList');
+            list.innerHTML = '';
+
+            Object.keys(profiles).forEach(id => {
+                const p = profiles[id];
+                const item = document.createElement('div');
+                item.className = 'profile-list-item';
+                item.innerHTML = `
+                    <div>
+                        <strong>${p.name}</strong>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">${p.completed.length} lessons done</div>
                     </div>
+                    ${id === currentProfileId ? '<span style="color:var(--primary); font-weight:bold;">Active</span>' : '<button class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.75rem;">Switch</button>'}
                 `;
-            }).join('');
-        }
-
-        // Show toast
-        function showToast(message, icon = 'check-circle', color = 'emerald') {
-            const toast = document.getElementById('toast');
-            const toastIcon = document.getElementById('toastIcon');
-            const toastMessage = document.getElementById('toastMessage');
-
-            toastMessage.textContent = message;
-            toastIcon.className = `fas fa-${icon} text-${color}-400`;
-
-            toast.classList.remove('translate-y-20', 'opacity-0');
-            
-            setTimeout(() => {
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 3000);
-        }
-
-        // Reset progress
-        function resetProgress() {
-            if (confirm('Are you sure you want to reset all progress for this profile? This cannot be undone.')) {
-                state = {
-                    courseVersion,
-                    currentVideoId: null,
-                    completedVideos: [],
-                    lastWatched: null,
-                    playback: {}
+                item.onclick = () => {
+                    currentProfileId = id;
+                    saveProfileData();
+                    updateHeaderProfile();
+                    renderCurriculum();
+                    hideProfileModal();
                 };
-                saveState();
-                updateUI();
-                const firstVideo = getNextVideo();
-                if (firstVideo) {
-                    playVideo(firstVideo.id, false);
-                }
-                showToast('Progress has been reset', 'redo', 'blue');
-            }
+                list.appendChild(item);
+            });
         }
 
-        // Update all UI
-        function updateUI() {
+        function addNewProfile() {
+            const input = document.getElementById('newProfileInput');
+            const name = input.value.trim();
+            if (!name) return;
+
+            const newId = 'profile_' + Date.now();
+            profiles[newId] = { id: newId, name, completed: [] };
+            currentProfileId = newId;
+            saveProfileData();
+            input.value = '';
+            updateHeaderProfile();
             renderCurriculum();
-            updateProgress();
-            updateModuleNav();
-            updateNextUpCard();
-            updateVideoHighlights();
-            updateCompleteButton();
-            updateAutoPlayButton();
+            hideProfileModal();
         }
 
-        // Initialize course content
-        function initCourse() {
-            updateUI();
-
-            const intendedVideo = getNextVideo();
-            if (intendedVideo) {
-                playVideo(intendedVideo.id, false);
-            }
+        function updateHeaderProfile() {
+            const p = getCurrentProfile();
+            document.getElementById('headerName').textContent = p.name;
+            document.getElementById('headerAvatar').textContent = p.name.charAt(0).toUpperCase();
         }
 
-        // Main initialization
-        async function init() {
-            ensureYouTubeApi();
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateStreamModeUI();
             await loadProfiles();
 
-            // Check if user was previously logged in
-            if (currentProfileId && profiles[currentProfileId]) {
-                loadCurrentUserState();
-                hideProfileModal();
-                showMainApp();
-                updateHeaderUserInfo();
-                initCourse();
-
-                if (state.completedVideos.length > 0) {
-                    showToast(`Welcome back, ${profiles[currentProfileId].name}! ${state.completedVideos.length} videos completed`, 'user-check', 'blue');
-                } else {
-                    showToast(`Welcome back, ${profiles[currentProfileId].name}!`, 'user-check', 'emerald');
-                }
-            } else {
-                // Show profile selection/creation modal
-                showProfileModal();
-                hideMainApp();
+            // Auto-select first lesson if none selected
+            if (!currentVideo && courseData.modules.length > 0 && courseData.modules[0].topics.length > 0) {
+                const firstMod = courseData.modules[0];
+                const firstTopic = firstMod.topics[0];
+                selectVideo(firstTopic, firstMod);
             }
-        }
-
-        // Run on load
-        document.addEventListener('DOMContentLoaded', () => {
-            init();
-        });
-
-        // Close modals on escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (!document.getElementById('profileSwitcherModal').classList.contains('hidden')) {
-                    hideProfileSwitcher();
-                }
-            }
-        });
-
-        // Close profile switcher when clicking outside
-        document.getElementById('profileSwitcherModal').addEventListener('click', (e) => {
-            if (e.target.id === 'profileSwitcherModal') {
-                hideProfileSwitcher();
-            }
-        });
-
-        window.addEventListener('beforeunload', () => {
-            savePlaybackPosition();
         });
     </script>
 </body>

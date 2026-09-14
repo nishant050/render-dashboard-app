@@ -99,13 +99,15 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: filehub-apk-latest
-          name: "FileHub & Learn Investing v1.1.1"
+          name: "FileHub & Learn Investing v1.1.2"
           body: |
-            Official Release v1.1.1:
-            - **Learn Investing Multi-Profile Sync**: Fully connected with MongoDB user profile ("Nishant"), course progress, and video states.
-            - **Fixed FileHub Blank Screen**: Corrected adapter items binding on folder load.
-            - **Fixed Native Share Target**: Android 14 FOREGROUND_SERVICE_DATA_SYNC compliance, background file staging, and live upload queue screen.
-            - **Fixed In-App Updater Loop**: Prevents repeating update dialogs once updated or dismissed.
+            Official Release v1.1.2:
+            - **Inbuilt Learn Investing UI**: Pure native CSS, fast local APK rendering with no external CDN dependency.
+            - **Dual-Mode Video Streaming**: Direct YouTube embed (youtube-nocookie.com) + Render Server Proxy (yt-dlp stream bypassing all DNS blocks).
+            - **MongoDB Profile Sync**: Automatic sync with MongoDB ("Nishant" & "Mahi") with progress retention.
+            - **FileHub Status Indicators**: Explicit setup/auth screen and network retry view (no blank screens).
+            - **Visible Share Target**: Material 3 dialog with progress indicator and background upload options.
+            - **Semantic Updater**: Stops infinite update prompts by comparing semantic versions numerically.
           files: |
             build-output/FileHub.apk
             build-output/RenderDashboard.apk
