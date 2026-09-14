@@ -107,6 +107,9 @@ public class AppUpdater {
                         if (showFeedbackIfUpToDate) {
                             mainHandler.post(() -> Toast.makeText(activity, "No APK asset found in latest release.", Toast.LENGTH_SHORT).show());
                         }
+                        return;
+                    }
+
                     SharedPreferences prefs = activity.getSharedPreferences("filehub_prefs", Context.MODE_PRIVATE);
                     String lastInstalledTag = prefs.getString("installed_release_tag", "");
                     String dismissedTag = prefs.getString("dismissed_release_tag", "");
