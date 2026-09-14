@@ -30,6 +30,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -37,7 +41,22 @@ jobs:
 
       - name: Build Debug APK with Gradle
         working-directory: ./android
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
+            echo "::error::Gradle Build Failed! Check the summary below."
+            echo "### ❌ Gradle Build Error Details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "error:|FAILED|Exception|Caused by:" build_output.log | head -n 40 >> $GITHUB_STEP_SUMMARY || cat build_output.log | tail -n 40 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/build_output.log
 
       - name: Rename APK for Distribution
         run: |
