@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Application Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <h1>My Application Dashboard</h1>
+        <div class="header-actions">
+            <a href="/api/dashboard/download-apk" class="header-action-btn" title="Download Render Dashboard Android App (with Proxy Gateway & FileHub)" id="download-dashboard-apk-btn" aria-label="Download Android App" style="text-decoration:none; font-size:1.15rem; display:inline-flex; align-items:center; justify-content:center;">
+                📱
+            </a>
+            <button class="header-action-btn" onclick="logoutDashboard()" title="Lock / Log Out" id="logout-btn" aria-label="Log Out">
+                🔒
+            </button>
+            <button class="header-action-btn settings-gear-btn" onclick="toggleSettingsPanel()" title="Dashboard Settings" id="settings-gear-btn" aria-label="Settings">
+                ⚙️
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <div class="app-grid" id="app-grid">
+            <!-- Dynamically rendered by JS -->
+        </div>
+    </main>
+
+    <!-- Settings Panel Overlay -->
+    <div class="settings-overlay" id="settings-overlay" onclick="closeSettingsIfClickedOutside(event)">
+        <div class="settings-panel" id="settings-panel">
+            <div class="settings-panel__header">
+                <h2>⚙️ Dashboard Settings</h2>
+                <button class="settings-panel__close" onclick="closeSettingsPanel()">✕</button>
+            </div>
+            <p class="settings-panel__subtitle">Enable or disable apps. Disabled apps are hidden from the dashboard and all their background processes, subprocesses, and schedulers are stopped to conserve Render RAM.</p>
+            <div class="settings-app-list" id="settings-app-list">
+                <!-- Dynamically rendered by JS -->
+            </div>
+
+            <div class="settings-download-section" style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary);">📱 Android Mobile Apps</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                    <a href="/api/dashboard/download-apk" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 8px; color: var(--text-primary); text-decoration: none; font-size: 0.85rem;">
+                        <div>
+                            <strong>Render Dashboard App</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">All-in-one APK: Web Gateway, YouTube Stream Proxy, Native Share Sheet & FileHub</div>
+                        </div>
+                        <span style="font-size: 1.2rem; margin-left: 0.5rem;">⬇️</span>
+                    </a>
+                    <a href="/api/filehub/download-apk" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); text-decoration: none; font-size: 0.85rem;">
+                        <div>
+                            <strong>FileHub Standalone App</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Lightweight APK for sharing FileHub without dashboard access</div>
+                        </div>
+                        <span style="font-size: 1.2rem; margin-left: 0.5rem;">⬇️</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2025 - Built for Fun</p>
+    </footer>
+
+    <script>
+    // =============================================
+    // App Registry — single source of truth
+    // =============================================
+    const APP_REGISTRY = [
+        { id: 'investing-lab',        name: 'Investing Lab',         icon: 'LAB',  url: 'apps/investing-lab/index.html',          desc: 'Tests, simulated research desk, AI coaching, and paper market trading.', hasBgService: false },
+        { id: 'server-monitor',       name: 'Server Monitor',        icon: '⚡',  url: 'apps/monitor/index.html',                desc: 'Real-time CPU, RAM, disk storage, active connections & live traffic hub.', hasBgService: true },
+        { id: 'jupyter',              name: 'Jupyter Lab',           icon: '🪐',  url: 'apps/jupyter/index.html',                desc: 'Interactive Python coding, persistent kernels & server folder explorer.', hasBgService: true },
+        { id: 'filehub',              name: 'File Hub',              icon: '☁️',  url: 'apps/filehub/index.html',               desc: 'Upload and download your files from anywhere.',                hasBgService: false },
+        { id: 'dietplan',             name: 'Diet Plan',             icon: '🥗',  url: '/dietplan/',                             desc: 'A personalized daily meal planner.',                           hasBgService: true  },
+        { id: 'ytdownloader',         name: 'YT Downloader',         icon: '🎬',  url: 'apps/ytdownloader/index.html',           desc: 'Download YouTube videos.',                                     hasBgService: true },
+        { id: 'quicknotes',           name: 'Quick Notes',           icon: '📝',  url: 'apps/quicknotes/index.html',             desc: 'Take quick notes and save locally.',                           hasBgService: false },
+        { id: 'learn-investing',      name: 'Learn Investing',       icon: '📈',  url: 'apps/learn-investing/index.html',        desc: 'Stock Market Mastery — Hindi course.',                         hasBgService: false },
+        { id: 'vestibular-migraine',  name: 'Vestibular Migraine',   icon: '🧠',  url: 'apps/vestibular-migraine/index.html',    desc: 'Learn the exercises to control migraine.',                     hasBgService: false },
+        { id: 'newshunt',             name: 'NewsHunt',              icon: '🎯',  url: 'apps/newshunt/index.html',               desc: 'AI-curated news — reads, rates & rewrites articles for you.',  hasBgService: true  },
+        { id: 'finance',              name: 'Finance Tracker',       icon: '💰',  url: '/finance/',                              desc: 'Track income, expenses, budgets & savings goals.',             hasBgService: false },
+        { id: 'crawler',              name: 'Crawler Engine',        icon: '🕷️',  url: 'apps/crawler/index.html',                desc: 'Autonomous AI Web Scraper.',                                   hasBgService: true  },
+        { id: 'proxybrowser',         name: 'Proxy Browser',         icon: '🌐',  url: 'apps/proxybrowser/index.html',           desc: 'Browse content securely through the server.',                  hasBgService: false },
+        { id: 'apitest',              name: 'API Test Hub',          icon: '🤖',  url: 'apps/apitest/index.html',                desc: 'Global Model Sync & AI Chat Testing.',                        hasBgService: false },
+        { id: 'fretboard-trainer',    name: 'Fretboard Trainer',     icon: '🎸',  url: 'apps/Fretboard-Trainer/index.html',      desc: 'Practice identifying notes on the guitar fretboard.',          hasBgService: false },
+        { id: 'hosthtml',             name: 'Host HTML',             icon: '🌐',  url: 'apps/hosthtml/index.html',               desc: 'Host and manage standalone HTML files permanently.',           hasBgService: false }
+    ];
+
+    let disabledApps = new Set();
+
+    // =============================================
+    // Dashboard Rendering
+    // =============================================
+    function renderDashboard() {
+        const grid = document.getElementById('app-grid');
+        grid.innerHTML = '';
+
+        const enabledApps = APP_REGISTRY.filter(app => !disabledApps.has(app.id));
+
+        enabledApps.forEach(app => {
+            const card = document.createElement('a');
+            card.href = app.url;
+            card.className = 'app-card';
+            card.innerHTML = `
+                <div class="app-icon"><span>${app.icon}</span></div>
+                <div class="app-info">
+                    <h2>${app.name}</h2>
+                    <p>${app.desc}</p>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        // "Coming Soon" placeholder
+        const placeholder = document.createElement('div');
+        placeholder.className = 'app-card placeholder';
+        placeholder.innerHTML = `
+            <div class="app-info">
+                <h2>Coming Soon</h2>
+                <p>Your next great app will be here.</p>
+            </div>
+        `;
+        grid.appendChild(placeholder);
+    }
+
+    // =============================================
+    // Settings Panel
+    // =============================================
+    function renderSettingsList() {
+        const list = document.getElementById('settings-app-list');
+        list.innerHTML = '';
+
+        APP_REGISTRY.forEach(app => {
+            const isEnabled = !disabledApps.has(app.id);
+            const item = document.createElement('div');
+            item.className = 'settings-app-item';
+            item.innerHTML = `
+                <div class="settings-app-item__info">
+                    <span class="settings-app-item__icon">${app.icon}</span>
+                    <div>
+                        <span class="settings-app-item__name">${app.name}</span>
+                        ${app.hasBgService ? '<span class="settings-app-item__badge">Has background service</span>' : ''}
+                    </div>
+                </div>
+                <label class="toggle-switch" title="${isEnabled ? 'Disable' : 'Enable'} ${app.name}">
+                    <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleApp('${app.id}', this.checked)">
+                    <span class="toggle-switch__slider"></span>
+                </label>
+            `;
+            list.appendChild(item);
+        });
+    }
+
+    function toggleSettingsPanel() {
+        const overlay = document.getElementById('settings-overlay');
+        overlay.classList.toggle('settings-overlay--open');
+        if (overlay.classList.contains('settings-overlay--open')) {
+            renderSettingsList();
+        }
+    }
+
+    function closeSettingsPanel() {
+        document.getElementById('settings-overlay').classList.remove('settings-overlay--open');
+    }
+
+    function closeSettingsIfClickedOutside(e) {
+        if (e.target === document.getElementById('settings-overlay')) {
+            closeSettingsPanel();
+        }
+    }
+
+    async function toggleApp(appId, enabled) {
+        if (enabled) {
+            disabledApps.delete(appId);
+        } else {
+            disabledApps.add(appId);
+        }
+
+        renderDashboard();
+
+        try {
+            await fetch('/api/dashboard/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ disabledApps: [...disabledApps] })
+            });
+        } catch (e) {
+            console.error('Failed to save settings:', e);
+        }
+    }
+
+    // =============================================
+    // Authentication & Logout
+    // =============================================
+    async function logoutDashboard() {
+        if (confirm('Lock dashboard and log out?')) {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch (e) {}
+            window.location.href = '/login';
+        }
+    }
+
+    // =============================================
+    // Initialization
+    // =============================================
+    async function init() {
+        try {
+            const resp = await fetch('/api/dashboard/settings');
+            if (resp.ok) {
+                const data = await resp.json();
+                disabledApps = new Set(data.disabledApps || []);
+            }
+        } catch (e) {
+            console.warn('Could not load dashboard settings:', e);
+        }
+        renderDashboard();
+    }
+
+    init();
+    </script>
+
+</body>
+
+</html>

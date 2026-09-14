@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RupeeTracker — Reports</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">💰 RupeeTracker</div>
+        <a href="/finance/" class="nav-link">📊 Dashboard</a>
+        <a href="/finance/transactions.html" class="nav-link">💸 Transactions</a>
+        <a href="/finance/budget.html" class="nav-link">📋 Budget</a>
+        <a href="/finance/bills.html" class="nav-link">📅 Bills</a>
+        <a href="/finance/goals.html" class="nav-link">🎯 Goals</a>
+        <a href="/finance/calculators.html" class="nav-link">🧮 Calculators</a>
+        <a href="/finance/reports.html" class="nav-link active">📈 Reports</a>
+        <a href="/finance/accounts.html" class="nav-link">🏦 Accounts</a>
+        <a href="/finance/settings.html" class="nav-link">⚙️ Settings</a>
+        <a href="/" class="nav-link nav-back">← Back to Dashboard</a>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+        <header class="page-header">
+            <button class="menu-toggle">☰</button>
+            <h1>Reports & Analytics</h1>
+            <div class="month-navigator">
+                <button id="prev-month">◀</button>
+                <span id="current-month">June 2025</span>
+                <button id="next-month">▶</button>
+            </div>
+        </header>
+
+        <div class="page-body">
+            <!-- Report Tabs -->
+            <div class="tabs mb-lg">
+                <button class="tab-btn active" data-report="monthly">Monthly</button>
+                <button class="tab-btn" data-report="trends">Trends</button>
+                <button class="tab-btn" data-report="category">Category</button>
+                <button class="tab-btn" data-report="yearly">Yearly</button>
+            </div>
+
+            <!-- Report Content -->
+            <div id="report-content">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📈</div>
+                    <div class="empty-state-title">Loading Report...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL CONTAINER -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="common.js"></script>
+    <script src="reports.js"></script>
+
+</body>
+
+</html>

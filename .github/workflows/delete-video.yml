@@ -1,0 +1,41 @@
+name: Delete Downloaded Video Files
+
+on:
+  repository_dispatch:
+    types: [trigger-youtube-delete]
+
+jobs:
+  delete-and-commit:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Delete files and update manifest
+        env:
+          VIDEO_FILE: ${{ github.event.client_payload.videoFile }}
+          AUDIO_FILE: ${{ github.event.client_payload.audioFile }}
+          VIDEO_FILES: ${{ toJson(github.event.client_payload.videoFiles) }}
+          AUDIO_FILES: ${{ toJson(github.event.client_payload.audioFiles) }}
+        run: python scripts/delete_video.py
+
+      - name: Commit and push deletion
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -A public/videos public/videos.json
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "BOT: Remove downloaded video files"
+          git push

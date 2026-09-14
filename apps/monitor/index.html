@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Monitor — Real-time Load & Traffic Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <div class="monitor-container">
+        <!-- Top Navigation & Header -->
+        <header class="monitor-header">
+            <div class="header-left">
+                <a href="../../index.html" class="back-link" title="Return to Dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <div class="header-divider"></div>
+                <div class="brand">
+                    <span class="brand-icon">⚡</span>
+                    <div>
+                        <h1 class="brand-title">Server Monitor</h1>
+                        <p class="brand-sub">Real-Time System Load & Live Traffic</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="uptime-badge">
+                    <span class="uptime-label">Uptime:</span>
+                    <span class="uptime-val" id="val-uptime">00:00:00</span>
+                </div>
+                <div class="system-chip" id="chip-platform">
+                    <span id="val-platform">Windows</span>
+                </div>
+                <div class="connection-status status-connected" id="connection-status">
+                    <span class="status-pulse"></span>
+                    <span id="status-label">Live Stream (1s)</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- KPI Metric Gauges Grid -->
+        <section class="kpi-grid">
+            <!-- CPU Card -->
+            <div class="kpi-card card-cpu">
+                <div class="kpi-card__top">
+                    <div class="kpi-info">
+                        <span class="kpi-eyebrow">PROCESSOR</span>
+                        <h2 class="kpi-title">CPU Load</h2>
+                    </div>
+                    <span class="kpi-icon-badge">🧠</span>
+                </div>
+
+                <div class="kpi-body">
+                    <div class="gauge-wrapper">
+                        <svg class="gauge-svg" viewBox="0 0 100 100">
+                            <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                            <circle class="gauge-progress gauge-progress--cpu" id="gauge-cpu" cx="50" cy="50" r="42" />
+                        </svg>
+                        <div class="gauge-value">
+                            <span class="gauge-number" id="val-cpu">0</span>
+                            <span class="gauge-unit">%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Cores:</span>
+                            <span class="stat-value" id="val-cpu-cores">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Clock:</span>
+                            <span class="stat-value" id="val-cpu-speed">-</span>
+                        </div>
+                        <div class="stat-row" title="CPU Model">
+                            <span class="stat-label">Model:</span>
+                            <span class="stat-value text-truncate" id="val-cpu-model">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAM Card -->
+            <div class="kpi-card card-ram">
+                <div class="kpi-card__top">
+                    <div class="kpi-info">
+                        <span class="kpi-eyebrow">MEMORY</span>
+                        <h2 class="kpi-title">RAM Usage</h2>
+                    </div>
+                    <span class="kpi-icon-badge">💾</span>
+                </div>
+
+                <div class="kpi-body">
+                    <div class="gauge-wrapper">
+                        <svg class="gauge-svg" viewBox="0 0 100 100">
+                            <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                            <circle class="gauge-progress gauge-progress--ram" id="gauge-ram" cx="50" cy="50" r="42" />
+                        </svg>
+                        <div class="gauge-value">
+                            <span class="gauge-number" id="val-ram">0</span>
+                            <span class="gauge-unit">%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Used / Total:</span>
+                            <span class="stat-value" id="val-ram-used-total">0 / 0 GB</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Free RAM:</span>
+                            <span class="stat-value" id="val-ram-free">0 GB</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Node Heap:</span>
+                            <span class="stat-value" id="val-process-heap">0 MB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disk Card -->
+            <div class="kpi-card card-disk">
+                <div class="kpi-card__top">
+                    <div class="kpi-info">
+                        <span class="kpi-eyebrow">STORAGE</span>
+                        <h2 class="kpi-title">Disk Storage</h2>
+                    </div>
+                    <span class="kpi-icon-badge">💽</span>
+                </div>
+
+                <div class="kpi-body">
+                    <div class="gauge-wrapper">
+                        <svg class="gauge-svg" viewBox="0 0 100 100">
+                            <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                            <circle class="gauge-progress gauge-progress--disk" id="gauge-disk" cx="50" cy="50" r="42" />
+                        </svg>
+                        <div class="gauge-value">
+                            <span class="gauge-number" id="val-disk">0</span>
+                            <span class="gauge-unit">%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Used:</span>
+                            <span class="stat-value" id="val-disk-used">0 GB</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Free Space:</span>
+                            <span class="stat-value" id="val-disk-free">0 GB</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Capacity:</span>
+                            <span class="stat-value" id="val-disk-total">0 GB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Traffic & Users Card -->
+            <div class="kpi-card card-traffic">
+                <div class="kpi-card__top">
+                    <div class="kpi-info">
+                        <span class="kpi-eyebrow">CONNECTIONS</span>
+                        <h2 class="kpi-title">Active Traffic</h2>
+                    </div>
+                    <span class="kpi-icon-badge">👥</span>
+                </div>
+
+                <div class="kpi-body">
+                    <div class="traffic-highlights">
+                        <div class="highlight-box">
+                            <span class="highlight-num text-cyan" id="val-live-users">0</span>
+                            <span class="highlight-label">Live Active Users</span>
+                        </div>
+                        <div class="highlight-box">
+                            <span class="highlight-num text-emerald" id="val-tcp-conn">0</span>
+                            <span class="highlight-label">Open TCP Sockets</span>
+                        </div>
+                    </div>
+                    <div class="kpi-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Recent Sessions:</span>
+                            <span class="stat-value" id="val-total-sessions">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Requests:</span>
+                            <span class="stat-value" id="val-total-requests">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Real-Time History Chart Section -->
+        <section class="chart-section glass-panel">
+            <div class="chart-header">
+                <div class="chart-title-wrap">
+                    <h3>📈 Real-Time Timeline</h3>
+                    <p>Live 60-second rolling CPU and Memory usage</p>
+                </div>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <span class="legend-color legend-cpu"></span>
+                        <span>CPU Usage (<span id="legend-cpu-val">0%</span>)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color legend-ram"></span>
+                        <span>RAM Usage (<span id="legend-ram-val">0%</span>)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Active Users & Connections Inspector Table -->
+        <section class="table-section glass-panel">
+            <div class="table-header">
+                <div>
+                    <h3>👥 Active Users & Connections</h3>
+                    <p>Detailed client sessions, active apps, and device information</p>
+                </div>
+                <div class="table-controls">
+                    <label class="checkbox-label" title="Mask the last octet of external IPs">
+                        <input type="checkbox" id="toggle-mask-ip" checked>
+                        <span>Mask IPs</span>
+                    </label>
+                    <span class="sessions-badge" id="badge-users-count">0 Connected</span>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Client IP</th>
+                            <th>Device & OS</th>
+                            <th>Browser</th>
+                            <th>Active App / URL</th>
+                            <th>Requests</th>
+                            <th>Session Time</th>
+                            <th>Last Active</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body">
+                        <tr>
+                            <td colspan="8" class="table-empty">Listening for active connections...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- System & Process Deep Dive -->
+        <section class="details-grid">
+            <div class="detail-card glass-panel">
+                <h4>🖥️ Host Machine</h4>
+                <div class="detail-list">
+                    <div class="detail-item"><span>Hostname:</span><strong id="val-hostname">-</strong></div>
+                    <div class="detail-item"><span>OS Release:</span><strong id="val-release">-</strong></div>
+                    <div class="detail-item"><span>Architecture:</span><strong id="val-arch">-</strong></div>
+                    <div class="detail-item"><span>Load Average:</span><strong id="val-loadavg">0.00, 0.00, 0.00</strong></div>
+                </div>
+            </div>
+
+            <div class="detail-card glass-panel">
+                <h4>🟢 Node.js Process</h4>
+                <div class="detail-list">
+                    <div class="detail-item"><span>Node Version:</span><strong id="val-node-ver">-</strong></div>
+                    <div class="detail-item"><span>Process PID:</span><strong id="val-pid">-</strong></div>
+                    <div class="detail-item"><span>RSS Memory:</span><strong id="val-rss">0 MB</strong></div>
+                    <div class="detail-item"><span>Heap Allocated:</span><strong id="val-heap-total">0 MB</strong></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="monitor-footer">
+            <p>Live Monitoring Daemon • Render Dashboard App • Updated Every Second</p>
+        </footer>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>

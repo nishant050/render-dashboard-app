@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}Today's Meals — Diet Plan{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block body %}
+<div class="dashboard-container">
+    <!-- Top Nav Bar -->
+    <header class="dash-header glass-card">
+        <div class="header-left">
+            <span class="header-greeting">Hello, <strong>{{ profile.name }}</strong> 👋</span>
+        </div>
+        <div class="header-right">
+            <a href="/dietplan/history" class="header-btn" title="Weekly History">📊</a>
+            <button class="header-btn" title="Edit Profile" onclick="openEditProfileModal()">✏️</button>
+            <a href="/dietplan/profile/switch" class="header-btn" title="Switch Profile">👤</a>
+        </div>
+    </header>
+
+    <!-- Date Navigation -->
+    <div class="date-nav glass-card">
+        <a href="/dietplan/dashboard?view_date={{ prev_date }}" class="date-btn">
+            <span>‹</span>
+        </a>
+        <div class="date-center">
+            <h2 class="date-display">
+                {% if is_today %}
+                Today
+                {% else %}
+                {{ selected_date.strftime('%A') }}
+                {% endif %}
+            </h2>
+            <p class="date-sub">{{ selected_date.strftime('%B %d, %Y') }}</p>
+        </div>
+        <a href="/dietplan/dashboard?view_date={{ next_date }}" class="date-btn">
+            <span>›</span>
+        </a>
+    </div>
+
+    <!-- Calorie Summary -->
+    <div class="calorie-summary glass-card">
+        <div class="cal-ring-container">
+            <svg class="cal-ring" viewBox="0 0 120 120">
+                <circle class="cal-ring-bg" cx="60" cy="60" r="52" />
+                <circle class="cal-ring-fill" cx="60" cy="60" r="52"
+                    stroke-dasharray="{{ (checked_calories / total_calories * 327) if total_calories > 0 else 0 }} 327" />
+            </svg>
+            <div class="cal-ring-text">
+                <span class="cal-number">{{ checked_calories }}</span>
+                <span class="cal-label">prepared</span>
+            </div>
+        </div>
+        <div class="cal-info">
+            <div class="cal-stat">
+                <span class="cal-stat-val" id="cal-total-val">{{ total_calories }}</span>
+                <span class="cal-stat-label">Total kcal</span>
+            </div>
+            <div class="cal-stat">
+                <span class="cal-stat-val" id="cal-prep-val">{{ checked_calories }}</span>
+                <span class="cal-stat-label">Prepared kcal</span>
+            </div>
+            <div class="cal-stat">
+                <span class="cal-stat-val" id="cal-rem-val">{{ total_calories - checked_calories }}</span>
+                <span class="cal-stat-label">Remaining kcal</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Macro Nutrient Breakdown Bar -->
+    {% set ns_macro = namespace(total_p=0, total_c=0, total_f=0) %}
+    {% for mt in meal_type_order %}
+    {% for m in meals[mt].meals %}
+    {% set ns_macro.total_p = ns_macro.total_p + (m.protein_g|float) %}
+    {% set ns_macro.total_c = ns_macro.total_c + (m.carbs_g|float) %}
+    {% set ns_macro.total_f = ns_macro.total_f + (m.fat_g|float) %}
+    {% endfor %}
+    {% endfor %}
+    {% set macro_sum = ns_macro.total_p + ns_macro.total_c + ns_macro.total_f %}
+    {% if macro_sum > 0 %}
+    <div class="macro-breakdown glass-card" id="macro-bar">
+        <div class="macro-bar-track">
+            <div class="macro-seg macro-seg-protein" style="width: {{ (ns_macro.total_p / macro_sum * 100)|round(1) }}%"></div>
+            <div class="macro-seg macro-seg-carbs" style="width: {{ (ns_macro.total_c / macro_sum * 100)|round(1) }}%"></div>
+            <div class="macro-seg macro-seg-fat" style="width: {{ (ns_macro.total_f / macro_sum * 100)|round(1) }}%"></div>
+        </div>
+        <div class="macro-legend">
+            <span class="macro-legend-item"><span class="macro-dot protein-dot"></span>Protein <strong id="macro-p-val">{{ ns_macro.total_p|round|int }}g</strong></span>
+            <span class="macro-legend-item"><span class="macro-dot carbs-dot"></span>Carbs <strong id="macro-c-val">{{ ns_macro.total_c|round|int }}g</strong></span>
+            <span class="macro-legend-item"><span class="macro-dot fat-dot"></span>Fat <strong id="macro-f-val">{{ ns_macro.total_f|round|int }}g</strong></span>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- WHO Nutrition Analysis -->
+    <div class="who-analysis glass-card" style="margin-top: 1rem;"
+        hx-get="/dietplan/profile/nutrition/today?view_date={{ selected_date.isoformat() }}" hx-trigger="revealed">
+        <div class="who-loading">
+            <div class="pulse-loader"></div>
+            <p>Analyzing WHO nutritional alignment based on your medical profile...</p>
+        </div>
+    </div>
+
+    <!-- Meal Sections -->
+    {% for meal_type in meal_type_order %}
+    {% set section = meals[meal_type] %}
+    {% if section.meals|length > 0 %}
+    <div class="meal-section">
+        <h3 class="meal-section-title">{{ section.label }}</h3>
+        <div class="meal-cards">
+            {% for meal in section.meals %}
+            <div class="meal-card glass-card {% if meal.is_checked %}meal-checked{% endif %}" id="meal-{{ meal.id }}"
+                 data-cal="{{ meal.calories }}" data-protein="{{ meal.protein_g }}" data-carbs="{{ meal.carbs_g }}" data-fat="{{ meal.fat_g }}">
+                <div class="meal-card-top">
+                    <button class="meal-check-btn" hx-post="/dietplan/meal/toggle/{{ meal.id }}"
+                        hx-target="#check-{{ meal.id }}" hx-swap="innerHTML">
+                        <span id="check-{{ meal.id }}" class="check-icon">
+                            {% if meal.is_checked %}✅{% else %}⬜{% endif %}
+                        </span>
+                    </button>
+                    <div class="meal-info" hx-get="/dietplan/dish/info/{{ meal.id }}" hx-target="#dish-modal-body"
+                        hx-swap="innerHTML" hx-trigger="click" onclick="openDishModal()">
+                        <h4 class="meal-name">{{ meal.dish_name }}</h4>
+                        {% if meal.description %}
+                        <p class="meal-desc">{{ meal.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meal-card-bottom">
+                    <span class="meal-cal">{{ meal.calories }} kcal</span>
+                    <div class="meal-macros">
+                        <span class="macro protein">P: {{ meal.protein_g }}g</span>
+                        <span class="macro carbs">C: {{ meal.carbs_g }}g</span>
+                        <span class="macro fat">F: {{ meal.fat_g }}g</span>
+                    </div>
+                </div>
+                <!-- Replace Action -->
+                <button class="btn btn-sm btn-replace-meal"
+                    hx-get="/dietplan/meal/replace/{{ meal.id }}" hx-target="#dish-modal-body"
+                    hx-swap="innerHTML" onclick="openDishModal()">
+                    🔄 Replace Meal
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Empty state -->
+    {% set ns = namespace(has_meals=false) %}
+    {% for mt in meal_type_order %}
+    {% if meals[mt].meals|length > 0 %}
+    {% set ns.has_meals = true %}
+    {% endif %}
+    {% endfor %}
+    {% if not ns.has_meals %}
+    <div class="empty-state glass-card">
+        <span class="empty-icon">📋</span>
+        <h3>No meals planned</h3>
+        <p>No meal plan for {{ selected_date.strftime('%B %d, %Y') }} yet.</p>
+        <p class="empty-hint">Ask your admin to upload a meal plan!</p>
+    </div>
+    {% endif %}
+
+    <!-- Quick Today Button (when not viewing today) -->
+    {% if not is_today %}
+    <a href="/dietplan/dashboard" class="fab-today">
+        <span>📅</span>
+        Today
+    </a>
+    {% endif %}
+</div>
+
+<!-- Dish Info Modal -->
+<div class="dish-modal-overlay" id="dish-modal" onclick="closeDishModal(event)">
+    <div class="dish-modal glass-card" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeDishModal()">&times;</button>
+        <div id="dish-modal-body">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Loading recipe info...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openDishModal() {
+        document.getElementById('dish-modal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeDishModal(e) {
+        // If called from overlay click, only close when clicking on overlay itself
+        if (e && e.target && e.target.id !== 'dish-modal') return;
+        document.getElementById('dish-modal').classList.remove('active');
+        document.body.style.overflow = '';
+        document.getElementById('dish-modal-body').innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading recipe info...</p></div>';
+    }
+
+    function openEditProfileModal() {
+        document.getElementById('edit-profile-modal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeEditProfileModal(e) {
+        if (e && e.target && e.target.id !== 'edit-profile-modal') return;
+        document.getElementById('edit-profile-modal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    function toggleAiNutritionDetails(button) {
+        const card = button.closest('.ai-nutrition');
+        if (!card) return;
+        const panel = card.querySelector('.ai-depth-panel');
+        if (!panel) return;
+        const isHidden = panel.classList.contains('hidden');
+        panel.classList.toggle('hidden', !isHidden);
+        button.classList.toggle('is-open', isHidden);
+        button.textContent = isHidden ? 'Hide Details' : 'In Depth';
+    }
+
+    /* ── Live recalculate calorie ring + macro bar after meal toggle ── */
+    function recalcCalorieSummary() {
+        const cards = document.querySelectorAll('.meal-card[data-cal]');
+        let totalCal = 0, checkedCal = 0, totalP = 0, totalC = 0, totalF = 0;
+        cards.forEach(c => {
+            const cal = parseFloat(c.dataset.cal) || 0;
+            totalCal += cal;
+            totalP += parseFloat(c.dataset.protein) || 0;
+            totalC += parseFloat(c.dataset.carbs) || 0;
+            totalF += parseFloat(c.dataset.fat) || 0;
+            if (c.classList.contains('meal-checked')) checkedCal += cal;
+        });
+        const $id = id => document.getElementById(id);
+        const $q = s => document.querySelector(s);
+        if ($id('cal-total-val')) $id('cal-total-val').textContent = Math.round(totalCal);
+        if ($id('cal-prep-val'))  $id('cal-prep-val').textContent  = Math.round(checkedCal);
+        if ($id('cal-rem-val'))   $id('cal-rem-val').textContent   = Math.round(totalCal - checkedCal);
+        const ringNum = $q('.cal-number');
+        if (ringNum) ringNum.textContent = Math.round(checkedCal);
+        const ringFill = $q('.cal-ring-fill');
+        if (ringFill) {
+            const pct = totalCal > 0 ? checkedCal / totalCal : 0;
+            ringFill.setAttribute('stroke-dasharray', (pct * 327).toFixed(1) + ' 327');
+        }
+        const macroTotal = totalP + totalC + totalF;
+        if (macroTotal > 0 && $id('macro-bar')) {
+            const pp = (totalP / macroTotal * 100).toFixed(1);
+            const cp = (totalC / macroTotal * 100).toFixed(1);
+            const fp = (totalF / macroTotal * 100).toFixed(1);
+            const barEl = $id('macro-bar');
+            const ps = barEl.querySelector('.macro-seg-protein');
+            const cs = barEl.querySelector('.macro-seg-carbs');
+            const fs = barEl.querySelector('.macro-seg-fat');
+            if (ps) ps.style.width = pp + '%';
+            if (cs) cs.style.width = cp + '%';
+            if (fs) fs.style.width = fp + '%';
+            if ($id('macro-p-val')) $id('macro-p-val').textContent = Math.round(totalP) + 'g';
+            if ($id('macro-c-val')) $id('macro-c-val').textContent = Math.round(totalC) + 'g';
+            if ($id('macro-f-val')) $id('macro-f-val').textContent = Math.round(totalF) + 'g';
+        }
+    }
+
+    document.body.addEventListener('htmx:afterSwap', function (event) {
+        if (event.detail.target.id && event.detail.target.id.startsWith('check-')) {
+            const mealId = event.detail.target.id.replace('check-', '');
+            const card = document.getElementById('meal-' + mealId);
+            if (card) {
+                const icon = event.detail.target.textContent.trim();
+                if (icon === '✅') {
+                    card.classList.add('meal-checked');
+                } else {
+                    card.classList.remove('meal-checked');
+                }
+            }
+            recalcCalorieSummary();
+        }
+        // Reload page after quick add
+        if (event.detail.target.id === 'quick-add-msg') {
+            const msg = event.detail.target.textContent.trim();
+            if (msg.includes('Added')) {
+                setTimeout(() => window.location.reload(), 500);
+            }
+        }
+    });
+</script>
+
+<!-- Edit Profile Modal -->
+<div class="dish-modal-overlay" id="edit-profile-modal" onclick="closeEditProfileModal(event)">
+    <div class="dish-modal glass-card" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeEditProfileModal()">&times;</button>
+        <h3 style="margin-top:0; margin-bottom:1rem;">Edit Your Profile</h3>
+        <form hx-post="/dietplan/profile/edit" hx-target="#edit-profile-msg" hx-swap="innerHTML">
+            <div class="input-group">
+                <input type="text" name="name" value="{{ profile.name }}" class="input-field" required>
+                <label class="input-label">Your Name</label>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 1rem;">
+                <div class="input-group">
+                    <input type="number" name="age" value="{{ profile.age or '' }}" class="input-field"
+                        placeholder="Age">
+                    <label class="input-label">Age</label>
+                </div>
+                <div class="input-group">
+                    <input type="number" step="0.1" name="height" value="{{ profile.height_cm or '' }}"
+                        class="input-field" placeholder="Height (cm)">
+                    <label class="input-label">Height (cm)</label>
+                </div>
+                <div class="input-group">
+                    <input type="number" step="0.1" name="weight" value="{{ profile.weight_kg or '' }}"
+                        class="input-field" placeholder="Weight (kg)">
+                    <label class="input-label">Weight (kg)</label>
+                </div>
+            </div>
+            <div class="input-group">
+                <input type="text" name="disease" value="{{ profile.current_disease or '' }}" class="input-field"
+                    placeholder="Current Disease">
+                <label class="input-label">Current Disease</label>
+            </div>
+            <div class="input-group">
+                <input type="text" name="treatment" value="{{ profile.treatment_status or '' }}" class="input-field"
+                    placeholder="Undergoing Treatment">
+                <label class="input-label">Undergoing Treatment?</label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Save Changes</button>
+            <div id="edit-profile-msg" style="margin-top:0.5rem; text-align:center;"></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

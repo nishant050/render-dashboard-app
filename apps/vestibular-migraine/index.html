@@ -1,0 +1,969 @@
+<!-- Vestibular Migrane app page. User will edit this file manually. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vestibular Rehab Course Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .gradient-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .gradient-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .gradient-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .gradient-4 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .gradient-5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        
+        .module-border-1 { border-left: 4px solid #667eea; }
+        .module-border-2 { border-left: 4px solid #f5576c; }
+        .module-border-3 { border-left: 4px solid #4facfe; }
+        .module-border-4 { border-left: 4px solid #43e97b; }
+        .module-border-5 { border-left: 4px solid #fa709a; }
+        
+        .video-card {
+            transition: all 0.3s ease;
+        }
+        
+        .video-card:hover {
+            transform: translateX(4px);
+        }
+        
+        .video-card.active {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-color: #0ea5e9;
+        }
+        
+        .toast {
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
+        .progress-ring {
+            transition: stroke-dashoffset 0.5s ease;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .modal-backdrop {
+            animation: fadeInBg 0.2s ease;
+        }
+        
+        @keyframes fadeInBg {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .checkmark-complete {
+            animation: checkPop 0.3s ease;
+        }
+        
+        @keyframes checkPop {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav>
+	<a href="../../index.html">&larr; Back to Dashboard</a>
+    </nav>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <!-- Profile Selection Modal -->
+    <div id="profileModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-40 modal-backdrop hidden">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl fade-in">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">
+                <i class="fas fa-user-circle text-indigo-500 mr-2"></i>Welcome
+            </h2>
+            
+            <div id="existingProfiles" class="mb-6 hidden">
+                <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Select Profile</h3>
+                <div id="profileList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+            </div>
+            
+            <div class="border-t pt-4">
+                <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Create New Profile</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="newProfileName" placeholder="Enter your name" 
+                        class="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                    <button onclick="createProfile()" 
+                        class="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium">
+                        <i class="fas fa-plus mr-1"></i> Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 modal-backdrop hidden">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl fade-in">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-trash-alt text-red-500 text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">Delete Profile?</h3>
+                <p class="text-gray-500 mb-6">This will permanently delete <span id="deleteProfileName" class="font-semibold"></span>'s progress.</p>
+                <div class="flex gap-3">
+                    <button onclick="closeDeleteModal()" 
+                        class="flex-1 px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-medium">
+                        Cancel
+                    </button>
+                    <button onclick="confirmDelete()" 
+                        class="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors font-medium">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 gradient-1 rounded-xl flex items-center justify-center">
+                        <i class="fas fa-brain text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg md:text-xl font-bold text-gray-800">Vestibular Rehab</h1>
+                        <p class="text-xs text-gray-500 hidden sm:block">Course Tracker</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <!-- Profile Dropdown -->
+                    <div class="relative">
+                        <button id="profileDropdownBtn" onclick="toggleProfileDropdown()" 
+                            class="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                            <div class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                                <span id="profileInitial" class="text-white font-semibold text-sm">?</span>
+                            </div>
+                            <span id="currentProfileName" class="hidden sm:inline font-medium text-gray-700">Select Profile</span>
+                            <i class="fas fa-chevron-down text-gray-400 text-xs"></i>
+                        </button>
+                        
+                        <div id="profileDropdown" class="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 hidden">
+                            <div class="p-2">
+                                <div id="dropdownProfiles" class="space-y-1 max-h-48 overflow-y-auto"></div>
+                                <hr class="my-2">
+                                <button onclick="showProfileModal()" 
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Add Profile</span>
+                                </button>
+                                <button onclick="resetProgress()" 
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
+                                    <i class="fas fa-redo"></i>
+                                    <span>Reset Progress</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Progress Overview -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Overall Progress Card -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="font-semibold text-gray-800">Overall Progress</h2>
+                    <span id="progressPercent" class="text-2xl font-bold text-indigo-600">0%</span>
+                </div>
+                <div class="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="progressBar" class="h-full gradient-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <p id="progressText" class="text-sm text-gray-500 mt-2">0 of 15 videos completed</p>
+            </div>
+
+            <!-- Continue Learning Card -->
+            <div class="lg:col-span-2 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 shadow-sm text-white">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <p class="text-indigo-200 text-sm font-medium mb-1">
+                            <i class="fas fa-play-circle mr-1"></i> Continue Learning
+                        </p>
+                        <h3 id="continueTitle" class="text-xl font-bold mb-2">Start Your Journey</h3>
+                        <p id="continueModule" class="text-indigo-200 text-sm">Select a video to begin</p>
+                    </div>
+                    <button id="continueBtn" onclick="continueWatching()" 
+                        class="px-6 py-3 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-colors flex items-center gap-2 whitespace-nowrap">
+                        <i class="fas fa-play"></i>
+                        <span>Continue</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Player Section -->
+        <div id="videoPlayerSection" class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-8 hidden">
+            <div class="flex flex-col md:flex-row md:items-start gap-6">
+                <div class="flex-1">
+                    <div class="flex items-start justify-between mb-4">
+                        <div>
+                            <span id="currentModuleBadge" class="inline-block px-3 py-1 rounded-full text-xs font-semibold text-white gradient-1 mb-2">Module 1</span>
+                            <h2 id="currentVideoTitle" class="text-xl font-bold text-gray-800">Video Title</h2>
+                        </div>
+                        <button id="markCompleteBtn" onclick="toggleComplete()" 
+                            class="px-4 py-2 border-2 border-green-500 text-green-600 rounded-xl font-medium hover:bg-green-50 transition-colors flex items-center gap-2">
+                            <i class="fas fa-check"></i>
+                            <span class="hidden sm:inline">Mark Complete</span>
+                        </button>
+                    </div>
+                    <p id="currentVideoDesc" class="text-gray-600 mb-6 leading-relaxed"></p>
+                    
+                    <div class="flex flex-wrap gap-3">
+                        <a id="watchYoutubeBtn" href="#" target="_blank" 
+                            class="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors">
+                            <i class="fab fa-youtube"></i>
+                            Watch on YouTube
+                            <i class="fas fa-external-link-alt text-sm"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex items-center justify-between mt-6 pt-6 border-t">
+                <button id="prevBtn" onclick="navigateVideo(-1)" 
+                    class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fas fa-chevron-left"></i>
+                    <span class="hidden sm:inline">Previous</span>
+                </button>
+                <span id="videoPosition" class="text-sm text-gray-500">1 of 15</span>
+                <button id="nextBtn" onclick="navigateVideo(1)" 
+                    class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <span class="hidden sm:inline">Next</span>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Modules -->
+        <div class="space-y-6">
+            <!-- Module 1 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 gradient-1 flex items-center justify-between cursor-pointer" onclick="toggleModule(1)">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-stairs text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Module 1: Core Vestibular Rehab</h3>
+                            <p class="text-white/70 text-sm">Beginner to Advanced progression</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="module1Progress" class="text-white/90 text-sm font-medium">0/3</span>
+                        <i id="module1Arrow" class="fas fa-chevron-down text-white transition-transform"></i>
+                    </div>
+                </div>
+                <div id="module1Content" class="p-4 space-y-3"></div>
+            </div>
+
+            <!-- Module 2 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 gradient-2 flex items-center justify-between cursor-pointer" onclick="toggleModule(2)">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-bullseye text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Module 2: Condition-Specific Exercises</h3>
+                            <p class="text-white/70 text-sm">Targeted treatments for specific conditions</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="module2Progress" class="text-white/90 text-sm font-medium">0/4</span>
+                        <i id="module2Arrow" class="fas fa-chevron-down text-white transition-transform"></i>
+                    </div>
+                </div>
+                <div id="module2Content" class="p-4 space-y-3 hidden"></div>
+            </div>
+
+            <!-- Module 3 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 gradient-3 flex items-center justify-between cursor-pointer" onclick="toggleModule(3)">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-person-walking text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Module 3: Balance & Walking</h3>
+                            <p class="text-white/70 text-sm">Improve stability and gait</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="module3Progress" class="text-white/90 text-sm font-medium">0/3</span>
+                        <i id="module3Arrow" class="fas fa-chevron-down text-white transition-transform"></i>
+                    </div>
+                </div>
+                <div id="module3Content" class="p-4 space-y-3 hidden"></div>
+            </div>
+
+            <!-- Module 4 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 gradient-4 flex items-center justify-between cursor-pointer" onclick="toggleModule(4)">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-wind text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Module 4: Breathing & Relaxation</h3>
+                            <p class="text-white/70 text-sm">Stress relief and pain management</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="module4Progress" class="text-white/90 text-sm font-medium">0/3</span>
+                        <i id="module4Arrow" class="fas fa-chevron-down text-white transition-transform"></i>
+                    </div>
+                </div>
+                <div id="module4Content" class="p-4 space-y-3 hidden"></div>
+            </div>
+
+            <!-- Module 5 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 gradient-5 flex items-center justify-between cursor-pointer" onclick="toggleModule(5)">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-lightbulb text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Module 5: Understanding Your Symptoms</h3>
+                            <p class="text-white/70 text-sm">Educational content and VOR explanation</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="module5Progress" class="text-white/90 text-sm font-medium">0/2</span>
+                        <i id="module5Arrow" class="fas fa-chevron-down text-white transition-transform"></i>
+                    </div>
+                </div>
+                <div id="module5Content" class="p-4 space-y-3 hidden"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t mt-12 py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>Vestibular Rehabilitation Course Tracker</p>
+            <p class="mt-1">Track your progress and improve your vestibular health</p>
+        </div>
+    </footer>
+
+    <script>
+        // Course Data
+        const courseData = {
+            modules: [
+                {
+                    id: 1,
+                    title: "Core Vestibular Rehab",
+                    videos: [
+                        {
+                            id: 1,
+                            title: "BEGINNER Vestibular Rehab Exercises",
+                            description: "A comprehensive guide to starting a vestibular rehabilitation program. This video explains how the vestibular system works and provides a series of beginner exercises including head nods, head turns, gaze stabilization, and balance exercises (sitting and standing) to help with dizziness, motion sensitivity, and vertigo.",
+                            url: "https://www.youtube.com/watch?v=drRwAdjZ644"
+                        },
+                        {
+                            id: 2,
+                            title: "INTERMEDIATE Vestibular Rehab Exercises",
+                            description: "Designed for those who have mastered the beginner exercises, this video progresses to more challenging movements. It includes standing versions of the seated exercises, new balance challenges like standing on one leg or tandem stance with eyes closed, and more complex walking exercises with head movements.",
+                            url: "https://www.youtube.com/watch?v=-syNzglsyM4"
+                        },
+                        {
+                            id: 3,
+                            title: "ADVANCED Vestibular Rehab Exercises",
+                            description: "The final stage of the general vestibular rehab series. This video introduces advanced exercises such as 360-degree turns, switching focus between near and far targets while moving, and performing balance exercises on softer surfaces (like a foam pad) or with more complex head movements to further strengthen the vestibular system.",
+                            url: "https://www.youtube.com/watch?v=wFEZOj86_og"
+                        }
+                    ]
+                },
+                {
+                    id: 2,
+                    title: "Condition-Specific Exercises",
+                    videos: [
+                        {
+                            id: 4,
+                            title: "Vestibular Rehab for VESTIBULAR MIGRAINE",
+                            description: "Specific exercises tailored for individuals suffering from vestibular migraines. It focuses on gentle trunk tilts, head turns, and balance exercises with specific breathing patterns to manage symptoms like lightheadedness and feeling off-balance without triggering a migraine episode.",
+                            url: "https://www.youtube.com/watch?v=uWVdZEX36iU"
+                        },
+                        {
+                            id: 5,
+                            title: "Vestibular Rehab for CERVICOGENIC DIZZINESS",
+                            description: "Targeted at dizziness or vertigo originating from the neck (cervical spine). The video covers posture correction, chin tucks, gentle upper trapezius stretches, and slow head turns/nods to relieve neck tension and associated dizziness.",
+                            url: "https://www.youtube.com/watch?v=O-6eV34Ny_c"
+                        },
+                        {
+                            id: 6,
+                            title: "Vestibular Rehab for PPPD",
+                            description: "A detailed routine for Persistent Postural-Perceptual Dizziness (PPPD). It includes a body scan for relaxation, diaphragmatic breathing, and a series of desensitization exercises involving head and body turns, diagonal movements, and depth perception challenges to help the brain re-calibrate.",
+                            url: "https://www.youtube.com/watch?v=Yyvt8EMlHxs"
+                        },
+                        {
+                            id: 7,
+                            title: "Visually-Induced Motion Sickness Rehab",
+                            description: "Focuses on desensitizing the visual system for those who get dizzy in busy environments (like grocery stores or traffic). It recommends performing gaze stabilization and head movement exercises against backgrounds of varying complexity, from blank walls to busy patterns and moving objects.",
+                            url: "https://www.youtube.com/watch?v=A_7I7zQ8T5c"
+                        }
+                    ]
+                },
+                {
+                    id: 3,
+                    title: "Balance & Walking",
+                    videos: [
+                        {
+                            id: 8,
+                            title: "Top Ten Walking Exercises",
+                            description: "A collection of ten walking drills to improve gait mechanics and stability. Exercises include heel strikes, \"sticky toes\" (emphasizing toe-off), butt kicks, soldier walks, backward walking, side stepping, and tightrope walking to enhance walking confidence and safety.",
+                            url: "https://www.youtube.com/watch?v=awciUjA28IE"
+                        },
+                        {
+                            id: 9,
+                            title: "Balance Exercises with a Foam Pad",
+                            description: "Introduces the use of a foam balance pad to increase the challenge of standing exercises. It covers seven exercises ranging from simply standing on the pad to heel-toe raises, head turns, marching, and single-leg balance to improve stability and prevent falls.",
+                            url: "https://www.youtube.com/watch?v=EiuYyJOikPE"
+                        },
+                        {
+                            id: 10,
+                            title: "Starting and Progressing a Walking Program",
+                            description: "Provides guidance on how to begin a walking program safely and effectively. It discusses using Rate of Perceived Exertion (RPE) to monitor intensity and strategies for gradually increasing walking duration and speed for health and weight loss benefits.",
+                            url: "https://www.youtube.com/watch?v=gHbBc_GBsx4"
+                        }
+                    ]
+                },
+                {
+                    id: 4,
+                    title: "Breathing & Relaxation",
+                    videos: [
+                        {
+                            id: 11,
+                            title: "Breathing with Gentle Spinal Movements",
+                            description: "Combines diaphragmatic breathing with gentle spinal mobility exercises. Movements include overhead reaching with leg extensions, spinal rotations, cat-cow stretches, and trunk rotations to release tension throughout the back while promoting relaxation.",
+                            url: "https://www.youtube.com/watch?v=Jb1UUSWkmaU"
+                        },
+                        {
+                            id: 12,
+                            title: "Breathing with Gentle Neck Movements",
+                            description: "Focuses on releasing neck and shoulder tension through breathing and movement. Exercises include \"contract-relax\" techniques for tight muscles, shoulder rolls, and coordinated head rotations with arm movements to improve blood flow and reduce pain.",
+                            url: "https://www.youtube.com/watch?v=qCmvIXQtWJ0"
+                        },
+                        {
+                            id: 13,
+                            title: "Breathing with Gentle Low Back Movements",
+                            description: "Targeted at low back health, this video integrates breathing with movements like knee sways, pelvic tilts (anterior and posterior), bridges, and single knee-to-chest stretches to relieve lumbar tightness and stress.",
+                            url: "https://www.youtube.com/watch?v=UjMYl_D2pHo"
+                        }
+                    ]
+                },
+                {
+                    id: 5,
+                    title: "Understanding Your Symptoms",
+                    videos: [
+                        {
+                            id: 14,
+                            title: "Why do exercises make me feel worse?",
+                            description: "An educational video explaining that a temporary increase in symptoms during vestibular rehab is normal and a sign the system is being stimulated. It provides guidelines on \"how much is too much\" (e.g., symptoms should return to baseline within 20 minutes) and tips for managing exercise intensity.",
+                            url: "https://www.youtube.com/watch?v=65I3kt5U31I"
+                        },
+                        {
+                            id: 15,
+                            title: "What is the Vestibulo-Ocular Reflex (VOR)?",
+                            description: "Explains the Vestibulo-Ocular Reflex (VOR), which stabilizes vision during head movement. The video demonstrates gaze stabilization exercises (keeping eyes focused on a target while moving the head) to treat blurry vision and dizziness caused by VOR dysfunction.",
+                            url: "https://www.youtube.com/watch?v=5H8b6onczMA"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // State
+        let profiles = [];
+        let currentProfile = null;
+        let currentVideoId = null;
+        let deleteProfileId = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadProfiles();
+            renderModules();
+            
+            if (profiles.length === 0) {
+                showProfileModal();
+            } else {
+                const lastActiveId = localStorage.getItem('lastActiveProfile');
+                const lastActive = profiles.find(p => p.id === lastActiveId);
+                if (lastActive) {
+                    selectProfile(lastActive.id);
+                } else {
+                    showProfileModal();
+                }
+            }
+
+            // Close dropdown on outside click
+            document.addEventListener('click', (e) => {
+                const dropdown = document.getElementById('profileDropdown');
+                const btn = document.getElementById('profileDropdownBtn');
+                if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        });
+
+        // Profile Functions
+        function loadProfiles() {
+            const saved = localStorage.getItem('vestibularProfiles');
+            profiles = saved ? JSON.parse(saved) : [];
+        }
+
+        function saveProfiles() {
+            localStorage.setItem('vestibularProfiles', JSON.stringify(profiles));
+        }
+
+        function showProfileModal() {
+            const modal = document.getElementById('profileModal');
+            const existingSection = document.getElementById('existingProfiles');
+            const profileList = document.getElementById('profileList');
+            
+            modal.classList.remove('hidden');
+            
+            if (profiles.length > 0) {
+                existingSection.classList.remove('hidden');
+                profileList.innerHTML = profiles.map(p => `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="selectProfile('${p.id}')">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center">
+                                <span class="text-white font-semibold">${p.name.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-800">${p.name}</p>
+                                <p class="text-xs text-gray-500">${getProfileProgress(p)}% complete</p>
+                            </div>
+                        </div>
+                        <button onclick="event.stopPropagation(); showDeleteModal('${p.id}')" class="p-2 text-gray-400 hover:text-red-500 transition-colors">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                existingSection.classList.add('hidden');
+            }
+        }
+
+        function hideProfileModal() {
+            document.getElementById('profileModal').classList.add('hidden');
+            document.getElementById('newProfileName').value = '';
+        }
+
+        function createProfile() {
+            const nameInput = document.getElementById('newProfileName');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                showToast('Please enter a name', 'error');
+                return;
+            }
+            
+            const profile = {
+                id: Date.now().toString(),
+                name: name,
+                completed: [],
+                lastVideo: null
+            };
+            
+            profiles.push(profile);
+            saveProfiles();
+            selectProfile(profile.id);
+            showToast(`Welcome, ${name}!`, 'success');
+        }
+
+        function selectProfile(id) {
+            currentProfile = profiles.find(p => p.id === id);
+            if (!currentProfile) return;
+            
+            localStorage.setItem('lastActiveProfile', id);
+            hideProfileModal();
+            updateProfileUI();
+            updateProgress();
+            renderModules();
+            updateContinueLearning();
+            
+            // Show last video if available
+            if (currentProfile.lastVideo) {
+                selectVideo(currentProfile.lastVideo);
+            }
+        }
+
+        function updateProfileUI() {
+            document.getElementById('profileInitial').textContent = currentProfile.name.charAt(0).toUpperCase();
+            document.getElementById('currentProfileName').textContent = currentProfile.name;
+            updateDropdownProfiles();
+        }
+
+        function toggleProfileDropdown() {
+            const dropdown = document.getElementById('profileDropdown');
+            dropdown.classList.toggle('hidden');
+            updateDropdownProfiles();
+        }
+
+        function updateDropdownProfiles() {
+            const container = document.getElementById('dropdownProfiles');
+            container.innerHTML = profiles.map(p => `
+                <button onclick="selectProfile('${p.id}')" 
+                    class="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${p.id === currentProfile?.id ? 'bg-indigo-50 text-indigo-600' : 'hover:bg-gray-50'}">
+                    <div class="w-8 h-8 ${p.id === currentProfile?.id ? 'bg-indigo-500' : 'bg-gray-400'} rounded-full flex items-center justify-center">
+                        <span class="text-white font-semibold text-sm">${p.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div class="flex-1 text-left">
+                        <p class="font-medium">${p.name}</p>
+                        <p class="text-xs text-gray-500">${getProfileProgress(p)}% complete</p>
+                    </div>
+                    ${p.id === currentProfile?.id ? '<i class="fas fa-check text-indigo-500"></i>' : ''}
+                </button>
+            `).join('');
+        }
+
+        function getProfileProgress(profile) {
+            return Math.round((profile.completed.length / 15) * 100);
+        }
+
+        function showDeleteModal(id) {
+            deleteProfileId = id;
+            const profile = profiles.find(p => p.id === id);
+            document.getElementById('deleteProfileName').textContent = profile.name;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+            deleteProfileId = null;
+        }
+
+        function confirmDelete() {
+            if (!deleteProfileId) return;
+            
+            const profile = profiles.find(p => p.id === deleteProfileId);
+            profiles = profiles.filter(p => p.id !== deleteProfileId);
+            saveProfiles();
+            
+            showToast(`${profile.name}'s profile deleted`, 'success');
+            closeDeleteModal();
+            
+            if (currentProfile?.id === deleteProfileId) {
+                currentProfile = null;
+                if (profiles.length > 0) {
+                    selectProfile(profiles[0].id);
+                } else {
+                    showProfileModal();
+                }
+            }
+            
+            updateDropdownProfiles();
+        }
+
+        function resetProgress() {
+            if (!currentProfile) return;
+            
+            if (confirm('Are you sure you want to reset all progress for ' + currentProfile.name + '?')) {
+                currentProfile.completed = [];
+                currentProfile.lastVideo = null;
+                saveProfiles();
+                updateProgress();
+                renderModules();
+                updateContinueLearning();
+                document.getElementById('videoPlayerSection').classList.add('hidden');
+                currentVideoId = null;
+                showToast('Progress reset successfully', 'success');
+            }
+            
+            document.getElementById('profileDropdown').classList.add('hidden');
+        }
+
+        // Video Functions
+        function renderModules() {
+            courseData.modules.forEach((module, moduleIndex) => {
+                const container = document.getElementById(`module${module.id}Content`);
+                const borderClass = `module-border-${module.id}`;
+                
+                container.innerHTML = module.videos.map(video => {
+                    const isCompleted = currentProfile?.completed.includes(video.id);
+                    const isActive = currentVideoId === video.id;
+                    
+                    return `
+                        <div class="video-card flex items-center gap-4 p-4 rounded-xl border ${borderClass} cursor-pointer ${isActive ? 'active border-indigo-300' : 'border-gray-100 hover:border-gray-200 bg-white'}" 
+                            onclick="selectVideo(${video.id})">
+                            <div class="flex-shrink-0">
+                                ${isCompleted 
+                                    ? '<div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center checkmark-complete"><i class="fas fa-check text-green-600"></i></div>'
+                                    : `<div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center"><span class="text-gray-500 font-medium">${video.id}</span></div>`
+                                }
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h4 class="font-medium text-gray-800 truncate">${video.title}</h4>
+                                <p class="text-sm text-gray-500 truncate">${video.description.substring(0, 80)}...</p>
+                            </div>
+                            <div class="flex-shrink-0 flex items-center gap-2">
+                                <a href="${video.url}" target="_blank" onclick="event.stopPropagation();" 
+                                    class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                    <i class="fab fa-youtube"></i>
+                                </a>
+                                <i class="fas fa-chevron-right text-gray-300"></i>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                updateModuleProgress(module.id);
+            });
+        }
+
+        function updateModuleProgress(moduleId) {
+            const module = courseData.modules.find(m => m.id === moduleId);
+            if (!module || !currentProfile) return;
+            
+            const completed = module.videos.filter(v => currentProfile.completed.includes(v.id)).length;
+            document.getElementById(`module${moduleId}Progress`).textContent = `${completed}/${module.videos.length}`;
+        }
+
+        function toggleModule(moduleId) {
+            const content = document.getElementById(`module${moduleId}Content`);
+            const arrow = document.getElementById(`module${moduleId}Arrow`);
+            
+            content.classList.toggle('hidden');
+            arrow.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function selectVideo(videoId) {
+            currentVideoId = videoId;
+            
+            // Find the video
+            let video = null;
+            let moduleId = null;
+            for (const module of courseData.modules) {
+                const found = module.videos.find(v => v.id === videoId);
+                if (found) {
+                    video = found;
+                    moduleId = module.id;
+                    break;
+                }
+            }
+            
+            if (!video) return;
+            
+            // Update last video
+            if (currentProfile) {
+                currentProfile.lastVideo = videoId;
+                saveProfiles();
+            }
+            
+            // Show player section
+            const section = document.getElementById('videoPlayerSection');
+            section.classList.remove('hidden');
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            
+            // Update content
+            document.getElementById('currentModuleBadge').textContent = `Module ${moduleId}`;
+            document.getElementById('currentModuleBadge').className = `inline-block px-3 py-1 rounded-full text-xs font-semibold text-white gradient-${moduleId} mb-2`;
+            document.getElementById('currentVideoTitle').textContent = video.title;
+            document.getElementById('currentVideoDesc').textContent = video.description;
+            document.getElementById('watchYoutubeBtn').href = video.url;
+            
+            // Update complete button
+            updateCompleteButton();
+            
+            // Update navigation
+            updateNavigation();
+            
+            // Re-render to update active states
+            renderModules();
+            
+            // Expand the module containing this video
+            const content = document.getElementById(`module${moduleId}Content`);
+            const arrow = document.getElementById(`module${moduleId}Arrow`);
+            content.classList.remove('hidden');
+            arrow.style.transform = 'rotate(180deg)';
+        }
+
+        function updateCompleteButton() {
+            if (!currentProfile || !currentVideoId) return;
+            
+            const btn = document.getElementById('markCompleteBtn');
+            const isCompleted = currentProfile.completed.includes(currentVideoId);
+            
+            if (isCompleted) {
+                btn.className = 'px-4 py-2 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 transition-colors flex items-center gap-2';
+                btn.innerHTML = '<i class="fas fa-check"></i><span class="hidden sm:inline">Completed</span>';
+            } else {
+                btn.className = 'px-4 py-2 border-2 border-green-500 text-green-600 rounded-xl font-medium hover:bg-green-50 transition-colors flex items-center gap-2';
+                btn.innerHTML = '<i class="fas fa-check"></i><span class="hidden sm:inline">Mark Complete</span>';
+            }
+        }
+
+        function toggleComplete() {
+            if (!currentProfile || !currentVideoId) return;
+            
+            const index = currentProfile.completed.indexOf(currentVideoId);
+            if (index > -1) {
+                currentProfile.completed.splice(index, 1);
+                showToast('Marked as incomplete', 'info');
+            } else {
+                currentProfile.completed.push(currentVideoId);
+                showToast('Great job! Video completed', 'success');
+            }
+            
+            saveProfiles();
+            updateCompleteButton();
+            updateProgress();
+            renderModules();
+            updateContinueLearning();
+        }
+
+        function updateNavigation() {
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const position = document.getElementById('videoPosition');
+            
+            prevBtn.disabled = currentVideoId <= 1;
+            nextBtn.disabled = currentVideoId >= 15;
+            position.textContent = `${currentVideoId} of 15`;
+        }
+
+        function navigateVideo(direction) {
+            const newId = currentVideoId + direction;
+            if (newId >= 1 && newId <= 15) {
+                selectVideo(newId);
+            }
+        }
+
+        function updateProgress() {
+            if (!currentProfile) return;
+            
+            const completed = currentProfile.completed.length;
+            const percent = Math.round((completed / 15) * 100);
+            
+            document.getElementById('progressPercent').textContent = `${percent}%`;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressText').textContent = `${completed} of 15 videos completed`;
+            
+            // Update all module progress
+            courseData.modules.forEach(module => updateModuleProgress(module.id));
+        }
+
+        function updateContinueLearning() {
+            if (!currentProfile) return;
+            
+            const titleEl = document.getElementById('continueTitle');
+            const moduleEl = document.getElementById('continueModule');
+            const btn = document.getElementById('continueBtn');
+            
+            // Find next incomplete video
+            let nextVideo = null;
+            let nextModule = null;
+            
+            for (const module of courseData.modules) {
+                for (const video of module.videos) {
+                    if (!currentProfile.completed.includes(video.id)) {
+                        nextVideo = video;
+                        nextModule = module;
+                        break;
+                    }
+                }
+                if (nextVideo) break;
+            }
+            
+            if (nextVideo) {
+                titleEl.textContent = nextVideo.title;
+                moduleEl.textContent = `Module ${nextModule.id}: ${nextModule.title}`;
+                btn.onclick = () => selectVideo(nextVideo.id);
+            } else {
+                titleEl.textContent = 'Course Completed! 🎉';
+                moduleEl.textContent = 'You\'ve finished all videos';
+                btn.onclick = () => selectVideo(1);
+                btn.innerHTML = '<i class="fas fa-redo"></i><span>Review</span>';
+            }
+        }
+
+        function continueWatching() {
+            // Handled by updateContinueLearning
+        }
+
+        // Toast Notifications
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-indigo-500'
+            };
+            
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-exclamation-circle',
+                info: 'fa-info-circle'
+            };
+            
+            toast.className = `toast ${colors[type]} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3`;
+            toast.innerHTML = `
+                <i class="fas ${icons[type]}"></i>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

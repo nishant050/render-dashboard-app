@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">FileHub</string>
+    <string name="default_server_url">https://dashboard-mszb.onrender.com</string>
+    <string name="upload_channel_id">filehub_upload_channel</string>
+    <string name="upload_channel_name">FileHub Background Uploads</string>
+    <string name="upload_channel_desc">Shows upload progress for files shared to FileHub</string>
+</resources>

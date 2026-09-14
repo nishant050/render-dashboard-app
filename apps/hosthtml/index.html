@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Host HTML - Cyber Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Ace Editor with SRI -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.2/ace.js" integrity="sha384-gfCuLtuzlUqj5gETDD4ad/qfn8YX7WCCXMB0E+QUr8JkgL/kJN2yenQyVihjGyoM" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <a href="../../index.html" class="back-link">← Back to Dashboard</a>
+                <h1>🌐 Host HTML</h1>
+                <p>Deploy and manage standalone HTML files permanently.</p>
+            </div>
+            <button id="btn-create" class="btn btn-primary">+ New Page</button>
+        </header>
+
+        <main>
+            <div class="glass-panel">
+                <div class="pages-list" id="pages-list">
+                    <!-- Pages will be injected here -->
+                    <div class="loading">Loading your hosted pages...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div id="editor-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2 id="modal-title">Create New Page</h2>
+                <button id="btn-close-modal" class="btn-icon">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="page-path">Page Path (URL)</label>
+                    <div class="input-prefix">
+                        <span class="prefix">/p/</span>
+                        <input type="text" id="page-path" placeholder="my-awesome-page" pattern="[a-zA-Z0-9_-]+" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="page-title">Page Title</label>
+                    <input type="text" id="page-title" placeholder="My Awesome Page" required>
+                </div>
+                
+                <div class="editor-section">
+                    <div class="editor-header">
+                        <label>HTML Content</label>
+                        <div class="editor-actions">
+                            <label for="file-upload" class="btn btn-secondary btn-sm">
+                                📤 Upload .html
+                            </label>
+                            <input type="file" id="file-upload" accept=".html" class="hidden">
+                        </div>
+                    </div>
+                    
+                    <div class="info-alert">
+                        <strong>Gotcha!</strong> Since we only store the HTML string, external assets (images, CSS, JS) must be hosted on external CDNs (absolute URLs) or inlined directly using Base64 Data URLs.
+                    </div>
+                    <div class="info-alert" style="border-left-color:#22c55e;background:rgba(34,197,94,0.08);color:#86efac;">
+                        <strong>Server Storage (automatic):</strong> <code>localStorage</code> and <code>sessionStorage</code> (plus the explicit <code>window.HostedStorage</code> helper) are now transparently backed by the server. Data added inside a hosted page is shared with everyone who visits the same <code>/p/your-page</code> URL, even from different devices or browsers. No changes needed inside most pasted SPAs.
+                        <br><br>
+                        <strong>Note:</strong> IndexedDB is not automatically shimmed (use <code>HostedStorage</code> or localStorage patterns for lists/simple state).
+                    </div>
+
+                    <div class="split-pane">
+                        <div class="pane-half">
+                            <div id="ace-editor" class="ace-container"></div>
+                        </div>
+                        <div class="pane-half live-preview-container">
+                            <div class="preview-header">Live Preview</div>
+                            <iframe id="live-preview" class="live-preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div id="modal-error" class="error-msg"></div>
+                <button id="btn-save" class="btn btn-primary">Save Page</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

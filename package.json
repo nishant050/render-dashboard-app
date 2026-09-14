@@ -1,0 +1,27 @@
+{
+  "name": "render-dashboard",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "logs:clean": "powershell -ExecutionPolicy Bypass -File scripts/clean-logs.ps1",
+    "render:build": "bash scripts/render-build.sh",
+    "browsers:install": "npx puppeteer browsers install chrome",
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.10.0",
+    "cheerio": "^1.1.0",
+    "express": "^5.1.0",
+    "groq-sdk": "^0.27.0",
+    "http-proxy-middleware": "^3.0.5",
+    "mongoose": "^9.3.0",
+    "multer": "^2.0.2",
+    "puppeteer": "^24.37.3"
+  }
+}

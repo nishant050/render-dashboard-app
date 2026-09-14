@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RupeeTracker — Calculators</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">💰 RupeeTracker</div>
+        <a href="/finance/" class="nav-link">📊 Dashboard</a>
+        <a href="/finance/transactions.html" class="nav-link">💸 Transactions</a>
+        <a href="/finance/budget.html" class="nav-link">📋 Budget</a>
+        <a href="/finance/bills.html" class="nav-link">📅 Bills</a>
+        <a href="/finance/goals.html" class="nav-link">🎯 Goals</a>
+        <a href="/finance/calculators.html" class="nav-link active">🧮 Calculators</a>
+        <a href="/finance/reports.html" class="nav-link">📈 Reports</a>
+        <a href="/finance/accounts.html" class="nav-link">🏦 Accounts</a>
+        <a href="/finance/settings.html" class="nav-link">⚙️ Settings</a>
+        <a href="/" class="nav-link nav-back">← Back to Dashboard</a>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+        <header class="page-header">
+            <button class="menu-toggle">☰</button>
+            <h1>Financial Calculators</h1>
+        </header>
+
+        <div class="page-body">
+            <!-- Calculator Hub -->
+            <div id="calculator-hub" class="calc-grid">
+                <div class="calc-card" onclick="showCalculator('emi')">
+                    <div class="calc-card-icon">🏦</div>
+                    <div class="calc-card-title">EMI Calculator</div>
+                    <div class="calc-card-desc">Calculate monthly loan EMI</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('compound')">
+                    <div class="calc-card-icon">📈</div>
+                    <div class="calc-card-title">Compound Interest</div>
+                    <div class="calc-card-desc">See how money grows over time</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('sip')">
+                    <div class="calc-card-icon">💰</div>
+                    <div class="calc-card-title">SIP Calculator</div>
+                    <div class="calc-card-desc">Plan systematic investments</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('lumpsum')">
+                    <div class="calc-card-icon">🏛️</div>
+                    <div class="calc-card-title">Lumpsum Calculator</div>
+                    <div class="calc-card-desc">One-time investment returns</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('fd')">
+                    <div class="calc-card-icon">🏧</div>
+                    <div class="calc-card-title">FD Calculator</div>
+                    <div class="calc-card-desc">Fixed deposit maturity amount</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('ppf')">
+                    <div class="calc-card-icon">🏦</div>
+                    <div class="calc-card-title">PPF Calculator</div>
+                    <div class="calc-card-desc">Public Provident Fund projections</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('gratuity')">
+                    <div class="calc-card-icon">🎖️</div>
+                    <div class="calc-card-title">Gratuity Calculator</div>
+                    <div class="calc-card-desc">Estimate your gratuity</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('tax')">
+                    <div class="calc-card-icon">📋</div>
+                    <div class="calc-card-title">Income Tax Calculator</div>
+                    <div class="calc-card-desc">Old vs New regime comparison</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('gst')">
+                    <div class="calc-card-icon">🧾</div>
+                    <div class="calc-card-title">GST Calculator</div>
+                    <div class="calc-card-desc">Add/remove GST from amount</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('inflation')">
+                    <div class="calc-card-icon">📉</div>
+                    <div class="calc-card-title">Inflation Calculator</div>
+                    <div class="calc-card-desc">Future cost of things</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('retirement')">
+                    <div class="calc-card-icon">🏖️</div>
+                    <div class="calc-card-title">Retirement Planner</div>
+                    <div class="calc-card-desc">How much do you need to retire</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('rentvsbuy')">
+                    <div class="calc-card-icon">🏠</div>
+                    <div class="calc-card-title">Rent vs Buy</div>
+                    <div class="calc-card-desc">Should you rent or buy a home</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('loancompare')">
+                    <div class="calc-card-icon">⚖️</div>
+                    <div class="calc-card-title">Loan Comparison</div>
+                    <div class="calc-card-desc">Compare up to 3 loan offers</div>
+                </div>
+                <div class="calc-card" onclick="showCalculator('savingsgoal')">
+                    <div class="calc-card-icon">🎯</div>
+                    <div class="calc-card-title">Savings Goal Calc</div>
+                    <div class="calc-card-desc">Monthly saving needed for a goal</div>
+                </div>
+            </div>
+
+            <!-- Calculator Container (hidden by default) -->
+            <div id="calculator-container" class="hidden">
+                <button class="btn btn-ghost mb-lg" onclick="showHub()">← Back to Calculators</button>
+                <div id="calculator-content"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL CONTAINER -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="common.js"></script>
+    <script src="calculators.js"></script>
+
+</body>
+
+</html>

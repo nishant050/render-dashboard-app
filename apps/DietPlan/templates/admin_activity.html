@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Activity Logs — Diet Plan Admin{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block body %}
+<div class="admin-container">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar glass-card">
+        <div class="sidebar-header">
+            <span class="logo-icon">🥗</span>
+            <h2>Diet Plan</h2>
+            <span class="badge">Admin</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/dietplan/admin" class="nav-item">
+                <span>📊</span> Overview
+            </a>
+            <a href="/dietplan/admin#upload" class="nav-item">
+                <span>📤</span> Upload Meals
+            </a>
+            <a href="/dietplan/admin/meals" class="nav-item">
+                <span>🍽️</span> Manage Meals
+            </a>
+            <a href="/dietplan/admin#models" class="nav-item">
+                <span>🤖</span> AI Models
+            </a>
+            <a href="/dietplan/admin/activity" class="nav-item active">
+                <span>📋</span> Activity Logs
+            </a>
+            <a href="/dietplan/admin#settings" class="nav-item">
+                <span>⚙️</span> Settings
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/dietplan/admin/logout" class="nav-item logout">
+                <span>🚪</span> Logout
+            </a>
+        </div>
+    </aside>
+
+    <!-- Mobile Header -->
+    <header class="admin-mobile-header">
+        <button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
+        <h2>Activity Logs</h2>
+        <a href="/dietplan/admin/logout" class="header-btn" title="Logout">🚪</a>
+    </header>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+        <h1 class="admin-title">Activity Logs</h1>
+
+        <div class="admin-section glass-card">
+            <div class="filter-bar">
+                <form action="/dietplan/admin/activity" method="get" class="filter-form">
+                    <div class="input-group" style="margin: 0;">
+                        <select name="profile_filter" class="input-field" onchange="this.form.submit()">
+                            <option value="0">All Users</option>
+                            {% for p in profiles %}
+                            <option value="{{ p.id }}" {% if p.id==profile_filter %}selected{% endif %}>{{ p.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <label class="input-label">Filter by user</label>
+                    </div>
+                </form>
+            </div>
+
+            <div class="activity-list detailed">
+                {% for act in activities %}
+                <div class="activity-item">
+                    <div class="activity-dot {{ act.action }}"></div>
+                    <div class="activity-content">
+                        <p>
+                            <strong>{{ act.profile_name or 'Unknown' }}</strong>
+                            — {{ act.action | replace('_', ' ') | title }}
+                        </p>
+                        <span class="activity-detail">{{ act.details }}</span>
+                    </div>
+                    <div class="activity-meta">
+                        <span class="activity-device" title="{{ act.user_agent }}">
+                            {{ act.device_type }} · {{ act.browser_info }} · {{ act.os_info }}
+                        </span>
+                        <span class="activity-ip">{{ act.ip_address }}</span>
+                        <span class="activity-time">{{ act.created_at }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if activities|length == 0 %}
+            <div class="empty-state">
+                <span class="empty-icon">📋</span>
+                <p>No activity logs found.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<script>
+    function toggleSidebar() {
+        document.querySelector('.admin-sidebar').classList.toggle('open');
+        document.getElementById('sidebar-overlay').classList.toggle('active');
+    }
+</script>
+{% endblock %}

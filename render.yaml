@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: render-dashboard-app
+    env: node
+    plan: free
+    buildCommand: "npm run render:build"
+    startCommand: "npm start"
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MONGO_URI
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: SCRAPE_DO_API_KEY
+        sync: false
+      - key: YTDLP_PATH
+        sync: false
+      - key: FFMPEG_PATH
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.9

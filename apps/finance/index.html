@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Money Plan</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+</head>
+
+<body>
+    <main class="app-shell">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">Monthly household tracker</p>
+                <h1>Money Plan</h1>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-secondary" id="reset-plan-btn" type="button">Reset sample</button>
+                <button class="btn btn-secondary" id="change-password-btn" type="button">Change password</button>
+                <a class="btn btn-secondary" href="/">Back</a>
+                <button class="btn btn-primary" id="save-plan-btn" type="button">Save plan</button>
+            </div>
+        </header>
+
+        <section class="summary-grid" id="summary-grid" aria-live="polite"></section>
+
+        <section class="work-grid">
+            <article class="panel panel-wide">
+                <div class="panel-header">
+                    <div>
+                        <h2>Income And Expenses</h2>
+                        <p>Plan every rupee before the month starts.</p>
+                    </div>
+                    <div class="button-row">
+                        <button class="icon-btn" data-add-row="incomes" type="button" title="Add income">+</button>
+                        <button class="icon-btn" data-add-row="expenses" type="button" title="Add expense">+</button>
+                    </div>
+                </div>
+                <div class="split-table">
+                    <div>
+                        <div class="table-title">Incomes</div>
+                        <div class="editable-table" id="income-table"></div>
+                    </div>
+                    <div>
+                        <div class="table-title">Expenses</div>
+                        <div class="editable-table" id="expense-table"></div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Money Stores</h2>
+                        <p>Where money should sit, and why.</p>
+                    </div>
+                    <button class="icon-btn" data-add-row="stores" type="button" title="Add store">+</button>
+                </div>
+                <div class="editable-table" id="stores-table"></div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Investment SIPs</h2>
+                        <p>Monthly investments mapped to goals.</p>
+                    </div>
+                    <button class="icon-btn" data-add-row="investments" type="button" title="Add SIP">+</button>
+                </div>
+                <div class="editable-table" id="investments-table"></div>
+            </article>
+
+            <article class="panel panel-wide">
+                <div class="panel-header">
+                    <div>
+                        <h2>Life Goals</h2>
+                        <p>Use the EMI column to decide which goals can start now.</p>
+                    </div>
+                    <button class="icon-btn" data-add-row="goals" type="button" title="Add goal">+</button>
+                </div>
+                <div class="editable-table goal-table" id="goals-table"></div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Current 1 Year Goals</h2>
+                        <p>Funds currently tied to short-term goals.</p>
+                    </div>
+                </div>
+                <div class="compact-list" id="one-year-list"></div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Checks</h2>
+                        <p>Quick mismatches to fix before saving.</p>
+                    </div>
+                </div>
+                <div class="check-list" id="check-list"></div>
+            </article>
+        </section>
+    </main>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close" type="button">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="common.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+
+</html>

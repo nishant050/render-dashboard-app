@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investing Training Lab</title>
+    <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script defer src="client.js"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-left">
+                <a class="nav-link" href="../../index.html" aria-label="Back to dashboard">
+                    <i data-lucide="arrow-left"></i>
+                    <span>Dashboard</span>
+                </a>
+                <div class="brand-mark" aria-hidden="true">
+                    <i data-lucide="chart-candlestick"></i>
+                </div>
+                <div class="brand-copy">
+                    <p>Stock Market Mastery 6.0</p>
+                    <h1>Investing Training Lab</h1>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <label class="profile-picker">
+                    <span>Profile</span>
+                    <select id="profileSelect" aria-label="Choose learner profile"></select>
+                </label>
+                <button class="ghost-button" id="guestModeButton" type="button">
+                    <i data-lucide="shield-check"></i>
+                    <span>Guest Mode</span>
+                </button>
+                <button class="icon-button" id="refreshButton" type="button" title="Sync course progress" aria-label="Sync course progress">
+                    <i data-lucide="refresh-cw"></i>
+                </button>
+                <a class="primary-link" href="../learn-investing/index.html">
+                    <i data-lucide="book-open"></i>
+                    <span>Course</span>
+                </a>
+            </div>
+        </header>
+
+        <main class="main-shell">
+            <section class="learner-strip" aria-label="Learner progress">
+                <div class="learner-card">
+                    <div class="avatar" id="profileAvatar">IT</div>
+                    <div>
+                        <p class="label">Active learner</p>
+                        <h2 id="profileName">Loading</h2>
+                        <p id="courseProgressText">Syncing course progress...</p>
+                    </div>
+                </div>
+                <div class="progress-card">
+                    <div class="progress-card-top">
+                        <span id="saveStatus">Ready</span>
+                        <strong id="masteryValue">0%</strong>
+                    </div>
+                    <div class="meter" aria-hidden="true">
+                        <span id="masteryBar"></span>
+                    </div>
+                </div>
+                <div class="stats-row" id="statsRow"></div>
+            </section>
+
+            <nav class="module-timeline" id="moduleTimeline" aria-label="Training modules"></nav>
+
+            <section class="mode-bar" aria-label="Lab modes">
+                <button class="mode-button" data-view="tests" type="button">
+                    <i data-lucide="clipboard-check"></i>
+                    <span>Tests</span>
+                </button>
+                <button class="mode-button" data-view="research" type="button">
+                    <i data-lucide="search-check"></i>
+                    <span>Research Drill</span>
+                </button>
+                <button class="mode-button" data-view="simulator" type="button">
+                    <i data-lucide="activity"></i>
+                    <span>Live Simulator</span>
+                </button>
+            </section>
+
+            <section class="workspace" id="workspace" aria-live="polite"></section>
+        </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jupyter Lab — Personal Cloud Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="jupyter-header" id="jupyter-header">
+        <div class="header-left">
+            <a href="../../index.html" class="back-btn" title="Back to Dashboard">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                <span>Dashboard</span>
+            </a>
+            <div class="divider"></div>
+            <div class="brand">
+                <span class="brand-icon">🪐</span>
+                <div class="brand-text">
+                    <span class="brand-title">Jupyter Lab</span>
+                    <span class="brand-sub">Persistent Python Workspace</span>
+                </div>
+            </div>
+            <div class="status-badge status-starting" id="status-badge">
+                <span class="status-dot"></span>
+                <span class="status-text" id="status-text">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <button class="action-btn" id="btn-restart" title="Restart Jupyter Server" onclick="restartJupyterServer()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Restart</span>
+            </button>
+            <button class="action-btn" id="btn-copy-link" title="Copy Direct URL" onclick="copyDirectUrl()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>Copy URL</span>
+            </button>
+            <a href="/jupyter/lab" target="_blank" class="action-btn action-btn-primary" id="btn-fullscreen" title="Open Fullscreen in New Tab">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+                <span>Full Tab</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="jupyter-viewport">
+        <!-- Loading / Startup Screen -->
+        <div class="startup-overlay" id="startup-overlay">
+            <div class="startup-card">
+                <div class="startup-icon-wrapper">
+                    <span class="startup-icon">🪐</span>
+                    <div class="spinner-ring"></div>
+                </div>
+                <h2 id="startup-heading">Starting Jupyter Lab...</h2>
+                <p id="startup-subtext">Initializing Python environment and persistent kernel manager.</p>
+                
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                </div>
+
+                <div class="info-chips">
+                    <div class="info-chip">
+                        <span class="chip-label">Persistent Kernels:</span>
+                        <span class="chip-val">Active (No Timeout)</span>
+                    </div>
+                    <div class="info-chip">
+                        <span class="chip-label">Server Root:</span>
+                        <span class="chip-val" id="server-root-val">Workspace</span>
+                    </div>
+                </div>
+
+                <div class="startup-actions">
+                    <button class="btn-secondary" onclick="forceCheckStatus()">Check Status</button>
+                    <button class="btn-secondary" onclick="restartJupyterServer()">Force Restart</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Jupyter Lab Frame -->
+        <iframe id="jupyter-frame" class="jupyter-iframe" title="JupyterLab Interface" allow="clipboard-read; clipboard-write"></iframe>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="client.js"></script>
+</body>
+</html>

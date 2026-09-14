@@ -1,0 +1,8 @@
+<svg width="280" height="157" xmlns="http://www.w3.org/2000/svg">
+  <rect width="280" height="157" fill="#1e293b"/>
+  <text x="50%" y="50%" font-family="Poppins, sans-serif" font-size="14" fill="#94a3b8" text-anchor="middle" dominant-baseline="middle">
+    No Thumbnail
+  </text>
+  <circle cx="140" cy="70" r="20" fill="none" stroke="#94a3b8" stroke-width="2"/>
+  <polygon points="135,60 135,80 150,70" fill="#94a3b8"/>
+</svg>
