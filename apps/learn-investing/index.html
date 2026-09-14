@@ -799,6 +799,19 @@
             return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
         }
 
+        function getApiBaseUrl() {
+            if (typeof window !== 'undefined' && window.AndroidBridge && typeof window.AndroidBridge.getServerUrl === 'function') {
+                try {
+                    const base = window.AndroidBridge.getServerUrl();
+                    if (base) return base.replace(/\/+$/, '');
+                } catch (e) {}
+            }
+            if (typeof window !== 'undefined' && window.FILEHUB_SERVER_URL) {
+                return window.FILEHUB_SERVER_URL.replace(/\/+$/, '');
+            }
+            return '';
+        }
+
         async function courseApi(method = 'GET', body = null) {
             const options = { method };
             if (body) {
@@ -806,7 +819,8 @@
                 options.body = JSON.stringify(body);
             }
 
-            const response = await fetch('/api/learn-investing/state', options);
+            const baseUrl = getApiBaseUrl();
+            const response = await fetch(`${baseUrl}/api/learn-investing/state`, options);
             if (!response.ok) {
                 throw new Error('Failed to sync learn-investing state');
             }
@@ -824,17 +838,26 @@
                 const remoteState = await courseApi();
                 const remoteProfiles = remoteState?.profiles || {};
                 const remoteCurrentProfileId = remoteState?.currentProfileId || null;
-                const remoteEmpty = Object.keys(remoteProfiles).length === 0 && !remoteCurrentProfileId;
 
-                if (remoteEmpty && Object.keys(localProfiles).length > 0) {
-                    profiles = localProfiles;
+                // Merge remote profiles and any local-only profiles
+                profiles = { ...localProfiles, ...remoteProfiles };
+
+                // Respect local selection first if still valid
+                if (localCurrentProfileId && profiles[localCurrentProfileId]) {
                     currentProfileId = localCurrentProfileId;
-                    await saveProfiles();
-                    return;
+                } else if (remoteCurrentProfileId && profiles[remoteCurrentProfileId]) {
+                    currentProfileId = remoteCurrentProfileId;
+                } else {
+                    // Prioritize Nishant if present, or first available profile
+                    const nishant = Object.values(profiles).find(p => p.name && p.name.toLowerCase().includes('nishant'));
+                    if (nishant) {
+                        currentProfileId = nishant.id;
+                    } else {
+                        const keys = Object.keys(profiles);
+                        currentProfileId = keys.length > 0 ? keys[0] : null;
+                    }
                 }
 
-                profiles = remoteProfiles;
-                currentProfileId = remoteCurrentProfileId;
                 localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
                 if (currentProfileId) {
                     localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
@@ -845,6 +868,10 @@
                 console.warn('Falling back to local storage for learn-investing:', error.message);
                 profiles = localProfiles;
                 currentProfileId = localCurrentProfileId;
+                if (!currentProfileId && Object.keys(profiles).length > 0) {
+                    const nishant = Object.values(profiles).find(p => p.name && p.name.toLowerCase().includes('nishant'));
+                    currentProfileId = nishant ? nishant.id : Object.keys(profiles)[0];
+                }
             }
         }
 

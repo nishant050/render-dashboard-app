@@ -2411,11 +2411,12 @@ app.get('/api/files', async (req, res) => {
         const currentPath = normalizeFileHubPath(req.query.path);
         const items = await FileHubEntry.find({ parentPath: currentPath })
             .sort({ isDirectory: -1, name: 1 })
-            .select('name isDirectory');
+            .select('name isDirectory size');
 
         res.json(items.map(item => ({
             name: item.name,
-            isDirectory: item.isDirectory
+            isDirectory: item.isDirectory,
+            size: item.size || 0
         })));
     } catch (error) {
         console.error('Error listing files:', error);
@@ -2856,6 +2857,22 @@ app.post('/api/extract-zip', async (req, res) => {
     }
 });
 
+// Common Object Utilities
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toPlainValue(value) {
+    if (!value) return value;
+    if (typeof value.toObject === 'function') {
+        return value.toObject({ flattenMaps: true });
+    }
+    if (value instanceof Map) {
+        return Object.fromEntries(value.entries());
+    }
+    return value;
+}
+
 // 12. LEARN INVESTING STATE
 const normalizeLearnInvestingState = (state = {}) => ({
     profiles: isPlainObject(state.profiles) ? state.profiles : {},
@@ -3272,19 +3289,6 @@ const NEWSHUNT_DEFAULT_STATE = Object.freeze({
     chatHistory: [],
     articleContent: {}
 });
-
-const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const toPlainValue = (value) => {
-    if (!value) return value;
-    if (typeof value.toObject === 'function') {
-        return value.toObject({ flattenMaps: true });
-    }
-    if (value instanceof Map) {
-        return Object.fromEntries(value.entries());
-    }
-    return value;
-};
 
 const normalizeNewshuntSettings = (settings) => {
     const plainSettings = toPlainValue(settings);

@@ -107,26 +107,52 @@ public class AppUpdater {
                         if (showFeedbackIfUpToDate) {
                             mainHandler.post(() -> Toast.makeText(activity, "No APK asset found in latest release.", Toast.LENGTH_SHORT).show());
                         }
+                    SharedPreferences prefs = activity.getSharedPreferences("filehub_prefs", Context.MODE_PRIVATE);
+                    String lastInstalledTag = prefs.getString("installed_release_tag", "");
+                    String dismissedTag = prefs.getString("dismissed_release_tag", "");
+
+                    String currentVersion = "";
+                    try {
+                        currentVersion = activity.getPackageManager().getPackageInfo(activity.getPackageName(), 0).versionName;
+                    } catch (Exception ignored) {}
+
+                    String cleanTag = tagName.replaceAll("^[vV]", "").trim();
+                    String cleanCurrent = currentVersion.replaceAll("^[vV]", "").trim();
+
+                    boolean isUpToDate = (!cleanCurrent.isEmpty() && cleanCurrent.equalsIgnoreCase(cleanTag))
+                            || (!lastInstalledTag.isEmpty() && lastInstalledTag.equalsIgnoreCase(tagName));
+
+                    if (isUpToDate) {
+                        if (showFeedbackIfUpToDate) {
+                            mainHandler.post(() -> {
+                                if (!activity.isFinishing()) {
+                                    Toast.makeText(activity, "App is up to date (" + tagName + ")", Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        }
                         return;
                     }
 
-                    SharedPreferences prefs = activity.getSharedPreferences("filehub_prefs", Context.MODE_PRIVATE);
-                    String lastInstalledTag = prefs.getString("installed_release_tag", "");
+                    // If it's an automatic background check and user previously dismissed this exact version, don't nag
+                    if (!showFeedbackIfUpToDate && tagName.equals(dismissedTag)) {
+                        return;
+                    }
 
                     final String finalDownloadUrl = downloadUrl;
                     final String finalNotes = notes;
 
-                    // If user manually clicked Check Updates, or if the release tag is newer than recorded
                     mainHandler.post(() -> {
                         if (activity.isFinishing()) return;
 
                         new AlertDialog.Builder(activity)
-                                .setTitle("App Update Available")
+                                .setTitle("App Update Available (" + tagName + ")")
                                 .setMessage(releaseName + "\n\n" + (finalNotes.isEmpty() ? "Latest stability fixes and updates." : finalNotes))
                                 .setPositiveButton("Download & Update", (dialog, which) -> {
                                     downloadAndInstallApk(activity, finalDownloadUrl, tagName);
                                 })
-                                .setNegativeButton("Later", null)
+                                .setNegativeButton("Later", (dialog, which) -> {
+                                    prefs.edit().putString("dismissed_release_tag", tagName).apply();
+                                })
                                 .show();
                     });
 

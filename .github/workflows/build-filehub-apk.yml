@@ -99,13 +99,13 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: filehub-apk-latest
-          name: "FileHub & Learn Investing v1.1.0"
+          name: "FileHub & Learn Investing v1.1.1"
           body: |
-            Official Release v1.1.0:
-            - **Inbuilt Learn Investing UI**: Offline-ready local assets, 100% self-contained Vanilla CSS, no CDN reliance.
-            - **Native FileHub Explorer**: Folder uploads fix (files upload into current subfolder), smooth scroll without refresh glitches.
-            - **Fixed Native Share Target**: Instant stream caching before activity finish, eliminating Android permission revocation.
-            - **In-App Updater**: Check for updates and install new versions directly inside the app.
+            Official Release v1.1.1:
+            - **Learn Investing Multi-Profile Sync**: Fully connected with MongoDB user profile ("Nishant"), course progress, and video states.
+            - **Fixed FileHub Blank Screen**: Corrected adapter items binding on folder load.
+            - **Fixed Native Share Target**: Android 14 FOREGROUND_SERVICE_DATA_SYNC compliance, background file staging, and live upload queue screen.
+            - **Fixed In-App Updater Loop**: Prevents repeating update dialogs once updated or dismissed.
           files: |
             build-output/FileHub.apk
             build-output/RenderDashboard.apk

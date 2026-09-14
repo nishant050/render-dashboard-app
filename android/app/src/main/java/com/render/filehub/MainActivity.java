@@ -13,7 +13,10 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -193,17 +196,48 @@ public class MainActivity extends AppCompatActivity {
         WebSettings settings = webViewInvesting.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
+
+        webViewInvesting.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public String getServerUrl() {
+                return prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
+            }
+        }, "AndroidBridge");
 
         webViewInvesting.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 progressBarInvesting.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                progressBarInvesting.setVisibility(View.GONE);
+                if (failingUrl != null && !failingUrl.startsWith("file:///android_asset/")) {
+                    view.loadUrl("file:///android_asset/learn-investing/index.html");
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) {
+                    progressBarInvesting.setVisibility(View.GONE);
+                    String failingUrl = request.getUrl().toString();
+                    if (!failingUrl.startsWith("file:///android_asset/")) {
+                        view.loadUrl("file:///android_asset/learn-investing/index.html");
+                    }
+                }
             }
         });
 
@@ -266,7 +300,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadInvestingCourse() {
         progressBarInvesting.setVisibility(View.VISIBLE);
-        webViewInvesting.loadUrl("file:///android_asset/learn-investing/index.html");
+        String server = prefs.getString("server_url", "https://dashboard-mszb.onrender.com").replaceAll("/+$", "");
+        webViewInvesting.loadUrl(server + "/apps/learn-investing/index.html");
         isInvestingLoaded = true;
     }
 
@@ -381,6 +416,7 @@ public class MainActivity extends AppCompatActivity {
                         loadFiles();
                     }
                 });
+                adapter.setItems(items);
                 recyclerView.setAdapter(adapter);
 
                 if (items.isEmpty()) {

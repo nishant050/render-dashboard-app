@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -105,7 +106,7 @@ public class UploadService extends Service {
                     uploadQueue.add(task);
                 }
                 broadcastUpdate();
-                startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, true));
+                startForegroundWithDataSync("Preparing uploads...", 0, 0, true);
                 processNextUpload();
                 return START_NOT_STICKY;
             }
@@ -120,7 +121,9 @@ public class UploadService extends Service {
                     }
                 } else if (intent.getData() != null) {
                     uris = new ArrayList<>();
-                    uris.add(intent.getData());
+                    for (int i = 0; i < 1; i++) {
+                        uris.add(intent.getData());
+                    }
                 }
             }
 
@@ -128,11 +131,20 @@ public class UploadService extends Service {
                 for (Uri uri : uris) {
                     enqueueUri(uri, targetFolder);
                 }
-                startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, true));
+                startForegroundWithDataSync("Preparing uploads...", 0, 0, true);
                 processNextUpload();
             }
         }
         return START_NOT_STICKY;
+    }
+
+    private void startForegroundWithDataSync(String message, int progress, int max, boolean indeterminate) {
+        Notification notif = buildNotification(message, progress, max, indeterminate);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, notif);
+        }
     }
 
     private void enqueueUri(Uri uri, String targetFolder) {
