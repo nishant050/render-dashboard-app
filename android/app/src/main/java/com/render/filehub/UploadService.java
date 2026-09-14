@@ -73,7 +73,7 @@ public class UploadService extends Service {
                 for (Uri uri : uris) {
                     enqueueUri(uri);
                 }
-                startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, 0));
+                startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, true));
                 processNextUpload();
             }
         }
