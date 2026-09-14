@@ -13,27 +13,27 @@
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher_round"
-        android:label="@string/app_name"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.FileHub"
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- Main Dashboard & File Explorer Activity -->
+        <!-- Main File Explorer Activity -->
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.FileHub.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.FileHub.NoActionBar" />
+
+        <!-- Render Dashboard Web & Streaming Shell Activity -->
+        <activity
+            android:name=".DashboardActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.FileHub.NoActionBar" />
 
         <!-- Settings Activity -->
         <activity
             android:name=".SettingsActivity"
-            android:label="FileHub Settings"
+            android:label="Settings"
             android:parentActivityName=".MainActivity" />
 
         <!-- Upload Queue Activity -->
@@ -51,14 +51,14 @@
             android:theme="@style/Theme.FileHub.Transparent">
 
             <!-- Single File Share -->
-            <intent-filter android:label="Upload to FileHub">
+            <intent-filter android:label="${shareLabel}">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
 
             <!-- Multiple Files Share -->
-            <intent-filter android:label="Upload to FileHub">
+            <intent-filter android:label="${shareLabel}">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />

@@ -39,11 +39,11 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Build Debug APK with Gradle
+      - name: Build Debug APKs with Gradle
         working-directory: ./android
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
+          gradle :app:assembleFilehubDebug :app:assembleDashboardDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
             echo "::error::Gradle Build Failed! Printing log excerpt:"
             grep -E "error:|FAILED|Exception|Caused by:" build_output.log | head -n 30 | while IFS= read -r line; do
               echo "::error::$line"
@@ -63,31 +63,43 @@ jobs:
           name: gradle-build-log
           path: android/build_output.log
 
-      - name: Rename APK for Distribution
+      - name: Organize APKs for Distribution
         run: |
           mkdir -p build-output
-          APK_PATH=$(find . -name "*.apk" | grep -i "debug" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" | head -n 1)
-          fi
-          echo "Found generated APK at: $APK_PATH"
-          if [ -z "$APK_PATH" ]; then
-            echo "::error::No APK file found in repository after build!"
-            if [ -f android/build_output.log ]; then
-              grep -E "error:|FAILED|Exception|Caused by:" android/build_output.log | head -n 30 | while IFS= read -r line; do
-                echo "::error::$line"
-              done
-            fi
+          FILEHUB_APK=$(find android -name "*filehub*debug*.apk" | head -n 1)
+          DASHBOARD_APK=$(find android -name "*dashboard*debug*.apk" | head -n 1)
+
+          echo "Found FileHub APK at: $FILEHUB_APK"
+          echo "Found Dashboard APK at: $DASHBOARD_APK"
+
+          if [ -n "$FILEHUB_APK" ]; then
+            cp "$FILEHUB_APK" build-output/FileHub.apk
+          else
+            echo "::error::FileHub APK not found!"
             exit 1
           fi
-          cp "$APK_PATH" build-output/FileHub.apk
-          ls -la build-output/FileHub.apk
 
-      - name: Upload APK Artifact
+          if [ -n "$DASHBOARD_APK" ]; then
+            cp "$DASHBOARD_APK" build-output/RenderDashboard.apk
+          else
+            echo "::error::Dashboard APK not found!"
+            exit 1
+          fi
+
+          ls -la build-output/
+
+      - name: Upload FileHub APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: FileHub-APK
           path: build-output/FileHub.apk
+          if-no-files-found: error
+
+      - name: Upload Render Dashboard APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenderDashboard-APK
+          path: build-output/RenderDashboard.apk
           if-no-files-found: error
 
       - name: Publish / Update GitHub Release
@@ -95,9 +107,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: filehub-apk-latest
-          name: "FileHub Android App Release"
-          body: "Official Android APK for FileHub with Native Share Sheet support, background upload queue, and master password authentication."
-          files: build-output/FileHub.apk
+          name: "FileHub & Render Dashboard Android Apps"
+          body: |
+            Official Android APK releases:
+            - **RenderDashboard.apk**: Complete web dashboard & media streaming gateway app with Render proxy bypassing device DNS restrictions, native YouTube video player, and integrated FileHub sharing.
+            - **FileHub.apk**: Standalone lightweight FileHub client with native share sheet support, background upload queue, and master password security.
+          files: |
+            build-output/FileHub.apk
+            build-output/RenderDashboard.apk
           draft: false
           prerelease: false
         env:

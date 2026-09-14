@@ -13,6 +13,9 @@
     <header>
         <h1>My Application Dashboard</h1>
         <div class="header-actions">
+            <a href="/api/dashboard/download-apk" class="header-action-btn" title="Download Render Dashboard Android App (with Proxy Gateway & FileHub)" id="download-dashboard-apk-btn" aria-label="Download Android App" style="text-decoration:none; font-size:1.15rem; display:inline-flex; align-items:center; justify-content:center;">
+                📱
+            </a>
             <button class="header-action-btn" onclick="logoutDashboard()" title="Lock / Log Out" id="logout-btn" aria-label="Log Out">
                 🔒
             </button>
@@ -38,6 +41,26 @@
             <p class="settings-panel__subtitle">Enable or disable apps. Disabled apps are hidden from the dashboard and all their background processes, subprocesses, and schedulers are stopped to conserve Render RAM.</p>
             <div class="settings-app-list" id="settings-app-list">
                 <!-- Dynamically rendered by JS -->
+            </div>
+
+            <div class="settings-download-section" style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary);">📱 Android Mobile Apps</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                    <a href="/api/dashboard/download-apk" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 8px; color: var(--text-primary); text-decoration: none; font-size: 0.85rem;">
+                        <div>
+                            <strong>Render Dashboard App</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">All-in-one APK: Web Gateway, YouTube Stream Proxy, Native Share Sheet & FileHub</div>
+                        </div>
+                        <span style="font-size: 1.2rem; margin-left: 0.5rem;">⬇️</span>
+                    </a>
+                    <a href="/api/filehub/download-apk" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); text-decoration: none; font-size: 0.85rem;">
+                        <div>
+                            <strong>FileHub Standalone App</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Lightweight APK for sharing FileHub without dashboard access</div>
+                        </div>
+                        <span style="font-size: 1.2rem; margin-left: 0.5rem;">⬇️</span>
+                    </a>
+                </div>
             </div>
         </div>
     </div>

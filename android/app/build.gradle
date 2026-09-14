@@ -16,6 +16,26 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions = ["appType"]
+    productFlavors {
+        filehub {
+            dimension "appType"
+            applicationId "com.render.filehub"
+            manifestPlaceholders = [
+                appLabel: "FileHub",
+                shareLabel: "Upload to FileHub"
+            ]
+        }
+        dashboard {
+            dimension "appType"
+            applicationId "com.render.dashboard"
+            manifestPlaceholders = [
+                appLabel: "Render Dashboard",
+                shareLabel: "Upload to Render Dashboard"
+            ]
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false

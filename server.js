@@ -403,6 +403,17 @@ app.get('/api/filehub/download-apk', (req, res) => {
     return res.redirect(githubReleaseApkUrl);
 });
 
+// --- Render Dashboard App Download APK Endpoint (Publicly Accessible) ---
+app.get('/api/dashboard/download-apk', (req, res) => {
+    const apkPath = path.join(__dirname, 'public', 'downloads', 'RenderDashboard.apk');
+    if (fs.existsSync(apkPath)) {
+        return res.download(apkPath, 'RenderDashboard.apk');
+    }
+    // Fallback to GitHub Release APK
+    const githubReleaseApkUrl = 'https://github.com/nishant050/render-dashboard-app/releases/latest/download/RenderDashboard.apk';
+    return res.redirect(githubReleaseApkUrl);
+});
+
 // --- Universal Default-Deny (Zero-Trust) Gatekeeper Middleware ---
 // Protects ALL current and future pages, sub-apps, uploads, static files, and APIs.
 // Guarantees that any new app or URL added in the future is locked down by default.
@@ -419,7 +430,8 @@ app.use((req, res, next) => {
         reqPath === '/api/auth/status' ||
         reqPath === '/api/auth/logout' ||
         reqPath === '/api/health' ||
-        reqPath === '/api/filehub/download-apk'
+        reqPath === '/api/filehub/download-apk' ||
+        reqPath === '/api/dashboard/download-apk'
     ) {
         return next();
     }
@@ -5907,6 +5919,132 @@ app.post('/api/settings/cookies-text', (req, res) => {
         return res.json({ ok: true, message: 'Cookies saved successfully.', hasCookies: true });
     }
     return res.json({ ok: true, message: 'Cookies cleared.', hasCookies: false });
+});
+
+// --- YouTube Video Stream Proxy API ---
+// Extracts progressive MP4 stream via yt-dlp on Render and proxies video bytes with HTTP Range support.
+// Allows users whose devices have DNS blocks on YouTube to stream educational content seamlessly.
+const ytStreamCache = new Map(); // videoId -> { streamUrl, expiresAt }
+
+async function resolveYouTubeStreamUrl(videoId) {
+    const cached = ytStreamCache.get(videoId);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.streamUrl;
+    }
+
+    await ensureYtDlpAvailable();
+    const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const args = [
+        '--no-playlist',
+        '--no-warnings',
+        '-g',
+        '-f', 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+        cleanUrl
+    ];
+
+    const { stdout } = await runYtDlp(args, { timeoutMs: 30000 });
+    const urls = stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (!urls.length) {
+        throw new Error('No stream URL extracted for video ' + videoId);
+    }
+    const streamUrl = urls[0];
+    ytStreamCache.set(videoId, {
+        streamUrl,
+        expiresAt: Date.now() + 3 * 60 * 60 * 1000 // Cache for 3 hours
+    });
+    return streamUrl;
+}
+
+app.get('/api/stream/youtube/info', async (req, res) => {
+    const videoId = typeof req.query?.v === 'string' ? req.query.v.trim() : '';
+    if (!videoId) {
+        return res.status(400).json({ error: 'Video ID (v) is required' });
+    }
+
+    try {
+        const streamUrl = await resolveYouTubeStreamUrl(videoId);
+        return res.json({
+            videoId,
+            available: true,
+            streamUrl: `/api/stream/youtube?v=${encodeURIComponent(videoId)}`
+        });
+    } catch (error) {
+        return res.status(502).json({
+            videoId,
+            available: false,
+            error: error.message || 'Failed to extract video stream'
+        });
+    }
+});
+
+app.get('/api/stream/youtube', async (req, res) => {
+    const videoId = typeof req.query?.v === 'string' ? req.query.v.trim() : '';
+    if (!videoId) {
+        return res.status(400).send('Video ID (v) is required');
+    }
+
+    try {
+        let streamUrl = await resolveYouTubeStreamUrl(videoId);
+
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+        if (req.headers.range) {
+            headers['Range'] = req.headers.range;
+        }
+
+        let upstream = await axios({
+            method: 'GET',
+            url: streamUrl,
+            headers,
+            responseType: 'stream',
+            validateStatus: () => true
+        });
+
+        // If upstream URL expired (403 or 410), bust cache and retry once
+        if (upstream.status === 403 || upstream.status === 410) {
+            ytStreamCache.delete(videoId);
+            streamUrl = await resolveYouTubeStreamUrl(videoId);
+            upstream = await axios({
+                method: 'GET',
+                url: streamUrl,
+                headers,
+                responseType: 'stream',
+                validateStatus: () => true
+            });
+        }
+
+        if (upstream.status >= 400) {
+            return res.status(upstream.status).send(`Upstream video stream error: ${upstream.status}`);
+        }
+
+        res.status(upstream.status);
+        const copyHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+        for (const h of copyHeaders) {
+            if (upstream.headers[h]) {
+                res.setHeader(h, upstream.headers[h]);
+            }
+        }
+        if (!res.getHeader('content-type')) {
+            res.setHeader('content-type', 'video/mp4');
+        }
+        if (!res.getHeader('accept-ranges')) {
+            res.setHeader('accept-ranges', 'bytes');
+        }
+
+        req.on('close', () => {
+            if (upstream.data && upstream.data.destroy) {
+                upstream.data.destroy();
+            }
+        });
+
+        upstream.data.pipe(res);
+    } catch (error) {
+        console.error('[YouTube Stream Proxy Error]:', error.message);
+        if (!res.headersSent) {
+            res.status(502).send('Failed to stream video: ' + error.message);
+        }
+    }
 });
 
 Promise.all([probeYtDlp(), probeFfmpeg()])

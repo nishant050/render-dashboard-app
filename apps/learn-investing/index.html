@@ -251,6 +251,7 @@
                 <div class="p-6">
                     <div class="relative bg-slate-950 rounded-xl overflow-hidden aspect-video mb-5">
                         <div id="youtubePlayer" class="w-full h-full"></div>
+                        <video id="renderVideoPlayer" class="w-full h-full hidden" controls playsinline controlsList="nodownload"></video>
                         <div id="playerPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900">
                             <i class="fab fa-youtube text-5xl text-red-500 mb-3"></i>
                             <p class="text-sm font-medium">Select a lecture to play it here</p>
@@ -273,6 +274,10 @@
                         <button id="markCompleteBtn" onclick="toggleComplete()" class="px-4 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2">
                             <i class="fas fa-check"></i>
                             <span>Mark Complete</span>
+                        </button>
+                        <button id="streamModeToggleBtn" onclick="toggleStreamMode()" class="px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" title="Switch between Render Proxy Stream (bypasses DNS blocks) and Direct YouTube">
+                            <i class="fas fa-shield-alt text-indigo-500"></i>
+                            <span id="streamModeLabel">Render Stream: Proxy Mode</span>
                         </button>
                         <div class="flex items-center gap-2 ml-auto">
                             <button id="prevBtn" onclick="playPrevVideo()" class="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
@@ -1197,7 +1202,36 @@
             };
         }
 
+        let useRenderProxy = localStorage.getItem('learn_investing_stream_mode') === 'proxy' || 
+                             navigator.userAgent.includes('RenderDashboardApp') ||
+                             window.isRenderApp === true;
+
+        function updateStreamModeUI() {
+            const btn = document.getElementById('streamModeToggleBtn');
+            const label = document.getElementById('streamModeLabel');
+            if (!btn || !label) return;
+
+            if (useRenderProxy) {
+                btn.className = "px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100";
+                label.textContent = "Stream: Render Proxy (DNS Bypass)";
+            } else {
+                btn.className = "px-3 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100";
+                label.textContent = "Stream: Direct YouTube";
+            }
+        }
+
+        function toggleStreamMode() {
+            useRenderProxy = !useRenderProxy;
+            localStorage.setItem('learn_investing_stream_mode', useRenderProxy ? 'proxy' : 'direct');
+            updateStreamModeUI();
+            if (state.currentVideoId) {
+                loadVideoIntoPlayer(state.currentVideoId, true);
+            }
+        }
+
         function ensureYouTubeApi() {
+            if (useRenderProxy) return;
+
             if (window.YT?.Player) {
                 youtubeApiReady = true;
                 createYouTubePlayer();
@@ -1209,6 +1243,16 @@
             const script = document.createElement('script');
             script.id = 'youtubeIframeApi';
             script.src = 'https://www.youtube.com/iframe_api';
+            script.onerror = () => {
+                console.warn('[Learn Investing] YouTube API blocked by network/DNS. Switching to Render Proxy Stream.');
+                useRenderProxy = true;
+                updateStreamModeUI();
+                if (pendingVideoLoad) {
+                    const pending = pendingVideoLoad;
+                    pendingVideoLoad = null;
+                    loadVideoIntoPlayer(pending.videoId, pending.autoplay);
+                }
+            };
             document.head.appendChild(script);
         }
 
@@ -1254,29 +1298,32 @@
                 savePlaybackPosition();
             }
 
-            if (event.data === YT.PlayerState.ENDED && state.currentVideoId) {
-                // Mark current video as complete if not already done
-                if (!state.completedVideos.includes(state.currentVideoId)) {
-                    state.completedVideos.push(state.currentVideoId);
-                    saveState();
-                    updateUI();
-                }
+            if (event.data === YT.PlayerState.ENDED) {
+                handleVideoCompletion();
+            }
+        }
 
-                // Auto-play next video if enabled
-                if (autoPlayNextVideo) {
-                    const allVideos = getAllVideos();
-                    const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
-                    
-                    if (currentIndex !== -1 && currentIndex < allVideos.length - 1) {
-                        const nextVideo = allVideos[currentIndex + 1];
-                        // Automatically play the next video after a short delay
-                        setTimeout(() => {
-                            playVideo(nextVideo.id, true);
-                        }, 500);
-                    } else if (currentIndex === allVideos.length - 1) {
-                        // Last video completed - show celebration
-                        showToast('🎉 Course Completed! Excellent work!', 'trophy', 'emerald');
-                    }
+        function handleVideoCompletion() {
+            if (!state.currentVideoId) return;
+            // Mark current video as complete if not already done
+            if (!state.completedVideos.includes(state.currentVideoId)) {
+                state.completedVideos.push(state.currentVideoId);
+                saveState();
+                updateUI();
+            }
+
+            // Auto-play next video if enabled
+            if (autoPlayNextVideo) {
+                const allVideos = getAllVideos();
+                const currentIndex = allVideos.findIndex(v => v.id === state.currentVideoId);
+                
+                if (currentIndex !== -1 && currentIndex < allVideos.length - 1) {
+                    const nextVideo = allVideos[currentIndex + 1];
+                    setTimeout(() => {
+                        playVideo(nextVideo.id, true);
+                    }, 500);
+                } else if (currentIndex === allVideos.length - 1) {
+                    showToast('🎉 Course Completed! Excellent work!', 'trophy', 'emerald');
                 }
             }
         }
@@ -1284,6 +1331,47 @@
         function loadVideoIntoPlayer(videoId, autoplay = false) {
             const video = getVideoById(videoId);
             if (!video) return;
+
+            const ytContainer = document.getElementById('youtubePlayer');
+            const renderVideo = document.getElementById('renderVideoPlayer');
+            const placeholder = document.getElementById('playerPlaceholder');
+
+            updateStreamModeUI();
+
+            if (useRenderProxy) {
+                // Use Render Server Video Proxy (Bypasses YouTube DNS blocks!)
+                if (youtubePlayer && youtubePlayer.pauseVideo) {
+                    try { youtubePlayer.pauseVideo(); } catch (e) {}
+                }
+                ytContainer.classList.add('hidden');
+                renderVideo.classList.remove('hidden');
+
+                const config = getYouTubeLessonConfig(video);
+                const actualVideoId = config.videoId;
+                const playback = getPlayback(videoId);
+                const startSeconds = Math.max(0, Math.floor(playback.seconds || 0));
+
+                renderVideo.src = `/api/stream/youtube?v=${encodeURIComponent(actualVideoId)}`;
+                renderVideo.currentTime = startSeconds;
+                
+                renderVideo.onplay = () => startPlaybackAutosave();
+                renderVideo.onpause = () => savePlaybackPosition();
+                renderVideo.onended = () => {
+                    savePlaybackPosition();
+                    handleVideoCompletion();
+                };
+
+                if (autoplay) {
+                    renderVideo.play().catch(() => {});
+                }
+                if (placeholder) placeholder.classList.add('hidden');
+                return;
+            }
+
+            // Standard YouTube iFrame player
+            renderVideo.classList.add('hidden');
+            renderVideo.pause();
+            ytContainer.classList.remove('hidden');
 
             ensureYouTubeApi();
             if (!youtubePlayerReady) {
@@ -1309,11 +1397,28 @@
                 autoplay ? youtubePlayer.loadVideoById(videoConfig) : youtubePlayer.cueVideoById(videoConfig);
             }
 
-            document.getElementById('playerPlaceholder').classList.add('hidden');
+            if (placeholder) placeholder.classList.add('hidden');
         }
 
         function savePlaybackPosition() {
-            if (!youtubePlayerReady || !state.currentVideoId) return;
+            if (!state.currentVideoId) return;
+
+            if (useRenderProxy) {
+                const renderVideo = document.getElementById('renderVideoPlayer');
+                if (!renderVideo) return;
+                const seconds = renderVideo.currentTime || 0;
+                const duration = renderVideo.duration || 0;
+                state.playback = state.playback || {};
+                state.playback[state.currentVideoId] = {
+                    seconds: Math.floor(seconds),
+                    duration: Math.floor(duration),
+                    updatedAt: new Date().toISOString()
+                };
+                saveState();
+                return;
+            }
+
+            if (!youtubePlayerReady) return;
 
             try {
                 const seconds = youtubePlayer.getCurrentTime?.() || 0;
