@@ -301,11 +301,27 @@ app.get('/login.html', (req, res) => {
     res.redirect(`/login${returnParam}`);
 });
 
-// Check authentication status
+// HMAC File Share Signature Helpers
+function generateFileShareSignature(filePath) {
+    const normalized = normalizeFileHubPath(filePath);
+    return crypto.createHmac('sha256', SESSION_SECRET).update('FILE_SHARE:' + normalized).digest('hex');
+}
+
+function verifyFileShareSignature(filePath, sig) {
+    if (!filePath || !sig || typeof sig !== 'string') return false;
+    const expected = generateFileShareSignature(filePath);
+    const bufA = Buffer.from(sig, 'hex');
+    const bufB = Buffer.from(expected, 'hex');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Check authentication status (supports cookie or x-dashboard-password header)
 app.get('/api/auth/status', (req, res) => {
     const token = getSessionCookie(req);
-    const authenticated = isValidSession(token);
-    res.json({ authenticated, isCustomPasswordSet: IS_CUSTOM_PASSWORD_SET });
+    const headerPassword = req.headers['x-dashboard-password'] || req.headers['x-api-key'];
+    const authenticated = isValidSession(token) || Boolean(headerPassword && verifyMasterPassword(headerPassword));
+    res.json({ authenticated, isCustomPasswordSet: IS_CUSTOM_PASSWORD_SET, server: 'FileHub API ready' });
 });
 
 // Login POST Handler
@@ -376,6 +392,17 @@ const handleLogout = (req, res) => {
 app.post('/api/auth/logout', handleLogout);
 app.get('/logout', handleLogout);
 
+// --- FileHub Download APK Endpoint (Publicly Accessible) ---
+app.get('/api/filehub/download-apk', (req, res) => {
+    const apkPath = path.join(__dirname, 'public', 'downloads', 'FileHub.apk');
+    if (fs.existsSync(apkPath)) {
+        return res.download(apkPath, 'FileHub.apk');
+    }
+    // Fallback to GitHub Release APK
+    const githubReleaseApkUrl = 'https://github.com/nishant050/render-dashboard-app/releases/latest/download/FileHub.apk';
+    return res.redirect(githubReleaseApkUrl);
+});
+
 // --- Universal Default-Deny (Zero-Trust) Gatekeeper Middleware ---
 // Protects ALL current and future pages, sub-apps, uploads, static files, and APIs.
 // Guarantees that any new app or URL added in the future is locked down by default.
@@ -391,23 +418,40 @@ app.use((req, res, next) => {
         reqPath === '/api/auth/login' ||
         reqPath === '/api/auth/status' ||
         reqPath === '/api/auth/logout' ||
-        reqPath === '/api/health'
+        reqPath === '/api/health' ||
+        reqPath === '/api/filehub/download-apk'
     ) {
         return next();
     }
 
-    // Allow static font assets for the login page
-    if (reqPath.startsWith('/assets/fonts/')) {
+    // Allow static font assets for the login page and downloads
+    if (reqPath.startsWith('/assets/fonts/') || reqPath.startsWith('/downloads/')) {
         return next();
     }
 
-    // 2. Validate Session
+    // Cryptographically Signed Direct File Share Check (Hacker-Proof presigned access)
+    if (reqPath === '/share/file') {
+        const filePath = req.query.path;
+        const sig = req.query.sig;
+        if (verifyFileShareSignature(filePath, sig)) {
+            return next();
+        }
+        return res.status(403).send('Invalid, expired, or tampered share link.');
+    }
+
+    // 2. Direct Header Authentication (for Android App, mobile upload worker, API clients)
+    const headerPassword = req.headers['x-dashboard-password'] || req.headers['x-api-key'];
+    if (headerPassword && verifyMasterPassword(headerPassword)) {
+        return next();
+    }
+
+    // 3. Validate Session Cookie
     const token = getSessionCookie(req);
     if (isValidSession(token)) {
         return next();
     }
 
-    // 3. Deny Unauthenticated Access
+    // 4. Deny Unauthenticated Access
     // For API calls: return 401 Unauthorized JSON
     if (reqPath.startsWith('/api/')) {
         return res.status(401).json({
@@ -2626,6 +2670,40 @@ app.get('/api/file-content', async (req, res) => {
     } catch (error) {
         console.error('Error fetching file content:', error);
         res.status(500).send('Server error while fetching file content.');
+    }
+});
+
+// Generate a cryptographically signed direct share link
+app.get('/api/share-link', (req, res) => {
+    const filePath = normalizeFileHubPath(req.query.path);
+    if (!filePath) {
+        return res.status(400).json({ error: 'File path is required' });
+    }
+    const sig = generateFileShareSignature(filePath);
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const shareUrl = `${origin}/share/file?path=${encodeURIComponent(filePath)}&sig=${sig}`;
+    res.json({ ok: true, shareUrl, path: filePath, sig });
+});
+
+// Stream shared file directly without master password if HMAC signature is valid
+app.get('/share/file', async (req, res) => {
+    try {
+        const filePath = normalizeFileHubPath(req.query.path);
+        const sig = req.query.sig;
+        if (!verifyFileShareSignature(filePath, sig)) {
+            return res.status(403).send('Invalid or tampered share link.');
+        }
+
+        const entry = await FileHubEntry.findOne({ path: filePath, isDirectory: false });
+        if (!entry) {
+            return res.status(404).send('Shared file not found or has been deleted.');
+        }
+
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(entry.name)}"`);
+        await sendFileHubEntryContent(entry, res);
+    } catch (error) {
+        console.error('Error streaming shared file:', error);
+        res.status(500).send('Server error while streaming shared file.');
     }
 });
 

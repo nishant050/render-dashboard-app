@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const newFileBtn = document.getElementById('new-file-btn');
     const clearAllBtn = document.getElementById('clear-all-btn');
     const downloadZipBtn = document.getElementById('download-zip-btn');
+    const downloadApkBtn = document.getElementById('download-apk-btn');
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modal-title');
     const modalInput = document.getElementById('modal-input');
@@ -534,6 +535,14 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
     };
 
+    // --- Download Android APK ---
+    if (downloadApkBtn) {
+        downloadApkBtn.onclick = () => {
+            showNotification('Downloading FileHub Android APK...', 'success');
+            window.location.href = '/api/filehub/download-apk';
+        };
+    }
+
     // --- Download as ZIP ---
     downloadZipBtn.onclick = async () => {
         try {
@@ -659,14 +668,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!item.isDirectory) {
             const linkBtn = document.createElement('div');
             linkBtn.innerHTML = '<i class="fas fa-link"></i> Copy Direct Link';
-            linkBtn.onclick = () => {
+            linkBtn.onclick = async () => {
                 menu.remove();
-                const fileUrl = `${window.location.origin}${getFileUrl(item.name)}`;
-                navigator.clipboard.writeText(fileUrl).then(() => {
-                    showNotification('Direct link copied to clipboard!');
-                }).catch(err => {
-                    showNotification('Failed to copy link.', 'error');
-                });
+                const filePath = pathJoin(currentPath, item.name);
+                try {
+                    const res = await fetch(`/api/share-link?path=${encodeURIComponent(filePath)}`);
+                    const data = await res.json();
+                    if (data.ok && data.shareUrl) {
+                        await navigator.clipboard.writeText(data.shareUrl);
+                        showNotification('Direct link copied! (Instant access without master password)', 'success');
+                    } else {
+                        throw new Error(data.error || 'Failed to generate link');
+                    }
+                } catch (err) {
+                    showNotification('Failed to generate direct link.', 'error');
+                }
             };
             menu.appendChild(linkBtn);
 

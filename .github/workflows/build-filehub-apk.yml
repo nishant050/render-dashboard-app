@@ -1,0 +1,65 @@
+name: Build FileHub Android APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-filehub-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Debug APK with Gradle
+        working-directory: ./android
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper
+          fi
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK for Distribution
+        run: |
+          mkdir -p build-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/FileHub.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileHub-APK
+          path: build-output/FileHub.apk
+          if-no-files-found: error
+
+      - name: Publish / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: filehub-apk-latest
+          name: "FileHub Android App Release"
+          body: "Official Android APK for FileHub with Native Share Sheet support, background upload queue, and master password authentication."
+          files: build-output/FileHub.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
