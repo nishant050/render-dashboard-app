@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stock Market Mastery 6.0</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="header-brand">
+            <div class="brand-icon">📈</div>
+            <div>
+                <div class="brand-title">Stock Market Mastery 6.0</div>
+                <div class="brand-sub">Complete Hindi Course</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="profile-btn" onclick="showProfileModal()">
+                <div class="profile-avatar" id="headerAvatar">U</div>
+                <span id="headerName">User</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- App Container -->
+    <div class="app-container">
+        
+        <!-- Video Player Main Section -->
+        <div class="player-section">
+            <div class="video-wrapper">
+                <div id="videoPlaceholder" class="video-placeholder">
+                    <span style="font-size: 2.5rem;">▶️</span>
+                    <span>Select a lecture below to start playing</span>
+                </div>
+                <iframe id="videoIframe" class="hidden" src="" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
+                <video id="localVideo" class="hidden" controls playsinline controlsList="nodownload"></video>
+            </div>
+
+            <div class="video-meta-card">
+                <span class="badge" id="moduleBadge">Module 1</span>
+                <h1 class="video-title" id="videoTitle">Welcome to Stock Market Mastery</h1>
+                <div class="video-channel" id="videoChannel">Select any lesson from the curriculum</div>
+
+                <div class="video-actions">
+                    <button class="btn btn-primary" id="btnPlay" onclick="playSelectedVideo()">
+                        <span>▶ Play Video</span>
+                    </button>
+                    <button class="btn btn-secondary" id="btnComplete" onclick="toggleCompleted()">
+                        <span id="btnCompleteText">✓ Mark Done</span>
+                    </button>
+                    <button class="btn btn-secondary" id="btnNext" onclick="playNextVideo()">
+                        <span>Next ❯</span>
+                    </button>
+                    <a class="btn btn-secondary" id="btnOpenExternal" href="#" target="_blank" style="margin-left: auto;">
+                        <span>Open in Browser ↗</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Curriculum Navigation -->
+        <div class="sidebar">
+            <div class="progress-card">
+                <div class="progress-header">
+                    <span>Course Progress</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar" style="width: 0%;"></div>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: right;">
+                    <span id="completedCount">0</span> of <span id="totalCount">0</span> lessons completed
+                </div>
+            </div>
+
+            <!-- Curriculum Modules Accordion -->
+            <div class="module-list" id="moduleContainer">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profileModal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="font-size: 1.1rem; font-weight: 700;">Student Profiles</h3>
+                <button onclick="hideProfileModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.3rem; cursor:pointer;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="profileList" style="margin-bottom: 1rem;"></div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="newProfileInput" class="input-field" placeholder="Enter student name..." style="margin-bottom: 0;">
+                    <button class="btn btn-primary" onclick="addNewProfile()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+                const courseVersion = "6.0";
+        const courseData = {
+            modules: [
+                {
+                    id: 1,
+                    title: "Market Foundations & Microstructure",
+                    subtitle: "Theory, market mechanics, broker setup, and order execution",
+                    gradient: "module-gradient-1",
+                    color: "emerald",
+                    topics: [
+                        {
+                            id: "v6-1-1",
+                            title: "Stock Market Basics Animated Playlist",
+                            channel: "FinnovationZ by Prasad",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLbEgUtKoxfxZ3AnWi3zjDNbTmCzNAnM6K",
+                            embedId: "videoseries?list=PLbEgUtKoxfxZ3AnWi3zjDNbTmCzNAnM6K",
+                            description: "Zero-barrier entry point using visual animation to explain shares and basic market mechanics."
+                        },
+                        {
+                            id: "v6-1-2",
+                            title: "Basics of Stock Market (Lecture 1)",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=Xn7KWR9EOGQ&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=2",
+                            embedId: "Xn7KWR9EOGQ",
+                            description: "Academic foundation for growth, index composition, and the differences between BSE and NSE."
+                        },
+                        {
+                            id: "v6-1-2a",
+                            title: "Basics of Stock Market (Lecture 2)",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=bLl_VRQ7pBs&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=3",
+                            embedId: "bLl_VRQ7pBs",
+                            description: "Continuation of stock market fundamentals and practical market mechanics."
+                        },
+                        {
+                            id: "v6-1-2b",
+                            title: "Basics of Stock Market (Lecture 3)",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=hBKqk5oYexw&list=PLo-MT8s_W2ZGgAQof1HDwwUZKoQTgqyiT&index=2",
+                            embedId: "hBKqk5oYexw",
+                            description: "Complete foundation building and advanced market structure concepts."
+                        },
+                        {
+                            id: "v6-1-3",
+                            title: "Complete Stock Market Basics Overview",
+                            channel: "Finology Comprehensive Guide",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=RFP3ooXIiyI",
+                            embedId: "RFP3ooXIiyI",
+                            description: "Sets realistic expectations, debunks penny-stock attraction, and frames investing as business ownership."
+                        },
+                        {
+                            id: "v6-1-4",
+                            title: "Stock Market Timings & Circuit Breakers",
+                            channel: "FinnovationZ / Basic Gyaan",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=4mRzCoYssYE",
+                            embedId: "4mRzCoYssYE",
+                            description: "Explains market sessions, order matching, and upper/lower circuit breaker rules."
+                        },
+                        {
+                            id: "v6-1-5",
+                            title: "Demat & Trading Account For Beginners (Broker Comparison)",
+                            channel: "Pranjal Kamra",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=aQQ1JthC0f8",
+                            embedId: "aQQ1JthC0f8",
+                            description: "Compares broker charges, AMC, delivery fees, intraday fees, and hidden platform costs."
+                        },
+                        {
+                            id: "v6-1-6",
+                            title: "Investing vs Trading: What to Choose?",
+                            channel: "Basic Gyan",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=DF1yUpXVDF4",
+                            embedId: "DF1yUpXVDF4",
+                            description: "Clarifies the time commitment, temperament, and discipline required for investing versus trading."
+                        },
+                        {
+                            id: "v6-1-7",
+                            title: "What is T+1 Settlement Cycle?",
+                            channel: "Kotak Securities",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=girpkwPhnsc",
+                            embedId: "girpkwPhnsc",
+                            description: "Operational lesson on settlement timing, liquidity, and capital availability after trades."
+                        },
+                        {
+                            id: "v6-1-8",
+                            title: "Zerodha Trading Tutorial for Beginners",
+                            channel: "Finology",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=mKmD70bPLUY",
+                            embedId: "mKmD70bPLUY",
+                            description: "Turns theory into execution by teaching Market, Limit, AMO, MIS, and Bracket orders."
+                        }
+                    ]
+                },
+                {
+                    id: 2,
+                    title: "Macro, Sectors & Fundamental Analysis",
+                    subtitle: "Economic cycles, sector rotation, valuation, and portfolio allocation",
+                    gradient: "module-gradient-2",
+                    color: "blue",
+                    topics: [
+                        {
+                            id: "v6-2-1",
+                            title: "Economic Cycles (GDP, Inflation, Interest Rates)",
+                            channel: "Ayushi Chand",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=r7FaYUGtOpo",
+                            embedId: "r7FaYUGtOpo",
+                            description: "Shows how rates, inflation, and GDP growth influence liquidity and stock market direction."
+                        },
+                        {
+                            id: "v6-2-2",
+                            title: "Sector Rotation & Analyzing Sectors",
+                            channel: "Vivek Bajaj",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=HK7ucbGK6Fk",
+                            embedId: "HK7ucbGK6Fk",
+                            description: "Teaches how to identify outperforming sectors and follow institutional capital flows."
+                        },
+                        {
+                            id: "v6-2-3",
+                            title: "Stock Market Classes - Value Investing",
+                            channel: "Pranjal Kamra",
+                            type: "playlist",
+                            url: "https://www.youtube.com/playlist?list=PLFQ0hRWyH11RS4KUPadj6aoC2KtEHVIfN",
+                            embedId: "videoseries?list=PLFQ0hRWyH11RS4KUPadj6aoC2KtEHVIfN",
+                            description: "Definitive guide to P/E, ROE, debt ratios, moats, and balance sheet analysis."
+                        },
+                        {
+                            id: "v6-2-4",
+                            title: "Market Cycles & Entry Timing (Nifty PE)",
+                            channel: "Vijay Thakkar",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=_uCRcEesTu4",
+                            embedId: "_uCRcEesTu4",
+                            description: "Explains price and time corrections, accumulation phases, and valuation-cycle entry timing."
+                        },
+                        {
+                            id: "v6-2-5",
+                            title: "How to Diversify Portfolio using Equity, Gold & Debt",
+                            channel: "Sanjay Kathuria",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=AnLNtwqM2BU",
+                            embedId: "AnLNtwqM2BU",
+                            description: "Prevents over-concentration by teaching asset allocation and sector diversification."
+                        }
+                    ]
+                },
+                {
+                    id: 3,
+                    title: "Technical Analysis & Price Action",
+                    subtitle: "Charting tools, candlesticks, volume, and supply-demand behavior",
+                    gradient: "module-gradient-3",
+                    color: "indigo",
+                    topics: [
+                        {
+                            id: "v6-3-1",
+                            title: "TradingView Complete Tutorial",
+                            channel: "Hindi Trading Guide",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=IGJ4o3xgq9Y",
+                            embedId: "IGJ4o3xgq9Y",
+                            description: "Foundational setup guide for charting software, trendlines, and moving average ribbons."
+                        },
+                        {
+                            id: "v6-3-2",
+                            title: "Understand Candlesticks From Basic To Advance",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=NSzQCtuhbVI",
+                            embedId: "NSzQCtuhbVI",
+                            description: "Learn candlestick basics properly - understanding candlestick anatomy and formation."
+                        },
+                        {
+                            id: "v6-3-2a",
+                            title: "Master Powerful Single Candlestick Patterns",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=W3e65OTC6ZY",
+                            embedId: "W3e65OTC6ZY",
+                            description: "Most important single candlestick patterns (Doji, Hammer, Shooting Star, etc.)"
+                        },
+                        {
+                            id: "v6-3-2b",
+                            title: "Master Powerful Two Candlestick Patterns",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=B64_8wKMnp4",
+                            embedId: "B64_8wKMnp4",
+                            description: "Two-candle patterns including Engulfing, Harami, and other powerful setups."
+                        },
+                        {
+                            id: "v6-3-2c",
+                            title: "Master Support & Resistance",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=EqHT1pAvOyQ",
+                            embedId: "EqHT1pAvOyQ",
+                            description: "Core concept of support and resistance from beginner to pro level."
+                        },
+                        {
+                            id: "v6-3-2d",
+                            title: "Trend and Trend Reversal Trading Strategies",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=SWWEYry-STM",
+                            embedId: "SWWEYry-STM",
+                            description: "How trends work and how they reverse - practical application of trend analysis."
+                        },
+                        {
+                            id: "v6-3-2e",
+                            title: "Double Top Double Bottom Trading Strategies",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=YvoVFpRi7-E",
+                            embedId: "YvoVFpRi7-E",
+                            description: "Classic reversal patterns for identifying market reversals."
+                        },
+                        {
+                            id: "v6-3-2f",
+                            title: "Head And Shoulder & Inverted Head And Shoulder Pattern",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=xX_XHreCHQU",
+                            embedId: "xX_XHreCHQU",
+                            description: "Important reversal patterns used by professional traders worldwide."
+                        },
+                        {
+                            id: "v6-3-2g",
+                            title: "Ascending Triangle And Descending Triangle Price Pattern",
+                            channel: "Standard Candlestick Theory",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=Yhzk1T9GXWo",
+                            embedId: "Yhzk1T9GXWo",
+                            description: "Continuation patterns for trading in trending markets."
+                        },
+                        {
+                            id: "v6-3-3",
+                            title: "Ultimate Guide to Price Action & Volume",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=ohtb5BQqEA0",
+                            embedId: "ohtb5BQqEA0",
+                            description: "Connects patterns to supply and demand, using volume to validate trend strength and reversals."
+                        },
+                        {
+                            id: "v6-3-4",
+                            title: "Complete Candlestick Masterclass",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=joMJwwjRO30",
+                            embedId: "joMJwwjRO30",
+                            description: "Teaches that candlestick patterns are valid only at specific, predetermined locations."
+                        }
+                    ]
+                },
+                {
+                    id: 4,
+                    title: "The Survival Shield",
+                    subtitle: "Validation, risk management, tax, backtesting, and paper trading",
+                    gradient: "module-gradient-4",
+                    color: "rose",
+                    topics: [
+                        {
+                            id: "v6-4-1",
+                            title: "Position Sizing & Risk Management",
+                            channel: "Mukul Agrawal",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=MVfWHOP6QBc",
+                            embedId: "MVfWHOP6QBc",
+                            description: "Mathematical core covering Kelly Criterion, 1:3 expectancy, and 1% capital-risk sizing."
+                        },
+                        {
+                            id: "v6-4-2",
+                            title: "Stop Loss Calculation & Risk Psychology",
+                            channel: "Dhan/Upsurge",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=kjUnVQsCH8Y",
+                            embedId: "kjUnVQsCH8Y",
+                            description: "Live chart analysis for calculating stop losses and controlling fear and greed."
+                        },
+                        {
+                            id: "v6-4-3",
+                            title: "Trading Psychology & Emotional Control",
+                            channel: "Trading Mindset Series",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=m7CwKZfrTGM",
+                            embedId: "m7CwKZfrTGM",
+                            description: "Covers revenge trading, loss response, and defining maximum daily drawdowns."
+                        },
+                        {
+                            id: "v6-4-4",
+                            title: "Income Tax on Share Market (FY 2026-27 Updates)",
+                            channel: "CA Sumit Sharma",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=TQ0vW4Cu6lw",
+                            embedId: "TQ0vW4Cu6lw",
+                            description: "Tax compliance lesson covering capital gains rules, F&O taxation, STT, and current-year changes."
+                        },
+                        {
+                            id: "v6-4-5",
+                            title: "Strategy Backtesting Masterclass on Charts",
+                            channel: "Dhan",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=7sTL48NXMcc",
+                            embedId: "7sTL48NXMcc",
+                            description: "Teaches replay-based testing to verify a strategy before risking capital."
+                        },
+                        {
+                            id: "v6-4-6",
+                            title: "Live Paper Trading Tutorial (FrontPage App)",
+                            channel: "Trade Max Academy",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=loS52EwA_Ms",
+                            embedId: "loS52EwA_Ms",
+                            description: "Forward testing practice with virtual money to master execution and emotions."
+                        }
+                    ]
+                },
+                {
+                    id: 5,
+                    title: "Derivatives & Intraday Strategy",
+                    subtitle: "F&O mechanics, option chain analysis, and live intraday execution",
+                    gradient: "module-gradient-5",
+                    color: "amber",
+                    topics: [
+                        {
+                            id: "v6-5-1",
+                            title: "Basics of Futures & Options (Lecture 1)",
+                            channel: "CA Rachana Phadke Ranade",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=LRgWGsrzMAU",
+                            embedId: "LRgWGsrzMAU",
+                            description: "Foundational derivatives primer on underlying assets, contract types, hedging, and speculation."
+                        },
+                        {
+                            id: "v6-5-2",
+                            title: "Option Greeks Explained (Theta, Delta, Vega)",
+                            channel: "Option Masterclass",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=QrhV9qpB4rU",
+                            embedId: "QrhV9qpB4rU",
+                            description: "Explains how time decay and implied volatility affect option premiums."
+                        },
+                        {
+                            id: "v6-5-3",
+                            title: "Option Chain Analysis",
+                            channel: "Sagar Sinha",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=3tvqIXLtcIY",
+                            embedId: "3tvqIXLtcIY",
+                            description: "Teaches open interest, support and resistance blocks, and strike-price selection."
+                        },
+                        {
+                            id: "v6-5-4",
+                            title: "Intraday Price Action - 5 Proven Strategies",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=CpcRmFd34jg",
+                            embedId: "CpcRmFd34jg",
+                            description: "Introduces mechanical setups and reinforces the 21-trade forward-testing rule."
+                        },
+                        {
+                            id: "v6-5-5",
+                            title: "1-Hour Intraday Masterclass (Live Execution)",
+                            channel: "Mukul Choudhary",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=-qcLABNY9sA",
+                            embedId: "-qcLABNY9sA",
+                            description: "Capstone class on live market selection, margin management, and real-time execution logic."
+                        }
+                    ]
+                },
+                {
+                    id: 6,
+                    title: "The Execution Roadmap",
+                    subtitle: "Small capital plan, news filtering, portfolio review, exits, and trading routines",
+                    gradient: "module-gradient-6",
+                    color: "cyan",
+                    topics: [
+                        {
+                            id: "v6-6-1",
+                            title: "Trading with Small Capital (Step-by-Step Guide)",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=dEGmllOg0HI",
+                            embedId: "dEGmllOg0HI",
+                            description: "Practical guide for beginners with limited funds, including risk parameters and instruments."
+                        },
+                        {
+                            id: "v6-6-2",
+                            title: "Economic Calendar Analysis & Filtering News",
+                            channel: "Nitin Bhatia",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=CqXDnjmNdlU",
+                            embedId: "CqXDnjmNdlU",
+                            description: "Teaches how to use economic calendars and avoid reacting to low-quality market noise."
+                        },
+                        {
+                            id: "v6-6-3",
+                            title: "5 Red Flags Every Investor Should Check",
+                            channel: "Groww",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=8PYYfk_DHaU",
+                            embedId: "8PYYfk_DHaU",
+                            description: "Portfolio review checklist for spotting deteriorating business fundamentals early."
+                        },
+                        {
+                            id: "v6-6-4",
+                            title: "Portfolio Rebalancing & When to Exit",
+                            channel: "CNBC Awaaz",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=njavnkBfbEI",
+                            embedId: "njavnkBfbEI",
+                            description: "Rules for profit booking, exits, and rebalancing instead of holding blindly."
+                        },
+                        {
+                            id: "v6-6-5",
+                            title: "2026 Trading Plan Masterclass (Checklists)",
+                            channel: "Siddharth Bhanushali",
+                            type: "video",
+                            url: "https://www.youtube.com/watch?v=ZfvXcjJnfu0",
+                            embedId: "ZfvXcjJnfu0",
+                            description: "Daily and weekly pre-market, post-market, and journaling routines for professional discipline."
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // State
+        let currentVideo = null;
+        let profiles = JSON.parse(localStorage.getItem('investing_profiles') || '{}');
+        let currentProfileId = localStorage.getItem('investing_current_profile') || 'default_user';
+
+        if (!profiles[currentProfileId]) {
+            profiles[currentProfileId] = { name: 'Student', completed: [] };
+            localStorage.setItem('investing_profiles', JSON.stringify(profiles));
+        }
+
+        function getCurrentProfile() {
+            return profiles[currentProfileId] || { name: 'Student', completed: [] };
+        }
+
+        function saveProfileData() {
+            localStorage.setItem('investing_profiles', JSON.stringify(profiles));
+            localStorage.setItem('investing_current_profile', currentProfileId);
+        }
+
+        function renderCurriculum() {
+            const container = document.getElementById('moduleContainer');
+            container.innerHTML = '';
+
+            const profile = getCurrentProfile();
+            let totalLessons = 0;
+            let completedLessons = 0;
+
+            courseData.modules.forEach((mod, modIdx) => {
+                const card = document.createElement('div');
+                card.className = 'module-card';
+
+                const header = document.createElement('div');
+                header.className = 'module-header';
+                header.innerHTML = `
+                    <div class="module-info">
+                        <div class="module-title">${mod.title}</div>
+                        <div class="module-count">${mod.topics.length} Lessons • ${mod.subtitle}</div>
+                    </div>
+                    <span style="font-size: 0.9rem; color: var(--text-muted);" id="toggle-icon-${mod.id}">▼</span>
+                `;
+
+                const topicList = document.createElement('div');
+                topicList.className = 'topic-list';
+                topicList.id = 'topics-' + mod.id;
+
+                mod.topics.forEach((topic, topIdx) => {
+                    totalLessons++;
+                    const isDone = profile.completed.includes(topic.id);
+                    if (isDone) completedLessons++;
+
+                    const item = document.createElement('div');
+                    item.className = 'topic-item' + (currentVideo && currentVideo.id === topic.id ? ' active' : '');
+                    item.onclick = () => selectVideo(topic, mod);
+
+                    item.innerHTML = `
+                        <div class="topic-status-icon ${isDone ? 'done' : ''}">
+                            ${isDone ? '✓' : (topIdx + 1)}
+                        </div>
+                        <div class="topic-text">
+                            <div class="topic-title">${topic.title}</div>
+                            <div class="topic-channel">${topic.channel} ${topic.type === 'playlist' ? '• (Playlist)' : ''}</div>
+                        </div>
+                    `;
+                    topicList.appendChild(item);
+                });
+
+                header.onclick = () => {
+                    topicList.classList.toggle('hidden');
+                    const icon = document.getElementById('toggle-icon-' + mod.id);
+                    if (icon) icon.textContent = topicList.classList.contains('hidden') ? '▶' : '▼';
+                };
+
+                card.appendChild(header);
+                card.appendChild(topicList);
+                container.appendChild(card);
+            });
+
+            // Update Progress Bar
+            document.getElementById('totalCount').textContent = totalLessons;
+            document.getElementById('completedCount').textContent = completedLessons;
+            const pct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+            document.getElementById('progressPercent').textContent = pct + '%';
+            document.getElementById('progressBar').style.width = pct + '%';
+        }
+
+        function selectVideo(topic, module) {
+            currentVideo = { ...topic, moduleTitle: module.title };
+
+            document.getElementById('videoTitle').textContent = topic.title;
+            document.getElementById('videoChannel').textContent = topic.channel + ' — ' + (topic.description || '');
+            document.getElementById('moduleBadge').textContent = module.title;
+            document.getElementById('btnOpenExternal').href = topic.url || '#';
+
+            updateCompleteButton();
+            renderCurriculum();
+            playSelectedVideo();
+        }
+
+        function playSelectedVideo() {
+            if (!currentVideo) return;
+
+            const placeholder = document.getElementById('videoPlaceholder');
+            const iframe = document.getElementById('videoIframe');
+            const video = document.getElementById('localVideo');
+
+            placeholder.classList.add('hidden');
+            video.classList.add('hidden');
+            video.pause();
+
+            let videoId = currentVideo.embedId;
+            let embedUrl = '';
+
+            if (currentVideo.type === 'playlist' && currentVideo.url.includes('list=')) {
+                const listId = currentVideo.url.split('list=')[1].split('&')[0];
+                embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${listId}&autoplay=1&rel=0`;
+            } else {
+                if (videoId.includes('watch?v=')) {
+                    videoId = videoId.split('watch?v=')[1].split('&')[0];
+                }
+                embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+            }
+
+            iframe.src = embedUrl;
+            iframe.classList.remove('hidden');
+
+            if (window.innerWidth < 1024) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function toggleCompleted() {
+            if (!currentVideo) return;
+            const profile = getCurrentProfile();
+            const idx = profile.completed.indexOf(currentVideo.id);
+
+            if (idx === -1) {
+                profile.completed.push(currentVideo.id);
+            } else {
+                profile.completed.splice(idx, 1);
+            }
+            saveProfileData();
+            updateCompleteButton();
+            renderCurriculum();
+        }
+
+        function updateCompleteButton() {
+            if (!currentVideo) return;
+            const profile = getCurrentProfile();
+            const isDone = profile.completed.includes(currentVideo.id);
+            const btn = document.getElementById('btnComplete');
+            const txt = document.getElementById('btnCompleteText');
+
+            if (isDone) {
+                btn.className = 'btn btn-completed';
+                txt.textContent = '✓ Completed';
+            } else {
+                btn.className = 'btn btn-secondary';
+                txt.textContent = 'Mark Done';
+            }
+        }
+
+        function playNextVideo() {
+            let found = false;
+            let nextTopic = null;
+            let nextModule = null;
+
+            for (const mod of courseData.modules) {
+                for (const topic of mod.topics) {
+                    if (found) {
+                        nextTopic = topic;
+                        nextModule = mod;
+                        break;
+                    }
+                    if (currentVideo && topic.id === currentVideo.id) {
+                        found = true;
+                    }
+                }
+                if (nextTopic) break;
+            }
+
+            if (nextTopic && nextModule) {
+                selectVideo(nextTopic, nextModule);
+            }
+        }
+
+        // Profile Management
+        function showProfileModal() {
+            renderProfileList();
+            document.getElementById('profileModal').classList.remove('hidden');
+        }
+
+        function hideProfileModal() {
+            document.getElementById('profileModal').classList.add('hidden');
+        }
+
+        function renderProfileList() {
+            const list = document.getElementById('profileList');
+            list.innerHTML = '';
+
+            Object.keys(profiles).forEach(id => {
+                const p = profiles[id];
+                const item = document.createElement('div');
+                item.className = 'profile-list-item';
+                item.innerHTML = `
+                    <div>
+                        <strong>${p.name}</strong>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">${p.completed.length} lessons done</div>
+                    </div>
+                    ${id === currentProfileId ? '<span style="color:var(--primary); font-weight:bold;">Active</span>' : '<button class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.75rem;">Switch</button>'}
+                `;
+                item.onclick = () => {
+                    currentProfileId = id;
+                    saveProfileData();
+                    updateHeaderProfile();
+                    renderCurriculum();
+                    hideProfileModal();
+                };
+                list.appendChild(item);
+            });
+        }
+
+        function addNewProfile() {
+            const input = document.getElementById('newProfileInput');
+            const name = input.value.trim();
+            if (!name) return;
+
+            const newId = 'profile_' + Date.now();
+            profiles[newId] = { name, completed: [] };
+            currentProfileId = newId;
+            saveProfileData();
+            input.value = '';
+            updateHeaderProfile();
+            renderCurriculum();
+            hideProfileModal();
+        }
+
+        function updateHeaderProfile() {
+            const p = getCurrentProfile();
+            document.getElementById('headerName').textContent = p.name;
+            document.getElementById('headerAvatar').textContent = p.name.charAt(0).toUpperCase();
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', () => {
+            updateHeaderProfile();
+            renderCurriculum();
+
+            // Auto-select first lesson
+            if (courseData.modules.length > 0 && courseData.modules[0].topics.length > 0) {
+                const firstMod = courseData.modules[0];
+                const firstTopic = firstMod.topics[0];
+                selectVideo(firstTopic, firstMod);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="true"
@@ -19,16 +20,17 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- Main File Explorer Activity -->
+        <!-- Main Unified Activity (FileHub + Learn Investing + Settings) -->
         <activity
             android:name=".MainActivity"
-            android:theme="@style/Theme.FileHub.NoActionBar" />
-
-        <!-- Render Dashboard Web & Streaming Shell Activity -->
-        <activity
-            android:name=".DashboardActivity"
+            android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:theme="@style/Theme.FileHub.NoActionBar" />
+            android:theme="@style/Theme.FileHub.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <!-- Settings Activity -->
         <activity
@@ -42,7 +44,7 @@
             android:label="Uploads Queue"
             android:parentActivityName=".MainActivity" />
 
-        <!-- Native Share Target Activity (Receives Shared Files from any Android App) -->
+        <!-- Native Share Target Activity (Receives Shared Files from Any Android App) -->
         <activity
             android:name=".ShareActivity"
             android:excludeFromRecents="true"
@@ -71,6 +73,17 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- FileProvider for In-App APK Updates -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

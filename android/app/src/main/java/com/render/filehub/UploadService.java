@@ -33,6 +33,9 @@ public class UploadService extends Service {
     public static final String ACTION_ENQUEUE = "com.render.filehub.ENQUEUE";
     public static final String ACTION_UPLOAD_PROGRESS = "com.render.filehub.UPLOAD_PROGRESS";
     public static final String EXTRA_URIS = "extra_uris";
+    public static final String EXTRA_STAGED_PATHS = "extra_staged_paths";
+    public static final String EXTRA_FILENAMES = "extra_filenames";
+    public static final String EXTRA_TARGET_FOLDER = "extra_target_folder";
 
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "filehub_upload_channel";
@@ -47,6 +50,7 @@ public class UploadService extends Service {
         public String errorMessage = null;
         public File stagedFile = null;
         public String mimeType = null;
+        public String targetFolder = "";
 
         public UploadTask(String id, Uri uri, String filename, long size) {
             this.id = id;
@@ -83,6 +87,29 @@ public class UploadService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_ENQUEUE.equals(intent.getAction())) {
+            String targetFolder = intent.getStringExtra(EXTRA_TARGET_FOLDER);
+            if (targetFolder == null) targetFolder = "";
+
+            ArrayList<String> stagedPaths = intent.getStringArrayListExtra(EXTRA_STAGED_PATHS);
+            ArrayList<String> filenames = intent.getStringArrayListExtra(EXTRA_FILENAMES);
+
+            if (stagedPaths != null && !stagedPaths.isEmpty()) {
+                for (int i = 0; i < stagedPaths.size(); i++) {
+                    String path = stagedPaths.get(i);
+                    File stagedFile = new File(path);
+                    String name = (filenames != null && i < filenames.size()) ? filenames.get(i) : stagedFile.getName();
+                    String id = System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
+                    UploadTask task = new UploadTask(id, null, name, stagedFile.length());
+                    task.stagedFile = stagedFile;
+                    task.targetFolder = targetFolder;
+                    uploadQueue.add(task);
+                }
+                broadcastUpdate();
+                startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, true));
+                processNextUpload();
+                return START_NOT_STICKY;
+            }
+
             ArrayList<Uri> uris = intent.getParcelableArrayListExtra(EXTRA_URIS);
             if (uris == null || uris.isEmpty()) {
                 if (intent.getClipData() != null) {
@@ -99,7 +126,7 @@ public class UploadService extends Service {
 
             if (uris != null && !uris.isEmpty()) {
                 for (Uri uri : uris) {
-                    enqueueUri(uri);
+                    enqueueUri(uri, targetFolder);
                 }
                 startForeground(NOTIFICATION_ID, buildNotification("Preparing uploads...", 0, 0, true));
                 processNextUpload();
@@ -108,7 +135,7 @@ public class UploadService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void enqueueUri(Uri uri) {
+    private void enqueueUri(Uri uri, String targetFolder) {
         String filename = getFileName(uri);
         long size = getFileSize(uri);
         String mime = null;
@@ -119,10 +146,11 @@ public class UploadService extends Service {
         String id = System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
         UploadTask task = new UploadTask(id, uri, filename, size);
         task.mimeType = mime;
+        task.targetFolder = targetFolder != null ? targetFolder : "";
         uploadQueue.add(task);
         broadcastUpdate();
 
-        // Immediately stage the file into private cache while URI permission is fresh
+        // Immediately stage the file into private cache while URI permission is active
         stagingExecutor.execute(() -> stageTaskFile(task));
     }
 
@@ -144,9 +172,7 @@ public class UploadService extends Service {
                     task.size = total;
                 }
             }
-        } catch (Exception ignored) {
-            // Staging fallback: will attempt direct openInputStream during upload
-        }
+        } catch (Exception ignored) {}
     }
 
     private synchronized void processNextUpload() {
@@ -163,7 +189,6 @@ public class UploadService extends Service {
         }
 
         if (nextTask == null) {
-            // Check if any errors occurred
             int completed = 0;
             int errors = 0;
             synchronized (uploadQueue) {
@@ -191,7 +216,9 @@ public class UploadService extends Service {
             SharedPreferences prefs = getSharedPreferences("filehub_prefs", Context.MODE_PRIVATE);
             String serverUrl = prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
             String password = prefs.getString("dashboard_password", "");
-            String targetFolder = prefs.getString("upload_folder", "");
+            String folderToUploadTo = (currentTask.targetFolder != null && !currentTask.targetFolder.trim().isEmpty())
+                    ? currentTask.targetFolder
+                    : prefs.getString("upload_folder", "");
 
             InputStream is = null;
             try {
@@ -200,11 +227,11 @@ public class UploadService extends Service {
                     if (currentTask.size <= 0) {
                         currentTask.size = currentTask.stagedFile.length();
                     }
-                } else {
+                } else if (currentTask.uri != null) {
                     is = getContentResolver().openInputStream(currentTask.uri);
                 }
 
-                if (is == null) throw new Exception("Cannot read file from device storage");
+                if (is == null) throw new Exception("Cannot read file from storage");
 
                 String mime = currentTask.mimeType;
                 if (mime == null && currentTask.uri != null) {
@@ -213,10 +240,10 @@ public class UploadService extends Service {
                     } catch (Exception ignored) {}
                 }
 
-                Response response = ApiClient.getInstance().uploadFile(
+                try (Response response = ApiClient.getInstance().uploadFile(
                         serverUrl,
                         password,
-                        targetFolder,
+                        folderToUploadTo,
                         currentTask.filename,
                         is,
                         currentTask.size,
@@ -226,17 +253,17 @@ public class UploadService extends Service {
                             updateNotification("Uploading " + currentTask.filename, percent, 100, true);
                             broadcastUpdate();
                         }
-                );
-
-                if (response.isSuccessful()) {
-                    currentTask.status = "Completed";
-                    currentTask.progress = 100;
-                } else if (response.code() == 401) {
-                    currentTask.status = "Error";
-                    currentTask.errorMessage = "Incorrect master password. Please verify settings.";
-                } else {
-                    currentTask.status = "Error";
-                    currentTask.errorMessage = "Server returned error: HTTP " + response.code();
+                )) {
+                    if (response.isSuccessful()) {
+                        currentTask.status = "Completed";
+                        currentTask.progress = 100;
+                    } else if (response.code() == 401) {
+                        currentTask.status = "Error";
+                        currentTask.errorMessage = "Incorrect master password. Please verify settings.";
+                    } else {
+                        currentTask.status = "Error";
+                        currentTask.errorMessage = "Server error HTTP " + response.code();
+                    }
                 }
             } catch (Exception e) {
                 currentTask.status = "Error";
@@ -267,31 +294,40 @@ public class UploadService extends Service {
                     "FileHub Background Uploads",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Shows upload progress for shared files");
-            notificationManager.createNotificationChannel(channel);
+            channel.setDescription("Shows upload progress for files uploaded to FileHub");
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
         }
     }
 
-    private Notification buildNotification(String text, int progress, int max, boolean ongoing) {
-        Intent intent = new Intent(this, UploadQueueActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    private Notification buildNotification(String text, int progress, int max, boolean indeterminate) {
+        Intent notificationIntent = new Intent(this, UploadQueueActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, notificationIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                        : PendingIntent.FLAG_UPDATE_CURRENT
+        );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .setContentTitle("FileHub Upload")
                 .setContentText(text)
-                .setContentIntent(pi)
-                .setOngoing(ongoing);
+                .setSmallIcon(android.R.drawable.stat_sys_upload)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true);
 
         if (max > 0) {
-            builder.setProgress(max, progress, false);
+            builder.setProgress(max, progress, indeterminate);
         }
 
         return builder.build();
     }
 
-    private void updateNotification(String text, int progress, int max, boolean ongoing) {
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(text, progress, max, ongoing));
+    private void updateNotification(String text, int progress, int max, boolean indeterminate) {
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(text, progress, max, indeterminate));
+        }
     }
 
     private String getFileName(Uri uri) {
@@ -309,7 +345,7 @@ public class UploadService extends Service {
         if (result == null) {
             result = uri.getLastPathSegment();
         }
-        return result != null ? result : "shared_file_" + System.currentTimeMillis();
+        return (result != null && !result.trim().isEmpty()) ? result : "upload_" + System.currentTimeMillis();
     }
 
     private long getFileSize(Uri uri) {
@@ -334,8 +370,8 @@ public class UploadService extends Service {
 
     @Override
     public void onDestroy() {
-        if (executor != null) executor.shutdownNow();
-        if (stagingExecutor != null) stagingExecutor.shutdownNow();
         super.onDestroy();
+        if (executor != null) executor.shutdown();
+        if (stagingExecutor != null) stagingExecutor.shutdown();
     }
 }

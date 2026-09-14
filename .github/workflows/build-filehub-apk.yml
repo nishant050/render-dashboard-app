@@ -39,11 +39,11 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Build Debug APKs with Gradle
+      - name: Build Debug APK with Gradle
         working-directory: ./android
         run: |
           set -o pipefail
-          gradle :app:assembleFilehubDebug :app:assembleDashboardDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.log || {
             echo "::error::Gradle Build Failed! Printing log excerpt:"
             grep -E "error:|FAILED|Exception|Caused by:" build_output.log | head -n 30 | while IFS= read -r line; do
               echo "::error::$line"
@@ -66,23 +66,15 @@ jobs:
       - name: Organize APKs for Distribution
         run: |
           mkdir -p build-output
-          FILEHUB_APK=$(find android -name "*filehub*debug*.apk" | head -n 1)
-          DASHBOARD_APK=$(find android -name "*dashboard*debug*.apk" | head -n 1)
+          APK_FILE=$(find android -name "*debug*.apk" | head -n 1)
 
-          echo "Found FileHub APK at: $FILEHUB_APK"
-          echo "Found Dashboard APK at: $DASHBOARD_APK"
+          echo "Found compiled APK at: $APK_FILE"
 
-          if [ -n "$FILEHUB_APK" ]; then
-            cp "$FILEHUB_APK" build-output/FileHub.apk
+          if [ -n "$APK_FILE" ]; then
+            cp "$APK_FILE" build-output/FileHub.apk
+            cp "$APK_FILE" build-output/RenderDashboard.apk
           else
-            echo "::error::FileHub APK not found!"
-            exit 1
-          fi
-
-          if [ -n "$DASHBOARD_APK" ]; then
-            cp "$DASHBOARD_APK" build-output/RenderDashboard.apk
-          else
-            echo "::error::Dashboard APK not found!"
+            echo "::error::Compiled APK not found!"
             exit 1
           fi
 
@@ -107,11 +99,13 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: filehub-apk-latest
-          name: "FileHub & Render Dashboard Android Apps"
+          name: "FileHub & Learn Investing v1.1.0"
           body: |
-            Official Android APK releases:
-            - **RenderDashboard.apk**: Complete web dashboard & media streaming gateway app with Render proxy bypassing device DNS restrictions, native YouTube video player, and integrated FileHub sharing.
-            - **FileHub.apk**: Standalone lightweight FileHub client with native share sheet support, background upload queue, and master password security.
+            Official Release v1.1.0:
+            - **Inbuilt Learn Investing UI**: Offline-ready local assets, 100% self-contained Vanilla CSS, no CDN reliance.
+            - **Native FileHub Explorer**: Folder uploads fix (files upload into current subfolder), smooth scroll without refresh glitches.
+            - **Fixed Native Share Target**: Instant stream caching before activity finish, eliminating Android permission revocation.
+            - **In-App Updater**: Check for updates and install new versions directly inside the app.
           files: |
             build-output/FileHub.apk
             build-output/RenderDashboard.apk
