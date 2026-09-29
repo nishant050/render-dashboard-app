@@ -2,168 +2,244 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stock Market Mastery 6.0</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <title>Stock Market Mastery 6.0 | Learn Investing</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .stream-toggle-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            padding: 0.5rem 0.75rem;
-            margin-bottom: 0.75rem;
-            font-size: 0.8rem;
-        }
-        .stream-mode-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            font-weight: 600;
-            color: var(--primary);
-        }
-        .stream-toggle-btn {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 0.3rem 0.65rem;
-            border-radius: var(--radius-sm);
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .stream-toggle-btn:hover {
-            border-color: var(--primary);
-            background: var(--bg-hover);
-        }
-        .dns-tip-banner {
-            background: rgba(16, 185, 129, 0.08);
-            border: 1px solid rgba(16, 185, 129, 0.25);
-            border-radius: var(--radius-md);
-            padding: 0.6rem 0.85rem;
-            margin-top: 0.75rem;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            line-height: 1.4;
-        }
-        .dns-tip-banner strong {
-            color: var(--primary);
-        }
-    </style>
 </head>
 <body>
+    <!-- Icon sprite (inline so the app works without any CDN) -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-6"/><path d="M16 8h4v4"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+        <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+        <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+        <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r=".5"/><circle cx="3.5" cy="12" r=".5"/><circle cx="3.5" cy="18" r=".5"/></symbol>
+        <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8Z"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8"/><path d="M22 21a7 7 0 0 0-5-6.7"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></symbol>
+        <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+        <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+        <symbol id="i-yt" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3V9Z"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+        <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+        <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.5 4.75 4.75 0 0 0 6.5 19h11Z"/></symbol>
+    </svg>
 
-    <!-- Header -->
-    <header>
-        <div class="header-brand">
-            <div class="brand-icon">📈</div>
-            <div>
-                <div class="brand-title">Stock Market Mastery 6.0</div>
-                <div class="brand-sub">Complete Hindi Course</div>
+    <!-- Top bar -->
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a id="backLink" class="back-link hidden" href="/" aria-label="Back to dashboard" title="Back to dashboard">
+                <svg class="icon"><use href="#i-back"/></svg>
+            </a>
+            <div class="brand">
+                <div class="brand-mark"><svg class="icon icon-lg"><use href="#i-chart"/></svg></div>
+                <div class="brand-text">
+                    <div class="brand-title">Stock Market Mastery 6.0</div>
+                    <div class="brand-sub" id="brandSub">Complete Hindi course</div>
+                </div>
             </div>
-        </div>
-        <div class="header-actions">
-            <button class="profile-btn" onclick="showProfileModal()" title="Switch Student Profile">
-                <div class="profile-avatar" id="headerAvatar">U</div>
-                <span id="headerName">User</span>
-            </button>
+            <div class="top-actions">
+                <div class="progress-pill" title="Overall course progress">
+                    <svg viewBox="0 0 36 36" style="transform: rotate(-90deg)">
+                        <circle class="ring-track" cx="18" cy="18" r="15" fill="none" stroke-width="4"/>
+                        <circle class="ring-fill" id="pillRing" cx="18" cy="18" r="15" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="94.25" stroke-dashoffset="94.25"/>
+                    </svg>
+                    <span><span id="pillPct">0</span>%<span class="label-long"> complete</span></span>
+                </div>
+                <button class="profile-btn" id="profileBtn" type="button" aria-label="Switch profile">
+                    <span class="avatar" id="headerAvatar">?</span>
+                    <span class="name" id="headerName">Profile</span>
+                    <svg class="icon icon-sm" style="color: var(--text-3)"><use href="#i-down"/></svg>
+                </button>
+            </div>
         </div>
     </header>
 
-    <!-- App Container -->
-    <div class="app-container">
-        
-        <!-- Video Player Main Section -->
-        <div class="player-section">
-            <!-- Stream Mode Toggle Banner -->
-            <div class="stream-toggle-bar">
-                <div class="stream-mode-badge" id="streamModeBadge">
-                    <span>⚡ Direct YouTube Mode</span>
+    <div class="layout hidden" id="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <section class="continue-card" id="continueCard">
+                <div class="eyebrow"><span class="pulse"></span><span id="continueEyebrow">Continue learning</span></div>
+                <div class="continue-title" id="continueTitle">—</div>
+                <div class="continue-meta" id="continueMeta"></div>
+                <div class="continue-resume hidden" id="continueResume">
+                    <div class="bar"><span id="continueResumeBar"></span></div>
+                    <div class="cr-label" id="continueResumeLabel"></div>
                 </div>
-                <button class="stream-toggle-btn" id="btnToggleMode" onclick="toggleStreamMode()">
-                    Switch to Render Proxy 🛡️
+                <button class="continue-btn" id="continueBtn" type="button">
+                    <svg class="icon icon-sm icon-fill"><use href="#i-play"/></svg>
+                    <span id="continueBtnText">Start</span>
                 </button>
+            </section>
+
+            <section class="card progress-card">
+                <div class="progress-top">
+                    <div class="big-ring">
+                        <svg viewBox="0 0 80 80">
+                            <circle class="ring-track" cx="40" cy="40" r="34" fill="none" stroke-width="8"/>
+                            <circle class="ring-fill" id="bigRing" cx="40" cy="40" r="34" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="213.63" stroke-dashoffset="213.63"/>
+                        </svg>
+                        <div class="pct"><span id="bigPct">0</span>%</div>
+                    </div>
+                    <div>
+                        <div class="progress-headline" id="progressHeadline">Your progress</div>
+                        <div class="progress-sub" id="progressSub">0 of 0 lessons completed</div>
+                    </div>
+                </div>
+                <div class="stat-grid">
+                    <div class="stat"><div class="stat-value" id="statLeft">0</div><div class="stat-label">Lessons left</div></div>
+                    <div class="stat"><div class="stat-value" id="statModules">0/0</div><div class="stat-label">Modules done</div></div>
+                    <div class="stat"><div class="stat-value" id="statLast">—</div><div class="stat-label">Last studied</div></div>
+                </div>
+            </section>
+
+            <nav class="card nav-card" aria-label="Modules">
+                <div class="nav-title">Modules</div>
+                <div id="moduleNav"></div>
+            </nav>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <section class="card player-card" id="playerCard">
+                <div class="player-frame" id="playerFrame">
+                    <div class="poster" id="poster">
+                        <img class="poster-img hidden" id="posterImg" alt="">
+                        <button class="poster-play" id="posterPlay" type="button" aria-label="Play lesson">
+                            <svg class="icon icon-fill"><use href="#i-play"/></svg>
+                        </button>
+                        <div class="poster-title" id="posterTitle">Pick a lesson to start</div>
+                        <div class="poster-hint" id="posterHint"></div>
+                    </div>
+                    <div class="part-chip hidden" id="partChip"></div>
+                    <div class="player-overlay hidden" id="playerOverlay"></div>
+                </div>
+
+                <div class="player-body">
+                    <div class="lesson-tags" id="lessonTags"></div>
+                    <h1 class="lesson-title" id="lessonTitle">Welcome to Stock Market Mastery 6.0</h1>
+                    <div class="lesson-channel" id="lessonChannel"></div>
+                    <p class="lesson-desc" id="lessonDesc">Choose any lesson from the curriculum below. Your progress and resume points sync across all your devices.</p>
+                    <div class="resume-line hidden" id="resumeLine">
+                        <svg class="icon icon-sm"><use href="#i-clock"/></svg>
+                        <div class="bar"><span id="resumeBar"></span></div>
+                        <span id="resumeText"></span>
+                    </div>
+
+                    <div class="actions">
+                        <button class="btn btn-primary" id="playBtn" type="button">
+                            <svg class="icon icon-sm icon-fill"><use href="#i-play"/></svg>
+                            <span id="playBtnText">Play</span>
+                        </button>
+                        <button class="btn btn-outline" id="completeBtn" type="button">
+                            <svg class="icon icon-sm"><use href="#i-check"/></svg>
+                            <span id="completeBtnText">Mark as done</span>
+                        </button>
+                        <div class="spacer"></div>
+                        <div class="nav-pair">
+                            <button class="btn btn-soft" id="prevBtn" type="button">
+                                <svg class="icon icon-sm"><use href="#i-left"/></svg>Previous
+                            </button>
+                            <button class="btn btn-soft" id="nextBtn" type="button">
+                                Next<svg class="icon icon-sm"><use href="#i-right"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="player-options">
+                        <span class="opt-label">Play via</span>
+                        <div class="segmented" role="radiogroup" aria-label="Video source">
+                            <button type="button" role="radio" data-mode="direct" id="modeDirect"><svg class="icon icon-sm"><use href="#i-yt"/></svg>YouTube</button>
+                            <button type="button" role="radio" data-mode="proxy" id="modeProxy"><svg class="icon icon-sm"><use href="#i-server"/></svg>My server</button>
+                        </div>
+                        <button class="switch" id="autoplaySwitch" type="button" role="switch" aria-checked="true">
+                            <span class="track"></span>Auto-play next
+                        </button>
+                        <a class="ext-link" id="openExternal" href="#" target="_blank" rel="noopener">
+                            Open on YouTube<svg class="icon icon-sm"><use href="#i-external"/></svg>
+                        </a>
+                        <div class="opt-hint" id="modeHint"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="curriculum">
+                <div class="curriculum-head">
+                    <div>
+                        <h2 class="section-title">Curriculum</h2>
+                        <div class="section-sub" id="curriculumSub"></div>
+                    </div>
+                    <div class="tools">
+                        <label class="search">
+                            <svg class="icon icon-sm"><use href="#i-search"/></svg>
+                            <input type="search" id="searchInput" placeholder="Search lessons or teachers" autocomplete="off">
+                        </label>
+                        <div class="chips" role="tablist" aria-label="Filter lessons">
+                            <button type="button" data-filter="all" class="on">All</button>
+                            <button type="button" data-filter="todo">To do</button>
+                            <button type="button" data-filter="done">Done</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="module-jump" id="moduleJump" style="margin-top: 12px;"></div>
+                <div class="modules" id="modules" style="margin-top: 16px;"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Profile modal -->
+    <div class="modal hidden" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <div class="sheet">
+            <div class="sheet-hero" id="profileHero">
+                <div class="brand-mark"><svg class="icon icon-lg"><use href="#i-chart"/></svg></div>
+                <h2>Stock Market Mastery 6.0</h2>
+                <p>Complete Hindi course · pick who's learning</p>
             </div>
-
-            <div class="video-wrapper">
-                <div id="videoPlaceholder" class="video-placeholder">
-                    <span style="font-size: 2.5rem;">▶️</span>
-                    <span>Select a lecture below to start playing</span>
-                </div>
-                <iframe id="videoIframe" class="hidden" src="" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
-                <video id="localVideo" class="hidden" controls playsinline controlsList="nodownload"></video>
+            <div class="sheet-head hidden" id="profileHead">
+                <h3 id="profileModalTitle">Profiles</h3>
+                <button class="btn btn-soft btn-sm btn-icon" id="profileClose" type="button" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
             </div>
-
-            <div class="video-meta-card">
-                <span class="badge" id="moduleBadge">Module 1</span>
-                <h1 class="video-title" id="videoTitle">Welcome to Stock Market Mastery</h1>
-                <div class="video-channel" id="videoChannel">Select any lesson from the curriculum</div>
-
-                <div class="video-actions">
-                    <button class="btn btn-primary" id="btnPlay" onclick="playSelectedVideo()">
-                        <span>▶ Play Video</span>
-                    </button>
-                    <button class="btn btn-secondary" id="btnComplete" onclick="toggleCompleted()">
-                        <span id="btnCompleteText">✓ Mark Done</span>
-                    </button>
-                    <button class="btn btn-secondary" id="btnNext" onclick="playNextVideo()">
-                        <span>Next ❯</span>
-                    </button>
-                    <a class="btn btn-secondary" id="btnOpenExternal" href="#" target="_blank" style="margin-left: auto;">
-                        <span>Open in Browser ↗</span>
-                    </a>
+            <div class="sheet-body">
+                <div id="profileListWrap">
+                    <div class="label">Choose profile</div>
+                    <div class="profile-list" id="profileList"></div>
+                    <div class="divider">or</div>
                 </div>
-
-                <div class="dns-tip-banner" id="dnsTip">
-                    💡 <strong>DNS Note:</strong> If videos fail on Direct Mode, your DNS must allow <code>youtube-nocookie.com</code> and <code>googlevideo.com</code>. Or click <strong>Switch to Render Proxy</strong> above to stream 100% through your Render server with zero DNS restrictions.
+                <div class="label">Add a new learner</div>
+                <div class="add-row">
+                    <input class="input" id="newProfileName" type="text" placeholder="Enter a name" maxlength="40" autocomplete="off">
+                    <button class="btn btn-primary" id="addProfileBtn" type="button" style="height: 44px;"><svg class="icon icon-sm"><use href="#i-plus"/></svg>Add</button>
+                </div>
+                <div class="field-error hidden" id="profileError">Please enter a name.</div>
+                <div class="sheet-note">
+                    <svg class="icon icon-sm" style="margin-top:1px"><use href="#i-cloud"/></svg>
+                    <span><span class="sync-dot" id="syncDot"></span><span id="syncText">Progress, resume points and profiles are saved to your server (MongoDB) and sync across devices.</span></span>
                 </div>
             </div>
-        </div>
-
-        <!-- Sidebar / Curriculum Navigation -->
-        <div class="sidebar">
-            <div class="progress-card">
-                <div class="progress-header">
-                    <span>Course Progress</span>
-                    <span id="progressPercent">0%</span>
-                </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" id="progressBar" style="width: 0%;"></div>
-                </div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: right;">
-                    <span id="completedCount">0</span> of <span id="totalCount">0</span> lessons completed
-                </div>
-            </div>
-
-            <!-- Curriculum Modules Accordion -->
-            <div class="module-list" id="moduleContainer">
-                <!-- Dynamically populated -->
+            <div class="sheet-foot hidden" id="profileFoot">
+                <button class="btn btn-danger btn-sm" id="resetBtn" type="button"><svg class="icon icon-sm"><use href="#i-reset"/></svg>Reset progress for this profile</button>
             </div>
         </div>
     </div>
 
-    <!-- Profile Modal -->
-    <div id="profileModal" class="modal-backdrop hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 style="font-size: 1.1rem; font-weight: 700;">Student Profiles (MongoDB Sync)</h3>
-                <button onclick="hideProfileModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.3rem; cursor:pointer;">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="profileList" style="margin-bottom: 1rem;"></div>
-                <div style="display: flex; gap: 0.5rem;">
-                    <input type="text" id="newProfileInput" class="input-field" placeholder="Enter student name..." style="margin-bottom: 0;">
-                    <button class="btn btn-primary" onclick="addNewProfile()">Add</button>
-                </div>
-            </div>
-        </div>
+    <div class="toast" id="toast" role="status" aria-live="polite">
+        <svg class="icon"><use href="#i-check-circle"/></svg>
+        <span id="toastText"></span>
     </div>
 
     <script>
-                const courseVersion = "6.0";
+        const courseVersion = "6.0";
         const courseData = {
             modules: [
                 {
@@ -601,436 +677,1223 @@
             ]
         };
 
+    </script>
+    <script>
+(function () {
+    'use strict';
 
-        // State
-        let currentVideo = null;
-        let profiles = {};
-        let currentProfileId = null;
-        let streamMode = localStorage.getItem('learn_investing_stream_mode') || 'direct'; // 'direct' or 'proxy'
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const nowIso = () => new Date().toISOString();
 
-        function getApiBaseUrl() {
-            if (typeof window !== 'undefined' && window.AndroidBridge && typeof window.AndroidBridge.getServerUrl === 'function') {
-                try {
-                    const base = window.AndroidBridge.getServerUrl();
-                    if (base) return base.replace(/\/+$/, '');
-                } catch (e) {}
-            }
-            if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
-                return window.location.origin.replace(/\/+$/, '');
-            }
-            return 'https://dashboard-mszb.onrender.com';
+    const LS = {
+        profiles: 'stockMarketCourseProfiles',
+        current: 'stockMarketCourseCurrentProfile',
+        mode: 'learn_investing_stream_mode',
+        autoplay: 'learn_investing_autoplay',
+        collapsed: 'learn_investing_collapsed_modules',
+        deleted: 'learn_investing_deleted_profiles',
+        lastSync: 'learn_investing_last_sync'
+    };
+    const store = {
+        get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : v; } catch (e) { return fb; } },
+        set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } },
+        json(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
+    };
+
+    function fmtTime(sec) {
+        sec = Math.max(0, Math.floor(sec || 0));
+        const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+        return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+    }
+    function fmtAgo(iso) {
+        const t = Date.parse(iso);
+        if (isNaN(t)) return '—';
+        const days = Math.floor((startOfDay(Date.now()) - startOfDay(t)) / 86400000);
+        if (days <= 0) return 'Today';
+        if (days === 1) return 'Yesterday';
+        if (days < 7) return `${days}d ago`;
+        if (days < 30) return `${Math.floor(days / 7)}w ago`;
+        return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    }
+    function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
+    function initials(name) {
+        return String(name || '?').trim().split(/\s+/).map((w) => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+    }
+
+    // ------------------------------------------------------------------
+    // Course index
+    // ------------------------------------------------------------------
+    const LESSONS = [];
+    const BY_ID = {};
+    courseData.modules.forEach((mod, mi) => {
+        mod.cls = 'c' + ((mi % 6) + 1);
+        mod.index = mi;
+        mod.topics.forEach((t, ti) => {
+            const lesson = Object.assign({}, t, { module: mod, indexInModule: ti, globalIndex: LESSONS.length });
+            LESSONS.push(lesson);
+            BY_ID[t.id] = lesson;
+        });
+    });
+    const TOTAL = LESSONS.length;
+
+    function ytVideoId(lesson) {
+        try {
+            const u = new URL(lesson.url);
+            if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', '');
+            const v = u.searchParams.get('v');
+            if (v) return v;
+        } catch (e) { /* ignore */ }
+        return lesson.embedId && !lesson.embedId.includes('?') ? lesson.embedId : null;
+    }
+    function ytListId(lesson) {
+        try { return new URL(lesson.url).searchParams.get('list'); } catch (e) { return null; }
+    }
+    const isPlaylist = (lesson) => lesson.type === 'playlist' && !!ytListId(lesson);
+
+    // ------------------------------------------------------------------
+    // Environment / API
+    // ------------------------------------------------------------------
+    const IS_FILE = location.protocol === 'file:';
+    const HAS_BRIDGE = !!(window.AndroidBridge && typeof window.AndroidBridge.getServerUrl === 'function');
+    const IN_APP = IS_FILE || HAS_BRIDGE || /RenderDashboardApp/i.test(navigator.userAgent);
+
+    function apiBase() {
+        if (HAS_BRIDGE) {
+            try { const b = window.AndroidBridge.getServerUrl(); if (b) return String(b).replace(/\/+$/, ''); } catch (e) { /* ignore */ }
         }
+        if (window.FILEHUB_SERVER_URL) return String(window.FILEHUB_SERVER_URL).replace(/\/+$/, '');
+        if (/^https?:$/.test(location.protocol)) return '';
+        return 'https://dashboard-mszb.onrender.com';
+    }
+    function apiHeaders(json) {
+        const h = {};
+        if (json) h['Content-Type'] = 'application/json';
+        try {
+            const p = window.AndroidBridge && typeof window.AndroidBridge.getPassword === 'function' ? window.AndroidBridge.getPassword() : '';
+            if (p) h['x-dashboard-password'] = p;
+        } catch (e) { /* ignore */ }
+        return h;
+    }
+    async function apiGet(path) {
+        const res = await fetch(apiBase() + path, { headers: apiHeaders(false), credentials: 'same-origin', cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    }
+    async function apiPost(path, body, keepalive) {
+        const res = await fetch(apiBase() + path, {
+            method: 'POST', headers: apiHeaders(true), credentials: 'same-origin',
+            body: JSON.stringify(body), keepalive: !!keepalive
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    }
 
-        function getApiPassword() {
-            if (typeof window !== 'undefined' && window.AndroidBridge && typeof window.AndroidBridge.getPassword === 'function') {
-                try {
-                    return window.AndroidBridge.getPassword() || '';
-                } catch (e) {}
-            }
-            return '';
-        }
+    // ------------------------------------------------------------------
+    // Profiles & progress (MongoDB via /api/learn-investing/state + local cache)
+    // ------------------------------------------------------------------
+    let profiles = {};
+    let currentId = null;
+    const deletedIds = new Set(store.json(LS.deleted, []));
+    let remoteOk = false;
+    let syncStatus = 'pending';
 
-        async function courseApi(method = 'GET', body = null) {
-            const baseUrl = getApiBaseUrl();
-            const options = { method, headers: {} };
-            const pass = getApiPassword();
-            if (pass) {
-                options.headers['x-dashboard-password'] = pass;
-            }
-            if (body) {
-                options.headers['Content-Type'] = 'application/json';
-                options.body = JSON.stringify(body);
-            }
-            const res = await fetch(`${baseUrl}/api/learn-investing/state`, options);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-        }
+    function normalizeProfile(raw, id) {
+        raw = raw && typeof raw === 'object' ? raw : {};
+        const prog = raw.progress && typeof raw.progress === 'object' ? raw.progress : {};
+        const done = new Set(
+            [].concat(Array.isArray(prog.completedVideos) ? prog.completedVideos : [], Array.isArray(raw.completed) ? raw.completed : [])
+                .filter((x) => typeof x === 'string')
+        );
+        const p = Object.assign({}, raw, {
+            id: raw.id || id,
+            name: (raw.name && String(raw.name).trim()) || 'Learner',
+            progress: Object.assign({}, prog, {
+                courseVersion,
+                completedVideos: Array.from(done),
+                playback: prog.playback && typeof prog.playback === 'object' ? prog.playback : {},
+                completedAt: prog.completedAt && typeof prog.completedAt === 'object' ? prog.completedAt : {},
+                removedAt: prog.removedAt && typeof prog.removedAt === 'object' ? prog.removedAt : {}
+            })
+        });
+        p.completed = p.progress.completedVideos.slice(); // mirror kept for older app versions
+        return p;
+    }
+    // Compact fingerprint of what matters, used to decide whether the server needs our copy
+    function signature(p) {
+        const pb = p.progress.playback || {};
+        return JSON.stringify([
+            p.name,
+            p.progress.completedVideos.slice().sort(),
+            Object.keys(pb).sort().map((k) => [k, pb[k] && pb[k].seconds, pb[k] && pb[k].updatedAt]),
+            p.progress.resetAt || null,
+            Object.keys(p.progress.removedAt || {}).sort()
+        ]);
+    }
+    const stamp = (p) => { const t = Date.parse(p && p.updatedAt); return isNaN(t) ? 0 : t; };
+    const touch = (p) => { p.updatedAt = nowIso(); };
+    const profile = () => profiles[currentId] || null;
+    const doneSet = (p) => new Set(((p || profile()) || { progress: { completedVideos: [] } }).progress.completedVideos.filter((id) => BY_ID[id]));
+    const playbackOf = (id) => ((profile() && profile().progress.playback[id]) || null);
 
-        function normalizeProfile(p, id) {
-            if (!p) return { id, name: 'Student', completed: [] };
-            const completedList = Array.isArray(p.completed) ? p.completed
-                : (p.progress && Array.isArray(p.progress.completedVideos)) ? p.progress.completedVideos
-                : [];
-            return {
-                id: p.id || id,
-                name: p.name || 'Student',
-                completed: completedList,
-                progress: p.progress || { completedVideos: completedList }
-            };
-        }
+    function cacheLocal() {
+        store.set(LS.profiles, JSON.stringify(profiles));
+        if (currentId) store.set(LS.current, currentId);
+        store.set(LS.deleted, JSON.stringify(Array.from(deletedIds)));
+    }
 
-        function getCurrentProfile() {
-            if (!currentProfileId || !profiles[currentProfileId]) {
-                const keys = Object.keys(profiles);
-                if (keys.length > 0) currentProfileId = keys[0];
-                else {
-                    const defId = 'profile_' + Date.now();
-                    profiles[defId] = { id: defId, name: 'Nishant', completed: [] };
-                    currentProfileId = defId;
-                }
-            }
-            return profiles[currentProfileId];
-        }
+    // Merge two copies of one learner profile without losing progress:
+    // - a lesson stays "done" unless it was un-marked (or the profile reset) AFTER it was completed
+    // - resume points: the most recently updated one wins per lesson
+    // - name / other fields: the copy with the newer updatedAt wins
+    function mergeLearnProfile(a, b) {
+        const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+        if (!isObj(a)) return b;
+        if (!isObj(b)) return a;
+        const ts = (v) => { const t = Date.parse(v); return isNaN(t) ? 0 : t; };
+        const iso = (t) => new Date(t).toISOString();
+        const ap = isObj(a.progress) ? a.progress : {};
+        const bp = isObj(b.progress) ? b.progress : {};
+        const doneList = (p, prog) => [].concat(Array.isArray(prog.completedVideos) ? prog.completedVideos : [], Array.isArray(p.completed) ? p.completed : []).filter((x) => typeof x === 'string');
+        const doneA = new Set(doneList(a, ap));
+        const doneB = new Set(doneList(b, bp));
+        const caA = isObj(ap.completedAt) ? ap.completedAt : {};
+        const caB = isObj(bp.completedAt) ? bp.completedAt : {};
+        const raA = isObj(ap.removedAt) ? ap.removedAt : {};
+        const raB = isObj(bp.removedAt) ? bp.removedAt : {};
+        const resetAt = Math.max(ts(ap.resetAt), ts(bp.resetAt));
 
-        async function loadProfiles() {
-            // 1. Load local cache first
-            try {
-                const cached = localStorage.getItem('stockMarketCourseProfiles');
-                if (cached) {
-                    const parsed = JSON.parse(cached);
-                    Object.keys(parsed).forEach(id => {
-                        profiles[id] = normalizeProfile(parsed[id], id);
-                    });
-                }
-                currentProfileId = localStorage.getItem('stockMarketCourseCurrentProfile') || null;
-            } catch (e) {}
-
-            // 2. Fetch remote MongoDB state
-            try {
-                const remoteState = await courseApi('GET');
-                const remoteProfiles = remoteState?.profiles || {};
-                const remoteCurrent = remoteState?.currentProfileId || null;
-
-                Object.keys(remoteProfiles).forEach(id => {
-                    profiles[id] = normalizeProfile(remoteProfiles[id], id);
-                });
-
-                // Auto-select: prioritize Nishant, or remote selection, or first profile
-                if (!currentProfileId || !profiles[currentProfileId]) {
-                    const nishant = Object.values(profiles).find(p => p.name && p.name.toLowerCase().includes('nishant'));
-                    if (nishant) {
-                        currentProfileId = nishant.id;
-                    } else if (remoteCurrent && profiles[remoteCurrent]) {
-                        currentProfileId = remoteCurrent;
-                    } else {
-                        const keys = Object.keys(profiles);
-                        currentProfileId = keys.length > 0 ? keys[0] : null;
-                    }
-                }
-
-                localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
-                if (currentProfileId) {
-                    localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
-                }
-            } catch (err) {
-                console.warn('[Learn Investing] Remote sync offline/failed, using local cache:', err.message);
-            }
-
-            if (Object.keys(profiles).length === 0) {
-                const defId = 'profile_' + Date.now();
-                profiles[defId] = { id: defId, name: 'Nishant', completed: [] };
-                currentProfileId = defId;
-            }
-
-            updateHeaderProfile();
-            renderCurriculum();
-        }
-
-        async function saveProfileData() {
-            localStorage.setItem('stockMarketCourseProfiles', JSON.stringify(profiles));
-            localStorage.setItem('stockMarketCourseCurrentProfile', currentProfileId);
-
-            try {
-                const p = getCurrentProfile();
-                if (p) {
-                    if (!p.progress) p.progress = {};
-                    p.progress.completedVideos = p.completed;
-                    if (currentVideo) p.progress.currentVideoId = currentVideo.id;
-                }
-                await courseApi('POST', { profiles, currentProfileId });
-            } catch (err) {
-                console.warn('[Learn Investing] Server save error:', err.message);
-            }
-        }
-
-        function updateStreamModeUI() {
-            const badge = document.getElementById('streamModeBadge');
-            const btn = document.getElementById('btnToggleMode');
-            if (streamMode === 'proxy') {
-                if (badge) badge.innerHTML = '🛡️ Render Proxy Mode (Zero DNS Block)';
-                if (btn) btn.innerHTML = 'Switch to Direct YouTube ⚡';
-            } else {
-                if (badge) badge.innerHTML = '⚡ Direct YouTube Mode';
-                if (btn) btn.innerHTML = 'Switch to Render Proxy 🛡️';
-            }
-        }
-
-        function toggleStreamMode() {
-            streamMode = streamMode === 'proxy' ? 'direct' : 'proxy';
-            localStorage.setItem('learn_investing_stream_mode', streamMode);
-            updateStreamModeUI();
-            if (currentVideo) {
-                playSelectedVideo();
-            }
-        }
-
-        function renderCurriculum() {
-            const container = document.getElementById('moduleContainer');
-            if (!container) return;
-            container.innerHTML = '';
-
-            const profile = getCurrentProfile();
-            let totalLessons = 0;
-            let completedLessons = 0;
-
-            courseData.modules.forEach((mod, modIdx) => {
-                const card = document.createElement('div');
-                card.className = 'module-card';
-
-                const header = document.createElement('div');
-                header.className = 'module-header';
-                header.innerHTML = `
-                    <div class="module-info">
-                        <div class="module-title">${mod.title}</div>
-                        <div class="module-count">${mod.topics.length} Lessons • ${mod.subtitle}</div>
-                    </div>
-                    <span style="font-size: 0.9rem; color: var(--text-muted);" id="toggle-icon-${mod.id}">▼</span>
-                `;
-
-                const topicList = document.createElement('div');
-                topicList.className = 'topic-list';
-                topicList.id = 'topics-' + mod.id;
-
-                mod.topics.forEach((topic, topIdx) => {
-                    totalLessons++;
-                    const isDone = profile.completed.includes(topic.id);
-                    if (isDone) completedLessons++;
-
-                    const item = document.createElement('div');
-                    item.className = 'topic-item' + (currentVideo && currentVideo.id === topic.id ? ' active' : '');
-                    item.onclick = () => selectVideo(topic, mod);
-
-                    item.innerHTML = `
-                        <div class="topic-status-icon ${isDone ? 'done' : ''}">
-                            ${isDone ? '✓' : (topIdx + 1)}
-                        </div>
-                        <div class="topic-text">
-                            <div class="topic-title">${topic.title}</div>
-                            <div class="topic-channel">${topic.channel} ${topic.type === 'playlist' ? '• (Playlist)' : ''}</div>
-                        </div>
-                    `;
-                    topicList.appendChild(item);
-                });
-
-                header.onclick = () => {
-                    topicList.classList.toggle('hidden');
-                    const icon = document.getElementById('toggle-icon-' + mod.id);
-                    if (icon) icon.textContent = topicList.classList.contains('hidden') ? '▶' : '▼';
-                };
-
-                card.appendChild(header);
-                card.appendChild(topicList);
-                container.appendChild(card);
-            });
-
-            // Update Progress Bar
-            document.getElementById('totalCount').textContent = totalLessons;
-            document.getElementById('completedCount').textContent = completedLessons;
-            const pct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
-            document.getElementById('progressPercent').textContent = pct + '%';
-            document.getElementById('progressBar').style.width = pct + '%';
-        }
-
-        function selectVideo(topic, module) {
-            currentVideo = { ...topic, moduleTitle: module.title };
-
-            document.getElementById('videoTitle').textContent = topic.title;
-            document.getElementById('videoChannel').textContent = topic.channel + ' — ' + (topic.description || '');
-            document.getElementById('moduleBadge').textContent = module.title;
-            document.getElementById('btnOpenExternal').href = topic.url || '#';
-
-            updateCompleteButton();
-            renderCurriculum();
-            playSelectedVideo();
-        }
-
-        function playSelectedVideo() {
-            if (!currentVideo) return;
-
-            const placeholder = document.getElementById('videoPlaceholder');
-            const iframe = document.getElementById('videoIframe');
-            const video = document.getElementById('localVideo');
-
-            placeholder.classList.add('hidden');
-
-            let videoId = currentVideo.embedId;
-            if (videoId.includes('watch?v=')) {
-                videoId = videoId.split('watch?v=')[1].split('&')[0];
-            } else if (videoId.includes('videoseries?list=')) {
-                videoId = videoId.split('list=')[1].split('&')[0];
-            }
-
-            if (streamMode === 'proxy') {
-                iframe.classList.add('hidden');
-                iframe.src = '';
-                video.classList.remove('hidden');
-
-                const baseUrl = getApiBaseUrl();
-                video.src = `${baseUrl}/api/stream/youtube?v=${encodeURIComponent(videoId)}`;
-                video.onended = () => {
-                    handleVideoCompletion();
-                };
-                video.play().catch(e => {
-                    console.log('Video play waiting or user interaction required');
-                });
-            } else {
-                video.pause();
-                video.classList.add('hidden');
-                video.src = '';
-
-                let embedUrl = '';
-                if (currentVideo.type === 'playlist' && currentVideo.url.includes('list=')) {
-                    const listId = currentVideo.url.split('list=')[1].split('&')[0];
-                    embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${listId}&autoplay=1&rel=0`;
-                } else {
-                    embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
-                }
-
-                iframe.src = embedUrl;
-                iframe.classList.remove('hidden');
-            }
-
-            if (window.innerWidth < 1024) {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
-
-        function toggleCompleted() {
-            if (!currentVideo) return;
-            const profile = getCurrentProfile();
-            const idx = profile.completed.indexOf(currentVideo.id);
-
-            if (idx === -1) {
-                profile.completed.push(currentVideo.id);
-            } else {
-                profile.completed.splice(idx, 1);
-            }
-            saveProfileData();
-            updateCompleteButton();
-            renderCurriculum();
-        }
-
-        function handleVideoCompletion() {
-            if (!currentVideo) return;
-            const profile = getCurrentProfile();
-            if (!profile.completed.includes(currentVideo.id)) {
-                profile.completed.push(currentVideo.id);
-                saveProfileData();
-                updateCompleteButton();
-                renderCurriculum();
-            }
-            playNextVideo();
-        }
-
-        function updateCompleteButton() {
-            if (!currentVideo) return;
-            const profile = getCurrentProfile();
-            const isDone = profile.completed.includes(currentVideo.id);
-            const btn = document.getElementById('btnComplete');
-            const txt = document.getElementById('btnCompleteText');
-
-            if (isDone) {
-                btn.className = 'btn btn-completed';
-                txt.textContent = '✓ Completed';
-            } else {
-                btn.className = 'btn btn-secondary';
-                txt.textContent = 'Mark Done';
-            }
-        }
-
-        function playNextVideo() {
-            let found = false;
-            let nextTopic = null;
-            let nextModule = null;
-
-            for (const mod of courseData.modules) {
-                for (const topic of mod.topics) {
-                    if (found) {
-                        nextTopic = topic;
-                        nextModule = mod;
-                        break;
-                    }
-                    if (currentVideo && topic.id === currentVideo.id) {
-                        found = true;
-                    }
-                }
-                if (nextTopic) break;
-            }
-
-            if (nextTopic && nextModule) {
-                selectVideo(nextTopic, nextModule);
-            }
-        }
-
-        // Profile Management
-        function showProfileModal() {
-            renderProfileList();
-            document.getElementById('profileModal').classList.remove('hidden');
-        }
-
-        function hideProfileModal() {
-            document.getElementById('profileModal').classList.add('hidden');
-        }
-
-        function renderProfileList() {
-            const list = document.getElementById('profileList');
-            list.innerHTML = '';
-
-            Object.keys(profiles).forEach(id => {
-                const p = profiles[id];
-                const item = document.createElement('div');
-                item.className = 'profile-list-item';
-                item.innerHTML = `
-                    <div>
-                        <strong>${p.name}</strong>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">${p.completed.length} lessons done</div>
-                    </div>
-                    ${id === currentProfileId ? '<span style="color:var(--primary); font-weight:bold;">Active</span>' : '<button class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.75rem;">Switch</button>'}
-                `;
-                item.onclick = () => {
-                    currentProfileId = id;
-                    saveProfileData();
-                    updateHeaderProfile();
-                    renderCurriculum();
-                    hideProfileModal();
-                };
-                list.appendChild(item);
-            });
-        }
-
-        function addNewProfile() {
-            const input = document.getElementById('newProfileInput');
-            const name = input.value.trim();
-            if (!name) return;
-
-            const newId = 'profile_' + Date.now();
-            profiles[newId] = { id: newId, name, completed: [] };
-            currentProfileId = newId;
-            saveProfileData();
-            input.value = '';
-            updateHeaderProfile();
-            renderCurriculum();
-            hideProfileModal();
-        }
-
-        function updateHeaderProfile() {
-            const p = getCurrentProfile();
-            document.getElementById('headerName').textContent = p.name;
-            document.getElementById('headerAvatar').textContent = p.name.charAt(0).toUpperCase();
-        }
-
-        // Initialize on load
-        window.addEventListener('DOMContentLoaded', async () => {
-            updateStreamModeUI();
-            await loadProfiles();
-
-            // Auto-select first lesson if none selected
-            if (!currentVideo && courseData.modules.length > 0 && courseData.modules[0].topics.length > 0) {
-                const firstMod = courseData.modules[0];
-                const firstTopic = firstMod.topics[0];
-                selectVideo(firstTopic, firstMod);
+        const completedVideos = [];
+        const completedAt = {};
+        const removedAt = {};
+        new Set([...doneA, ...doneB, ...Object.keys(raA), ...Object.keys(raB)]).forEach((id) => {
+            const tDone = Math.max(doneA.has(id) ? Math.max(1, ts(caA[id])) : 0, doneB.has(id) ? Math.max(1, ts(caB[id])) : 0);
+            const tRemoved = Math.max(ts(raA[id]), ts(raB[id]));
+            if (tDone && tDone > Math.max(tRemoved, resetAt)) {
+                completedVideos.push(id);
+                if (tDone > 1) completedAt[id] = iso(tDone);
+            } else if (tRemoved) {
+                removedAt[id] = iso(tRemoved);
             }
         });
+
+        const pbA = isObj(ap.playback) ? ap.playback : {};
+        const pbB = isObj(bp.playback) ? bp.playback : {};
+        const playback = {};
+        new Set([...Object.keys(pbA), ...Object.keys(pbB)]).forEach((id) => {
+            const x = pbA[id];
+            const y = pbB[id];
+            const w = !isObj(x) ? y : !isObj(y) ? x : (ts(y.updatedAt) >= ts(x.updatedAt) ? y : x);
+            if (isObj(w) && (!resetAt || ts(w.updatedAt) > resetAt)) playback[id] = w;
+        });
+
+        const bNewer = ts(b.updatedAt) >= ts(a.updatedAt);
+        const progress = Object.assign({}, bNewer ? ap : bp, bNewer ? bp : ap, { completedVideos, completedAt, removedAt, playback });
+        if (resetAt) progress.resetAt = iso(resetAt);
+        const lastActive = Math.max(ts(ap.lastActiveAt), ts(bp.lastActiveAt));
+        if (lastActive) progress.lastActiveAt = iso(lastActive);
+        const recent = ts(bp.lastActiveAt) >= ts(ap.lastActiveAt) ? bp : ap;
+        if (recent.currentVideoId) progress.currentVideoId = recent.currentVideoId;
+        if (recent.lastWatched) progress.lastWatched = recent.lastWatched;
+
+        const merged = Object.assign({}, bNewer ? a : b, bNewer ? b : a, { progress, completed: completedVideos.slice() });
+        const updated = Math.max(ts(a.updatedAt), ts(b.updatedAt));
+        if (updated) merged.updatedAt = iso(updated);
+        return merged;
+    }
+
+    // Merge server state into this device's copy, profile by profile.
+    function mergeRemote(remote) {
+        const rp = (remote && remote.profiles && typeof remote.profiles === 'object') ? remote.profiles : {};
+        const lastSync = Number(store.get(LS.lastSync, '0')) || 0;
+        let needsPush = false;
+
+        Object.keys(rp).forEach((id) => {
+            if (deletedIds.has(id)) { needsPush = true; return; }
+            const r = normalizeProfile(rp[id], id);
+            const l = profiles[id];
+            const merged = l ? normalizeProfile(mergeLearnProfile(r, l), id) : r;
+            if (l && signature(merged) !== signature(r)) needsPush = true;
+            profiles[id] = merged;
+        });
+        const remoteEmpty = Object.keys(rp).length === 0;
+        Object.keys(profiles).forEach((id) => {
+            if (rp[id]) return;
+            // Server returned nothing at all (e.g. a DB misconfiguration): never wipe this device's copy.
+            if (remoteEmpty) { needsPush = true; return; }
+            // Local-only profile: keep it if it was created/changed after our last successful sync
+            // (i.e. made offline); otherwise it was deleted on another device.
+            if (stamp(profiles[id]) > lastSync) needsPush = true;
+            else delete profiles[id];
+        });
+        return { needsPush, remoteCurrent: remote && remote.currentProfileId };
+    }
+
+    function pickDefaultProfile(preferred) {
+        if (preferred && profiles[preferred]) return preferred;
+        const list = Object.values(profiles);
+        if (!list.length) return null;
+        list.sort((a, b) => doneSet(b).size - doneSet(a).size || stamp(b) - stamp(a));
+        return list[0].id;
+    }
+
+    async function loadProfiles() {
+        const cached = store.json(LS.profiles, {}) || {};
+        Object.keys(cached).forEach((id) => { if (!deletedIds.has(id)) profiles[id] = normalizeProfile(cached[id], id); });
+        currentId = store.get(LS.current, null);
+        let remoteCurrent = null;
+        let needsPush = false;
+        try {
+            const remote = await apiGet('/api/learn-investing/state');
+            const r = mergeRemote(remote);
+            needsPush = r.needsPush;
+            remoteCurrent = r.remoteCurrent;
+            remoteOk = true;
+            store.set(LS.lastSync, String(Date.now()));
+            setSync('ok');
+        } catch (e) {
+            console.warn('[Learn Investing] Server unreachable, using this device\'s copy:', e.message);
+            setSync('offline');
+        }
+        if (!currentId || !profiles[currentId]) currentId = pickDefaultProfile(remoteCurrent);
+        cacheLocal();
+        if (remoteOk && needsPush) scheduleSync(500);
+    }
+
+    // Background pull (another device may have made progress)
+    async function pullRemote() {
+        if (syncTimer || syncing || isPlaying()) return;
+        try {
+            const remote = await apiGet('/api/learn-investing/state');
+            mergeRemote(remote);
+            remoteOk = true;
+            store.set(LS.lastSync, String(Date.now()));
+            setSync('ok');
+            if (!profiles[currentId]) currentId = pickDefaultProfile(remote.currentProfileId);
+            cacheLocal();
+            if (!currentId) { openProfiles(true); return; }
+            renderAll();
+        } catch (e) { setSync('offline'); }
+    }
+
+    let syncTimer = null, syncing = false, syncQueued = false, retryTimer = null;
+    function scheduleSync(delay) {
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(() => { syncTimer = null; syncNow(false); }, delay == null ? 1200 : delay);
+    }
+    function commit(delay) { cacheLocal(); scheduleSync(delay); }
+
+    async function syncNow(keepalive) {
+        if (syncing) { syncQueued = true; return; }
+        syncing = true;
+        clearTimeout(retryTimer);
+        try {
+            if (!remoteOk) {
+                // Never overwrite the server before we've seen what's on it.
+                const remote = await apiGet('/api/learn-investing/state');
+                mergeRemote(remote);
+                remoteOk = true;
+                if (!profiles[currentId]) currentId = pickDefaultProfile(remote.currentProfileId);
+                cacheLocal();
+                renderAll();
+            }
+            await apiPost('/api/learn-investing/state', {
+                profiles,
+                currentProfileId: currentId,
+                deletedProfileIds: Array.from(deletedIds)
+            }, keepalive);
+            deletedIds.clear();
+            store.set(LS.lastSync, String(Date.now()));
+            cacheLocal();
+            setSync('ok');
+        } catch (e) {
+            console.warn('[Learn Investing] Sync failed, will retry:', e.message);
+            setSync('offline');
+            retryTimer = setTimeout(() => syncNow(false), 20000);
+        } finally {
+            syncing = false;
+            if (syncQueued) { syncQueued = false; scheduleSync(300); }
+        }
+    }
+    function flushSync() {
+        if (!syncTimer && !syncQueued) return;
+        clearTimeout(syncTimer); syncTimer = null;
+        syncNow(true);
+    }
+
+    function setSync(s) {
+        syncStatus = s;
+        const dot = $('syncDot'), txt = $('syncText');
+        if (!dot) return;
+        dot.className = 'sync-dot ' + (s === 'ok' ? 'ok' : s === 'offline' ? 'warn' : '');
+        txt.textContent = s === 'offline'
+            ? 'Can\'t reach your server right now. Progress is kept on this device and will sync automatically once it\'s back.'
+            : 'Progress, resume points and profiles are saved to your server (MongoDB) and sync across all your devices.';
+    }
+
+    function setDone(id, done, opts) {
+        const p = profile();
+        if (!p || !BY_ID[id]) return;
+        const set = new Set(p.progress.completedVideos);
+        const was = set.has(id);
+        if (done === was) return;
+        if (done) { set.add(id); p.progress.completedAt[id] = nowIso(); delete p.progress.removedAt[id]; }
+        else { set.delete(id); delete p.progress.completedAt[id]; p.progress.removedAt[id] = nowIso(); }
+        p.progress.completedVideos = Array.from(set);
+        p.completed = p.progress.completedVideos.slice();
+        p.progress.lastActiveAt = nowIso();
+        touch(p);
+        commit(600);
+        renderAll();
+        if (!(opts && opts.silent)) {
+            const left = TOTAL - doneSet().size;
+            if (done) toast(left === 0 ? 'Course complete — outstanding work!' : `Marked done · ${left} lesson${left === 1 ? '' : 's'} to go`, left === 0 ? 'trophy' : 'check-circle');
+            else toast('Marked as not done', 'info', true);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Learning flow
+    // ------------------------------------------------------------------
+    let current = null;
+    let autoplayNext = store.get(LS.autoplay, '1') !== '0';
+    let mode = store.get(LS.mode, null) || (IN_APP ? 'proxy' : 'direct');
+    if (mode !== 'proxy' && mode !== 'direct') mode = 'direct';
+
+    function nextLesson() {
+        const done = doneSet();
+        const p = profile();
+        const last = p && BY_ID[p.progress.lastWatched];
+        if (last) {
+            if (!done.has(last.id)) return last;
+            for (let i = last.globalIndex + 1; i < TOTAL; i++) if (!done.has(LESSONS[i].id)) return LESSONS[i];
+        }
+        return LESSONS.find((l) => !done.has(l.id)) || null;
+    }
+
+    function resumeAt(id) {
+        const pb = playbackOf(id);
+        if (!pb || !(pb.seconds >= 10)) return 0;
+        if (pb.duration && pb.seconds > pb.duration - 15) return 0;
+        return pb.seconds;
+    }
+
+    function selectLesson(id, opts) {
+        opts = opts || {};
+        const lesson = BY_ID[id];
+        if (!lesson) return;
+        savePlayback(true);
+        stopPlayer();
+        current = lesson;
+        const p = profile();
+        if (p && opts.persist !== false) {
+            p.progress.currentVideoId = id;
+            p.progress.lastWatched = id;
+            p.progress.lastActiveAt = nowIso();
+            touch(p);
+            commit();
+        }
+        renderLesson();
+        renderPoster();
+        renderLessonHighlights();
+        renderContinue();
+        if (opts.autoplay) startPlayback();
+        if (opts.scroll) $('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function onLessonEnded() {
+        if (!current) return;
+        const finished = current;
+        setDone(finished.id, true, { silent: true });
+        const next = LESSONS[finished.globalIndex + 1];
+        if (!next) { toast('Course complete — outstanding work!', 'trophy'); return; }
+        if (autoplayNext) {
+            toast(`Lesson done ✓ Up next: ${next.title}`, 'check-circle');
+            setTimeout(() => { if (current === finished) selectLesson(next.id, { autoplay: true }); }, 1500);
+        } else {
+            toast('Lesson done ✓', 'check-circle');
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Player: YouTube (nocookie iframe + postMessage bridge) or server proxy (<video>)
+    // ------------------------------------------------------------------
+    const frame = () => $('playerFrame');
+    const yt = { iframe: null, alive: false, time: 0, duration: 0, state: -1, index: 0, count: 0, handshake: null, watchdog: null, seekOnce: 0, wantIndex: 0 };
+    const px = { video: null, items: null, index: 0 };
+    let autosaveTimer = null;
+
+    const isActive = () => !!(yt.iframe || px.video);
+    const isPlaying = () => (yt.iframe && yt.state === 1) || (px.video && !px.video.paused && !px.video.ended);
+
+    function stopPlayer() {
+        clearInterval(autosaveTimer); autosaveTimer = null;
+        clearInterval(yt.handshake); clearTimeout(yt.watchdog);
+        if (yt.iframe) { yt.iframe.remove(); }
+        Object.assign(yt, { iframe: null, alive: false, time: 0, duration: 0, state: -1, index: 0, count: 0, seekOnce: 0, wantIndex: 0 });
+        if (px.video) { try { px.video.pause(); px.video.removeAttribute('src'); px.video.load(); } catch (e) { /* ignore */ } px.video.remove(); }
+        px.video = null; px.items = null; px.index = 0;
+        hideOverlay();
+        $('partChip').classList.add('hidden');
+        $('poster').classList.remove('hidden');
+        renderPlayState();
+    }
+
+    function startPlayback() {
+        if (!current) return;
+        stopPlayer();
+        $('poster').classList.add('hidden');
+        if (mode === 'proxy') startProxy(); else startYouTube();
+        renderPlayState();
+    }
+
+    function startYouTube() {
+        const lesson = current;
+        const pb = playbackOf(lesson.id) || {};
+        const start = resumeAt(lesson.id);
+        const params = new URLSearchParams({ autoplay: '1', playsinline: '1', rel: '0', modestbranding: '1', enablejsapi: '1' });
+        if (/^https?:$/.test(location.protocol)) params.set('origin', location.origin);
+        let src;
+        if (isPlaylist(lesson)) {
+            params.set('list', ytListId(lesson));
+            src = 'https://www.youtube-nocookie.com/embed/videoseries?' + params.toString();
+            yt.wantIndex = Math.max(0, pb.playlistIndex || 0);
+            yt.seekOnce = start;
+        } else {
+            if (start) params.set('start', String(start));
+            src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(ytVideoId(lesson)) + '?' + params.toString();
+        }
+        const f = document.createElement('iframe');
+        f.src = src;
+        f.title = lesson.title;
+        f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+        f.setAttribute('allowfullscreen', '');
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
+        yt.iframe = f;
+        frame().appendChild(f);
+
+        let tries = 0;
+        const listen = () => {
+            if (!yt.iframe || yt.alive || ++tries > 60) { clearInterval(yt.handshake); return; }
+            try { yt.iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (e) { /* ignore */ }
+        };
+        f.addEventListener('load', () => { listen(); clearInterval(yt.handshake); yt.handshake = setInterval(listen, 250); });
+        yt.watchdog = setTimeout(() => {
+            if (yt.iframe === f && !yt.alive) toast('Video not loading? YouTube may be blocked on this network — switch "Play via" to My server.', 'info', true, 7000);
+        }, 12000);
+    }
+
+    function ytCommand(func, args) {
+        if (!yt.iframe) return;
+        try { yt.iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [], id: 1, channel: 'widget' }), '*'); } catch (e) { /* ignore */ }
+    }
+
+    window.addEventListener('message', (e) => {
+        if (!yt.iframe || e.source !== yt.iframe.contentWindow) return;
+        let d = e.data;
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
+        if (!d || typeof d !== 'object') return;
+        if (!yt.alive) { yt.alive = true; clearInterval(yt.handshake); clearTimeout(yt.watchdog); }
+
+        if (d.event === 'onReady' && yt.wantIndex > 0) { ytCommand('playVideoAt', [yt.wantIndex]); }
+        if (d.event === 'onError') { showYouTubeError(d.info); return; }
+        if (d.event === 'onStateChange') { onYtState(Number(d.info)); return; }
+        if ((d.event === 'infoDelivery' || d.event === 'initialDelivery') && d.info && typeof d.info === 'object') {
+            const i = d.info;
+            if (typeof i.currentTime === 'number') yt.time = i.currentTime;
+            if (typeof i.duration === 'number' && i.duration > 0) yt.duration = i.duration;
+            if (Array.isArray(i.playlist)) yt.count = i.playlist.length;
+            if (typeof i.playlistIndex === 'number' && i.playlistIndex >= 0) {
+                if (i.playlistIndex !== yt.index) { yt.index = i.playlistIndex; renderPartChip(yt.index, yt.count); }
+            }
+            if (typeof i.playerState === 'number') onYtState(i.playerState);
+            if (yt.seekOnce && yt.state === 1 && yt.index === yt.wantIndex) { ytCommand('seekTo', [yt.seekOnce, true]); yt.seekOnce = 0; }
+        }
+    });
+
+    function onYtState(s) {
+        if (s === yt.state) return;
+        yt.state = s;
+        if (s === 1) {
+            if (yt.seekOnce && (!yt.wantIndex || yt.index === yt.wantIndex)) { ytCommand('seekTo', [yt.seekOnce, true]); yt.seekOnce = 0; }
+            startAutosave();
+        } else if (s === 2) {
+            savePlayback(true);
+        } else if (s === 0) {
+            savePlayback(true);
+            const more = isPlaylist(current) && yt.count && yt.index < yt.count - 1;
+            if (!more) onLessonEnded();
+        }
+        renderPlayState();
+    }
+
+    function showYouTubeError(code) {
+        const known = { 2: 'invalid video link', 5: 'HTML5 player error', 100: 'video removed or private', 101: 'embedding disabled by the owner', 150: 'embedding disabled by the owner', 153: 'player configuration blocked in this app' };
+        showOverlay(`
+            <svg class="icon icon-lg"><use href="#i-info"/></svg>
+            <div class="msg"><strong>YouTube couldn't play this here</strong><br>${esc(known[code] || 'error ' + code)}. You can stream it through your server or open it on YouTube.</div>
+            <div class="row">
+                <button class="btn btn-light btn-sm" data-overlay="proxy"><svg class="icon icon-sm"><use href="#i-server"/></svg>Play via my server</button>
+                <a class="btn btn-ghost-light btn-sm" href="${esc(current.url)}" target="_blank" rel="noopener"><svg class="icon icon-sm"><use href="#i-external"/></svg>Open on YouTube</a>
+            </div>`);
+    }
+
+    async function startProxy() {
+        const lesson = current;
+        const pb = playbackOf(lesson.id) || {};
+        showOverlay(`<div class="spinner"></div><div class="msg">Preparing the stream on your server…<br><span style="opacity:.75">The first load can take 10–20 seconds.</span></div>`);
+
+        let vid = ytVideoId(lesson);
+        if (isPlaylist(lesson)) {
+            try {
+                const data = await apiGet('/api/stream/youtube/playlist?list=' + encodeURIComponent(ytListId(lesson)));
+                if (current !== lesson || mode !== 'proxy') return;
+                px.items = (data && Array.isArray(data.items)) ? data.items.filter((x) => x && x.id) : [];
+                if (!px.items.length) throw new Error('empty playlist');
+                px.index = Math.min(Math.max(0, pb.playlistIndex || 0), px.items.length - 1);
+                vid = px.items[px.index].id;
+            } catch (e) {
+                if (current !== lesson) return;
+                showProxyError('This playlist couldn\'t be loaded through your server (' + esc(e.message) + ').');
+                return;
+            }
+        }
+        if (!vid) { showProxyError('No video ID found for this lesson.'); return; }
+        loadProxyVideo(vid, resumeAt(lesson.id));
+    }
+
+    function loadProxyVideo(vid, startAt) {
+        if (px.video) { try { px.video.pause(); } catch (e) { /* ignore */ } px.video.remove(); }
+        const v = document.createElement('video');
+        v.controls = true;
+        v.playsInline = true;
+        v.setAttribute('playsinline', '');
+        v.setAttribute('controlsList', 'nodownload');
+        v.preload = 'auto';
+        v.autoplay = true;
+        v.src = apiBase() + '/api/stream/youtube?v=' + encodeURIComponent(vid);
+        px.video = v;
+        frame().insertBefore(v, $('partChip'));
+        if (px.items) renderPartChip(px.index, px.items.length);
+
+        v.addEventListener('loadedmetadata', () => { if (startAt && startAt < (v.duration || Infinity) - 5) v.currentTime = startAt; });
+        v.addEventListener('playing', () => { hideOverlay(); startAutosave(); renderPlayState(); });
+        v.addEventListener('canplay', () => hideOverlay());
+        v.addEventListener('pause', () => { savePlayback(true); renderPlayState(); });
+        v.addEventListener('ended', () => {
+            savePlayback(true);
+            if (px.items && px.index < px.items.length - 1) {
+                px.index++;
+                const p = profile();
+                if (p && current) { p.progress.playback[current.id] = { seconds: 0, duration: 0, playlistIndex: px.index, updatedAt: nowIso() }; touch(p); commit(); }
+                loadProxyVideo(px.items[px.index].id, 0);
+            } else {
+                onLessonEnded();
+            }
+        });
+        v.addEventListener('error', () => {
+            if (px.video !== v) return;
+            showProxyError('Your server couldn\'t stream this video (it may be waking up, or yt-dlp needs updating).');
+        });
+        const p = v.play();
+        if (p && p.catch) p.catch((err) => { if (err && err.name === 'NotAllowedError' && px.video === v) hideOverlay(); /* autoplay needs a tap; controls are visible */ });
+    }
+
+    function showProxyError(message) {
+        showOverlay(`
+            <svg class="icon icon-lg"><use href="#i-info"/></svg>
+            <div class="msg"><strong>Server stream failed</strong><br>${message}</div>
+            <div class="row">
+                <button class="btn btn-light btn-sm" data-overlay="retry"><svg class="icon icon-sm"><use href="#i-reset"/></svg>Try again</button>
+                <button class="btn btn-ghost-light btn-sm" data-overlay="direct"><svg class="icon icon-sm"><use href="#i-yt"/></svg>Play via YouTube</button>
+                <a class="btn btn-ghost-light btn-sm" href="${esc(current.url)}" target="_blank" rel="noopener"><svg class="icon icon-sm"><use href="#i-external"/></svg>Open on YouTube</a>
+            </div>`);
+    }
+
+    function showOverlay(html) { const o = $('playerOverlay'); o.innerHTML = html; o.classList.remove('hidden'); }
+    function hideOverlay() { const o = $('playerOverlay'); o.classList.add('hidden'); o.innerHTML = ''; }
+
+    function renderPartChip(index, count) {
+        const chip = $('partChip');
+        if (!current || !isPlaylist(current)) { chip.classList.add('hidden'); return; }
+        chip.textContent = count ? `Part ${index + 1} of ${count}` : `Part ${index + 1}`;
+        chip.classList.remove('hidden');
+    }
+
+    function playerTimes() {
+        if (yt.iframe && yt.alive) return { t: yt.time, d: yt.duration, i: yt.index };
+        if (px.video) return { t: px.video.currentTime, d: isFinite(px.video.duration) ? px.video.duration : 0, i: px.index };
+        return null;
+    }
+
+    function savePlayback(pushSoon) {
+        if (!current || !isActive()) return;
+        const p = profile();
+        const times = playerTimes();
+        if (!p || !times || !(times.t > 1)) return;
+        const prev = p.progress.playback[current.id] || {};
+        p.progress.playback[current.id] = {
+            seconds: Math.floor(times.t),
+            duration: Math.floor(times.d || prev.duration || 0),
+            playlistIndex: Math.max(0, times.i || 0),
+            updatedAt: nowIso()
+        };
+        p.progress.lastActiveAt = nowIso();
+        touch(p);
+        commit(pushSoon ? 800 : 4000);
+        renderResume();
+        updateLessonRowProgress(current.id);
+    }
+
+    function startAutosave() {
+        if (autosaveTimer) return;
+        autosaveTimer = setInterval(() => { if (isPlaying()) savePlayback(false); }, 10000);
+    }
+
+    function setMode(m) {
+        if (m === mode) return;
+        const wasActive = isActive();
+        savePlayback(true);
+        mode = m;
+        store.set(LS.mode, m);
+        renderMode();
+        if (wasActive && current) startPlayback();
+    }
+
+    // ------------------------------------------------------------------
+    // Rendering
+    // ------------------------------------------------------------------
+    let filter = 'all';
+    let query = '';
+    const collapsed = new Set(store.json(LS.collapsed, null) || []);
+    let collapsedInit = store.json(LS.collapsed, null) !== null;
+
+    function setRing(el, circumference, pct) { el.style.strokeDashoffset = String(circumference - (pct / 100) * circumference); }
+
+    function renderAll() {
+        renderHeader();
+        renderStats();
+        renderContinue();
+        renderNav();
+        renderCurriculum();
+        renderLesson();
+        renderPlayState();
+    }
+
+    function renderHeader() {
+        const p = profile();
+        $('headerAvatar').textContent = p ? initials(p.name) : '?';
+        $('headerName').textContent = p ? p.name : 'Profile';
+        const pct = Math.round((doneSet().size / TOTAL) * 100);
+        $('pillPct').textContent = pct;
+        setRing($('pillRing'), 94.25, pct);
+        $('brandSub').textContent = `Complete Hindi course · ${courseData.modules.length} modules · ${TOTAL} lessons`;
+    }
+
+    function renderStats() {
+        const done = doneSet();
+        const n = done.size;
+        const pct = Math.round((n / TOTAL) * 100);
+        $('bigPct').textContent = pct;
+        setRing($('bigRing'), 213.63, pct);
+        $('progressHeadline').textContent = n === 0 ? 'Let\'s get started' : pct >= 100 ? 'Course complete!' : pct >= 75 ? 'Almost there' : pct >= 40 ? 'Great momentum' : 'Good start';
+        $('progressSub').textContent = `${n} of ${TOTAL} lessons completed`;
+        $('statLeft').textContent = TOTAL - n;
+        const modsDone = courseData.modules.filter((m) => m.topics.every((t) => done.has(t.id))).length;
+        $('statModules').textContent = `${modsDone}/${courseData.modules.length}`;
+        const p = profile();
+        const last = lastActivity(p);
+        $('statLast').textContent = last ? fmtAgo(last) : '—';
+        $('curriculumSub').textContent = `${courseData.modules.length} modules · ${TOTAL} lessons · ${n} done`;
+    }
+
+    function renderContinue() {
+        const card = $('continueCard');
+        const next = nextLesson();
+        const resume = $('continueResume');
+        if (!next) {
+            card.classList.remove('same-as-player');
+            card.classList.add('done');
+            $('continueEyebrow').textContent = 'All lessons complete';
+            $('continueTitle').textContent = 'You finished Stock Market Mastery 🎉';
+            $('continueMeta').textContent = 'Revisit any lesson to refresh a concept.';
+            $('continueBtnText').textContent = 'Watch from the start';
+            resume.classList.add('hidden');
+            card.dataset.target = LESSONS[0].id;
+            return;
+        }
+        card.classList.remove('done');
+        card.dataset.target = next.id;
+        const isCurrent = current && current.id === next.id;
+        card.classList.toggle('same-as-player', !!isCurrent);
+        $('continueEyebrow').textContent = doneSet().size === 0 && !resumeAt(next.id) ? 'Start here' : 'Continue learning';
+        $('continueTitle').textContent = next.title;
+        $('continueMeta').textContent = `Module ${next.module.id} · Lesson ${next.indexInModule + 1} of ${next.module.topics.length} · ${next.channel}`;
+        const pb = playbackOf(next.id);
+        const at = resumeAt(next.id);
+        if (at) {
+            resume.classList.remove('hidden');
+            const pct = pb.duration ? Math.min(100, Math.round((at / pb.duration) * 100)) : 0;
+            $('continueResumeBar').style.width = pct + '%';
+            $('continueResumeLabel').textContent = pb.duration ? `${fmtTime(at)} of ${fmtTime(pb.duration)} watched` : `Stopped at ${fmtTime(at)}`;
+            $('continueBtnText').textContent = `Resume at ${fmtTime(at)}`;
+        } else {
+            resume.classList.add('hidden');
+            $('continueBtnText').textContent = 'Start lesson';
+        }
+    }
+
+    // Most recent study activity (older data may not have lastActiveAt)
+    function lastActivity(p) {
+        if (!p) return null;
+        let best = Date.parse(p.progress.lastActiveAt) || 0;
+        Object.values(p.progress.playback || {}).forEach((pb) => { const t = Date.parse(pb && pb.updatedAt); if (t > best) best = t; });
+        Object.values(p.progress.completedAt || {}).forEach((iso) => { const t = Date.parse(iso); if (t > best) best = t; });
+        return best ? new Date(best).toISOString() : null;
+    }
+
+    function moduleCounts(mod, done) {
+        const d = mod.topics.filter((t) => done.has(t.id)).length;
+        return { d, n: mod.topics.length, pct: Math.round((d / mod.topics.length) * 100) };
+    }
+
+    function renderNav() {
+        const done = doneSet();
+        $('moduleNav').innerHTML = courseData.modules.map((m) => {
+            const c = moduleCounts(m, done);
+            const active = current && current.module === m;
+            return `<button class="nav-item ${m.cls}${active ? ' active' : ''}" type="button" data-jump="${m.id}">
+                <span class="nav-num" style="background: linear-gradient(135deg, var(--mod), var(--mod-b))">${c.d === c.n ? '<svg class="icon icon-sm"><use href="#i-check"/></svg>' : m.id}</span>
+                <span class="nav-body"><span class="nav-name">${esc(m.title)}</span><span class="nav-bar" style="display:block"><span style="width:${c.pct}%; background: var(--mod)"></span></span></span>
+                <span class="nav-count${c.d === c.n ? ' complete' : ''}">${c.d}/${c.n}</span>
+            </button>`;
+        }).join('');
+        $('moduleJump').innerHTML = courseData.modules.map((m) => {
+            const c = moduleCounts(m, done);
+            return `<button class="jump-chip ${m.cls}" type="button" data-jump="${m.id}"><span class="dot" style="background: var(--mod)"></span>${esc(shortTitle(m.title))}<span class="count">${c.d}/${c.n}</span></button>`;
+        }).join('');
+    }
+    const shortTitle = (t) => t.split(/[&:,]/)[0].trim();
+
+    function lessonMatches(l, done) {
+        if (filter === 'todo' && done.has(l.id)) return false;
+        if (filter === 'done' && !done.has(l.id)) return false;
+        if (query) {
+            const hay = (l.title + ' ' + l.channel + ' ' + (l.description || '') + ' ' + l.module.title).toLowerCase();
+            return query.split(/\s+/).every((w) => hay.includes(w));
+        }
+        return true;
+    }
+
+    function lessonProgressHtml(l, done) {
+        if (done.has(l.id)) return '';
+        const pb = playbackOf(l.id);
+        const at = resumeAt(l.id);
+        if (!at) return '';
+        const pct = pb.duration ? Math.min(100, Math.round((at / pb.duration) * 100)) : 0;
+        return `<div class="lesson-progress">${pb.duration ? `<span class="bar"><span style="width:${pct}%"></span></span>` : ''}<span>${pb.duration ? `${fmtTime(at)} / ${fmtTime(pb.duration)}` : `Stopped at ${fmtTime(at)}`}</span></div>`;
+    }
+
+    function renderCurriculum() {
+        const done = doneSet();
+        if (!collapsedInit) {
+            courseData.modules.forEach((m) => { if (m.topics.every((t) => done.has(t.id))) collapsed.add(m.id); });
+            collapsedInit = true;
+        }
+        const searching = !!query || filter !== 'all';
+        let shown = 0;
+        const html = courseData.modules.map((m) => {
+            const lessons = m.topics.map((t) => BY_ID[t.id]).filter((l) => lessonMatches(l, done));
+            if (searching && !lessons.length) return '';
+            shown += lessons.length;
+            const c = moduleCounts(m, done);
+            const isCollapsed = !searching && collapsed.has(m.id);
+            const C = 113.1;
+            return `<section class="card module ${m.cls}${isCollapsed ? ' collapsed' : ''}" id="module-${m.id}">
+                <button class="module-head" type="button" data-toggle="${m.id}" aria-expanded="${!isCollapsed}">
+                    <div class="info">
+                        <div class="module-kicker">Module ${m.id} · ${m.topics.length} lessons</div>
+                        <div class="module-name">${esc(m.title)}</div>
+                        <div class="module-desc">${esc(m.subtitle)}</div>
+                    </div>
+                    <div class="module-stat">
+                        <div class="mini-ring" title="${c.d} of ${c.n} done">
+                            <svg viewBox="0 0 42 42"><circle class="t" cx="21" cy="21" r="18" fill="none" stroke-width="4"/><circle class="f" cx="21" cy="21" r="18" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C - (c.pct / 100) * C}"/></svg>
+                            <span class="v">${c.d}/${c.n}</span>
+                        </div>
+                        <svg class="icon chev"><use href="#i-down"/></svg>
+                    </div>
+                </button>
+                <ol class="lessons">${lessons.map((l) => lessonRowHtml(l, done)).join('')}</ol>
+            </section>`;
+        }).join('');
+        $('modules').innerHTML = shown ? html : `<div class="empty">No lessons match${query ? ` “${esc(query)}”` : ''}${filter !== 'all' ? ` in “${filter === 'todo' ? 'To do' : 'Done'}”` : ''}.</div>`;
+    }
+
+    function lessonRowHtml(l, done) {
+        const isDone = done.has(l.id);
+        const isCur = current && current.id === l.id;
+        const typeTag = l.type === 'playlist'
+            ? `<span class="tag playlist"><svg class="icon icon-xs"><use href="#i-list"/></svg>Playlist</span>`
+            : '';
+        return `<li class="lesson${isDone ? ' done' : ''}${isCur ? ' current' : ''}" data-lesson="${l.id}">
+            <button class="check" type="button" data-check="${l.id}" aria-label="${isDone ? 'Mark as not done' : 'Mark as done'}" title="${isDone ? 'Mark as not done' : 'Mark as done'}">
+                <span class="num">${l.indexInModule + 1}</span><svg class="icon icon-sm"><use href="#i-check"/></svg>
+            </button>
+            <div class="lesson-main">
+                <div class="lesson-row1"><span class="lesson-name">${esc(l.title)}</span>${typeTag}${isCur ? `<span class="now-pill">${isPlaying() ? '<span class="eq"><i></i><i></i><i></i></span>Playing' : 'Current'}</span>` : ''}</div>
+                <div class="lesson-by">${esc(l.channel)}</div>
+                <div class="lesson-about">${esc(l.description || '')}</div>
+                <div class="lp-slot">${lessonProgressHtml(l, done)}</div>
+            </div>
+            <span class="lesson-go" aria-hidden="true"><svg class="icon icon-sm icon-fill"><use href="#i-play"/></svg></span>
+        </li>`;
+    }
+
+    function updateLessonRowProgress(id) {
+        const row = document.querySelector(`.lesson[data-lesson="${id}"] .lp-slot`);
+        if (row) row.innerHTML = lessonProgressHtml(BY_ID[id], doneSet());
+    }
+
+    function renderLessonHighlights() {
+        const done = doneSet();
+        document.querySelectorAll('.lesson').forEach((row) => {
+            const id = row.dataset.lesson;
+            const isCur = current && current.id === id;
+            row.classList.toggle('current', !!isCur);
+            const r1 = row.querySelector('.lesson-row1');
+            const pill = r1.querySelector('.now-pill');
+            if (isCur && !pill) r1.insertAdjacentHTML('beforeend', `<span class="now-pill">Current</span>`);
+            if (!isCur && pill) pill.remove();
+            row.classList.toggle('done', done.has(id));
+        });
+        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', !!(current && String(current.module.id) === b.dataset.jump)));
+    }
+
+    function renderLesson() {
+        if (!current) return;
+        const l = current;
+        const done = doneSet().has(l.id);
+        $('playerCard').className = 'card player-card ' + l.module.cls;
+        $('lessonTags').innerHTML = `
+            <span class="tag module">Module ${l.module.id} · ${esc(l.module.title)}</span>
+            <span class="tag">Lesson ${l.globalIndex + 1} of ${TOTAL}</span>
+            ${l.type === 'playlist' ? '<span class="tag playlist"><svg class="icon icon-xs"><use href="#i-list"/></svg>Playlist</span>' : ''}
+            ${done ? '<span class="tag done"><svg class="icon icon-xs"><use href="#i-check"/></svg>Completed</span>' : ''}`;
+        $('lessonTitle').textContent = l.title;
+        $('lessonChannel').innerHTML = `<svg class="icon icon-sm"><use href="#i-user"/></svg>${esc(l.channel)}`;
+        $('lessonDesc').textContent = l.description || '';
+        $('openExternal').href = l.url;
+        $('prevBtn').disabled = l.globalIndex === 0;
+        $('nextBtn').disabled = l.globalIndex === TOTAL - 1;
+        const cb = $('completeBtn');
+        cb.className = 'btn ' + (done ? 'btn-done' : 'btn-outline');
+        $('completeBtnText').textContent = done ? 'Completed' : 'Mark as done';
+        cb.querySelector('use').setAttribute('href', done ? '#i-check-circle' : '#i-check');
+        renderResume();
+    }
+
+    function renderResume() {
+        if (!current) return;
+        const pb = playbackOf(current.id);
+        const at = resumeAt(current.id);
+        const line = $('resumeLine');
+        if (at && !doneSet().has(current.id)) {
+            line.classList.remove('hidden');
+            const pct = pb.duration ? Math.min(100, Math.round((at / pb.duration) * 100)) : 0;
+            $('resumeBar').style.width = pct + '%';
+            const part = isPlaylist(current) && pb.playlistIndex ? ` · part ${pb.playlistIndex + 1}` : '';
+            $('resumeText').textContent = (pb.duration ? `Watched ${fmtTime(at)} of ${fmtTime(pb.duration)}` : `Stopped at ${fmtTime(at)}`) + part;
+        } else {
+            line.classList.add('hidden');
+        }
+        if (!isActive()) $('playBtnText').textContent = at ? `Resume at ${fmtTime(at)}` : 'Play lesson';
+    }
+
+    function renderPoster() {
+        if (!current) return;
+        const at = resumeAt(current.id);
+        $('posterTitle').textContent = current.title;
+        $('posterHint').textContent = at ? `Resume from ${fmtTime(at)}` : (current.type === 'playlist' ? 'Playlist · tap to start' : 'Tap to start');
+        const img = $('posterImg');
+        const vid = ytVideoId(current);
+        if (vid) {
+            img.classList.add('hidden');
+            img.onload = () => img.classList.remove('hidden');
+            img.onerror = () => img.classList.add('hidden');
+            img.src = `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/hqdefault.jpg`;
+        } else {
+            img.removeAttribute('src');
+            img.classList.add('hidden');
+        }
+    }
+
+    function renderPlayState() {
+        const active = isActive();
+        $('playBtn').classList.toggle('hidden', active);
+        if (current) {
+            const pill = document.querySelector(`.lesson[data-lesson="${current.id}"] .now-pill`);
+            if (pill) pill.innerHTML = isPlaying() ? '<span class="eq"><i></i><i></i><i></i></span>Playing' : 'Current';
+        }
+    }
+
+    function renderMode() {
+        $('modeDirect').classList.toggle('on', mode === 'direct');
+        $('modeProxy').classList.toggle('on', mode === 'proxy');
+        $('modeDirect').setAttribute('aria-checked', String(mode === 'direct'));
+        $('modeProxy').setAttribute('aria-checked', String(mode === 'proxy'));
+        $('modeHint').textContent = mode === 'direct'
+            ? 'Streams straight from YouTube (fastest). If videos don\'t load on this network, switch to “My server”.'
+            : 'Streams through your Render server — works even where YouTube is blocked. The first load can take 10–20 seconds.';
+        const sw = $('autoplaySwitch');
+        sw.setAttribute('aria-checked', String(autoplayNext));
+    }
+
+    // ------------------------------------------------------------------
+    // Profiles UI
+    // ------------------------------------------------------------------
+    let firstRun = false;
+    function openProfiles(isFirstRun) {
+        firstRun = !!isFirstRun;
+        const hasProfiles = Object.keys(profiles).length > 0;
+        $('profileHero').classList.toggle('hidden', !firstRun);
+        $('profileHead').classList.toggle('hidden', firstRun);
+        $('profileFoot').classList.toggle('hidden', firstRun || !profile());
+        $('profileListWrap').classList.toggle('hidden', !hasProfiles);
+        $('profileError').classList.add('hidden');
+        renderProfileList();
+        setSync(syncStatus);
+        $('profileModal').classList.remove('hidden');
+        if (!hasProfiles) setTimeout(() => $('newProfileName').focus(), 50);
+    }
+    function closeProfiles() {
+        if (firstRun && !profile()) return;
+        $('profileModal').classList.add('hidden');
+    }
+
+    function renderProfileList() {
+        const list = Object.values(profiles).sort((a, b) => (a.id === currentId ? -1 : b.id === currentId ? 1 : a.name.localeCompare(b.name)));
+        $('profileList').innerHTML = list.map((p) => {
+            const n = doneSet(p).size;
+            const pct = Math.round((n / TOTAL) * 100);
+            const active = p.id === currentId;
+            return `<div class="profile-row${active ? ' active' : ''}" data-profile="${esc(p.id)}" role="button" tabindex="0">
+                <span class="avatar lg">${esc(initials(p.name))}</span>
+                <div class="meta">
+                    <div class="pname">${esc(p.name)}</div>
+                    <div class="psub">${n}/${TOTAL} lessons · ${pct}%${lastActivity(p) ? ' · ' + fmtAgo(lastActivity(p)) : ''}</div>
+                    <div class="pbar"><span style="width:${pct}%"></span></div>
+                </div>
+                ${active ? '<span class="active-badge">Active</span>' : ''}
+                <button class="row-del" type="button" data-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}" title="Delete profile"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+            </div>`;
+        }).join('');
+    }
+
+    function switchProfile(id) {
+        if (!profiles[id]) return;
+        savePlayback(true);
+        stopPlayer();
+        currentId = id;
+        commit(300);
+        $('profileModal').classList.add('hidden');
+        startCourse();
+        toast(`Switched to ${profiles[id].name}`, 'check-circle');
+    }
+
+    function addProfile() {
+        const input = $('newProfileName');
+        const name = input.value.trim();
+        if (!name) { $('profileError').classList.remove('hidden'); input.focus(); return; }
+        const id = 'profile_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const stampNow = nowIso();
+        profiles[id] = normalizeProfile({ id, name, createdAt: stampNow, updatedAt: stampNow, progress: {} }, id);
+        input.value = '';
+        savePlayback(true);
+        stopPlayer();
+        currentId = id;
+        commit(0);
+        $('profileModal').classList.add('hidden');
+        startCourse();
+        toast(`Welcome, ${name}! Let's start learning`, 'check-circle');
+    }
+
+    function deleteProfile(id) {
+        const p = profiles[id];
+        if (!p) return;
+        if (!window.confirm(`Delete "${p.name}" and all of its progress? This can't be undone.`)) return;
+        delete profiles[id];
+        deletedIds.add(id);
+        if (currentId === id) {
+            stopPlayer();
+            currentId = pickDefaultProfile(null);
+            if (currentId) startCourse();
+        }
+        commit(0);
+        if (!currentId) { $('app').classList.add('hidden'); openProfiles(true); return; }
+        openProfiles(false);
+        toast('Profile deleted', 'info', true);
+    }
+
+    function resetProgress() {
+        const p = profile();
+        if (!p) return;
+        if (!window.confirm(`Reset all progress for "${p.name}"? Completed lessons and resume points will be cleared.`)) return;
+        stopPlayer();
+        p.progress = normalizeProfile({ progress: { resetAt: nowIso() } }, p.id).progress;
+        p.completed = [];
+        touch(p);
+        commit(0);
+        $('profileModal').classList.add('hidden');
+        startCourse();
+        toast('Progress reset', 'info', true);
+    }
+
+    // ------------------------------------------------------------------
+    // Toast
+    // ------------------------------------------------------------------
+    let toastTimer = null;
+    function toast(msg, icon, warn, ms) {
+        const t = $('toast');
+        t.querySelector('use').setAttribute('href', '#i-' + (icon || 'check-circle'));
+        t.classList.toggle('warn', !!warn);
+        $('toastText').textContent = msg;
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove('show'), ms || 3200);
+    }
+
+    // ------------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------------
+    function bindEvents() {
+        $('profileBtn').addEventListener('click', () => openProfiles(false));
+        $('profileClose').addEventListener('click', closeProfiles);
+        $('profileModal').addEventListener('click', (e) => { if (e.target.id === 'profileModal') closeProfiles(); });
+        $('addProfileBtn').addEventListener('click', addProfile);
+        $('newProfileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') addProfile(); });
+        $('resetBtn').addEventListener('click', resetProgress);
+        $('profileList').addEventListener('click', (e) => {
+            const del = e.target.closest('[data-delete]');
+            if (del) { e.stopPropagation(); deleteProfile(del.dataset.delete); return; }
+            const row = e.target.closest('[data-profile]');
+            if (row) { if (row.dataset.profile === currentId) closeProfiles(); else switchProfile(row.dataset.profile); }
+        });
+        $('profileList').addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const row = e.target.closest('[data-profile]');
+            if (row) { e.preventDefault(); row.click(); }
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('profileModal').classList.contains('hidden')) closeProfiles(); });
+
+        $('continueBtn').addEventListener('click', () => {
+            const id = $('continueCard').dataset.target;
+            if (id) selectLesson(id, { autoplay: true, scroll: window.innerWidth <= 960 });
+        });
+        $('posterPlay').addEventListener('click', startPlayback);
+        $('playBtn').addEventListener('click', startPlayback);
+        $('completeBtn').addEventListener('click', () => { if (current) setDone(current.id, !doneSet().has(current.id)); });
+        $('prevBtn').addEventListener('click', () => { if (current && current.globalIndex > 0) selectLesson(LESSONS[current.globalIndex - 1].id, { autoplay: true }); });
+        $('nextBtn').addEventListener('click', () => { if (current && current.globalIndex < TOTAL - 1) selectLesson(LESSONS[current.globalIndex + 1].id, { autoplay: true }); });
+        $('modeDirect').addEventListener('click', () => setMode('direct'));
+        $('modeProxy').addEventListener('click', () => setMode('proxy'));
+        $('autoplaySwitch').addEventListener('click', () => {
+            autoplayNext = !autoplayNext;
+            store.set(LS.autoplay, autoplayNext ? '1' : '0');
+            renderMode();
+            toast(autoplayNext ? 'Auto-play next lesson: on' : 'Auto-play next lesson: off', 'info');
+        });
+        $('playerOverlay').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-overlay]');
+            if (!b) return;
+            const a = b.dataset.overlay;
+            if (a === 'proxy') setMode('proxy');
+            else if (a === 'direct') setMode('direct');
+            else if (a === 'retry') startPlayback();
+        });
+
+        $('modules').addEventListener('click', (e) => {
+            const tog = e.target.closest('[data-toggle]');
+            if (tog) {
+                const id = Number(tog.dataset.toggle);
+                const sec = $('module-' + id);
+                if (query || filter !== 'all') return;
+                if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+                sec.classList.toggle('collapsed', collapsed.has(id));
+                tog.setAttribute('aria-expanded', String(!collapsed.has(id)));
+                store.set(LS.collapsed, JSON.stringify(Array.from(collapsed)));
+                return;
+            }
+            const chk = e.target.closest('[data-check]');
+            if (chk) { e.stopPropagation(); setDone(chk.dataset.check, !doneSet().has(chk.dataset.check)); return; }
+            const row = e.target.closest('[data-lesson]');
+            if (row) selectLesson(row.dataset.lesson, { autoplay: true, scroll: true });
+        });
+
+        const jump = (e) => {
+            const b = e.target.closest('[data-jump]');
+            if (!b) return;
+            const id = Number(b.dataset.jump);
+            if (collapsed.has(id)) { collapsed.delete(id); store.set(LS.collapsed, JSON.stringify(Array.from(collapsed))); renderCurriculum(); }
+            const sec = $('module-' + id);
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        $('moduleNav').addEventListener('click', jump);
+        $('moduleJump').addEventListener('click', jump);
+
+        let searchTimer = null;
+        $('searchInput').addEventListener('input', (e) => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => { query = e.target.value.trim().toLowerCase(); renderCurriculum(); }, 120);
+        });
+        document.querySelectorAll('.chips [data-filter]').forEach((b) => b.addEventListener('click', () => {
+            filter = b.dataset.filter;
+            document.querySelectorAll('.chips [data-filter]').forEach((x) => x.classList.toggle('on', x === b));
+            renderCurriculum();
+        }));
+
+        window.addEventListener('pagehide', () => { savePlayback(true); flushSync(); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') { savePlayback(true); flushSync(); }
+            else if (remoteOk) pullRemote();
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Boot
+    // ------------------------------------------------------------------
+    function startCourse() {
+        $('app').classList.remove('hidden');
+        const p = profile();
+        const pick = (p && BY_ID[p.progress.currentVideoId] && !doneSet().has(p.progress.currentVideoId) && p.progress.currentVideoId)
+            || (nextLesson() || LESSONS[0]).id;
+        current = null;
+        renderAll();
+        selectLesson(pick, { persist: false });
+    }
+
+    async function init() {
+        if (!IN_APP) $('backLink').classList.remove('hidden');
+        renderMode();
+        bindEvents();
+        await loadProfiles();
+        if (!currentId) { openProfiles(true); return; }
+        startCourse();
+        const n = doneSet().size;
+        const name = profile().name;
+        toast(n ? `Welcome back, ${name} · ${n}/${TOTAL} lessons done` : `Welcome, ${name}!`, 'check-circle');
+    }
+
+    // Expose a tiny surface for debugging from the console
+    window.LearnInvesting = { get profiles() { return profiles; }, syncNow: () => syncNow(false) };
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+})();
+
     </script>
 </body>
 </html>

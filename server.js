@@ -45,14 +45,25 @@ const mongoose = require('mongoose');
 const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 
 // --- MongoDB Configuration ---
+// All app data (QuickNotes, FileHub, Finance, NewsHunt, Learn Investing, ...) lives in the
+// 'render-dashboard' database. Pin it via dbName so a URI without a /<db> path
+// (e.g. a mongodb+srv://...mongodb.net/?appName=... string) can never silently switch to
+// Mongo's default 'test' database and make all data look "gone".
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'render-dashboard';
+const IS_HOSTED = Boolean(process.env.RENDER);
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/render-dashboard';
 if (process.env.MONGO_URI) {
-    console.log('[DB] Connecting to configured MongoDB URI...');
+    console.log(`[DB] Connecting to configured MongoDB URI (db: ${MONGO_DB_NAME})...`);
+} else if (IS_HOSTED) {
+    console.error('==========================================================================');
+    console.error('[DB] FATAL CONFIG: MONGO_URI is NOT set on Render. No app data will load.');
+    console.error('[DB] Add MONGO_URI under Render > Service > Environment, then redeploy.');
+    console.error('==========================================================================');
 } else {
     console.warn('[DB] WARNING: MONGO_URI environment variable is not set. Falling back to local mongodb://127.0.0.1:27017/render-dashboard.');
 }
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('Connected to MongoDB (render-dashboard)'))
+mongoose.connect(MONGO_URI, { dbName: MONGO_DB_NAME })
+    .then(() => console.log(`Connected to MongoDB (${mongoose.connection.name})`))
     .catch(err => console.error('MongoDB connection error:', err.message));
 
 // --- Schemas & Models ---
@@ -327,7 +338,16 @@ setInterval(() => {
 
 // Healthcheck (public for Render keep-alive / external monitors)
 app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'ok', uptime: Math.round(process.uptime()) });
+    const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    res.status(200).json({
+        status: 'ok',
+        uptime: Math.round(process.uptime()),
+        db: {
+            configured: Boolean(process.env.MONGO_URI),
+            state: dbStates[mongoose.connection.readyState] || 'unknown',
+            name: mongoose.connection.name || null
+        }
+    });
 });
 
 // Login Page UI
@@ -2907,18 +2927,90 @@ const readLearnInvestingState = async () => {
     return normalizeLearnInvestingState(typeof data.toObject === 'function' ? data.toObject() : data);
 };
 
+// Merge two copies of one learner profile without losing progress:
+// - a lesson stays "done" unless it was un-marked (or the profile reset) AFTER it was completed
+// - resume points: the most recently updated one wins per lesson
+// - name / other fields: the copy with the newer updatedAt wins
+function mergeLearnProfile(a, b) {
+    const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+    if (!isObj(a)) return b;
+    if (!isObj(b)) return a;
+    const ts = (v) => { const t = Date.parse(v); return isNaN(t) ? 0 : t; };
+    const iso = (t) => new Date(t).toISOString();
+    const ap = isObj(a.progress) ? a.progress : {};
+    const bp = isObj(b.progress) ? b.progress : {};
+    const doneList = (p, prog) => [].concat(Array.isArray(prog.completedVideos) ? prog.completedVideos : [], Array.isArray(p.completed) ? p.completed : []).filter((x) => typeof x === 'string');
+    const doneA = new Set(doneList(a, ap));
+    const doneB = new Set(doneList(b, bp));
+    const caA = isObj(ap.completedAt) ? ap.completedAt : {};
+    const caB = isObj(bp.completedAt) ? bp.completedAt : {};
+    const raA = isObj(ap.removedAt) ? ap.removedAt : {};
+    const raB = isObj(bp.removedAt) ? bp.removedAt : {};
+    const resetAt = Math.max(ts(ap.resetAt), ts(bp.resetAt));
+
+    const completedVideos = [];
+    const completedAt = {};
+    const removedAt = {};
+    new Set([...doneA, ...doneB, ...Object.keys(raA), ...Object.keys(raB)]).forEach((id) => {
+        const tDone = Math.max(doneA.has(id) ? Math.max(1, ts(caA[id])) : 0, doneB.has(id) ? Math.max(1, ts(caB[id])) : 0);
+        const tRemoved = Math.max(ts(raA[id]), ts(raB[id]));
+        if (tDone && tDone > Math.max(tRemoved, resetAt)) {
+            completedVideos.push(id);
+            if (tDone > 1) completedAt[id] = iso(tDone);
+        } else if (tRemoved) {
+            removedAt[id] = iso(tRemoved);
+        }
+    });
+
+    const pbA = isObj(ap.playback) ? ap.playback : {};
+    const pbB = isObj(bp.playback) ? bp.playback : {};
+    const playback = {};
+    new Set([...Object.keys(pbA), ...Object.keys(pbB)]).forEach((id) => {
+        const x = pbA[id];
+        const y = pbB[id];
+        const w = !isObj(x) ? y : !isObj(y) ? x : (ts(y.updatedAt) >= ts(x.updatedAt) ? y : x);
+        if (isObj(w) && (!resetAt || ts(w.updatedAt) > resetAt)) playback[id] = w;
+    });
+
+    const bNewer = ts(b.updatedAt) >= ts(a.updatedAt);
+    const progress = Object.assign({}, bNewer ? ap : bp, bNewer ? bp : ap, { completedVideos, completedAt, removedAt, playback });
+    if (resetAt) progress.resetAt = iso(resetAt);
+    const lastActive = Math.max(ts(ap.lastActiveAt), ts(bp.lastActiveAt));
+    if (lastActive) progress.lastActiveAt = iso(lastActive);
+    const recent = ts(bp.lastActiveAt) >= ts(ap.lastActiveAt) ? bp : ap;
+    if (recent.currentVideoId) progress.currentVideoId = recent.currentVideoId;
+    if (recent.lastWatched) progress.lastWatched = recent.lastWatched;
+
+    const merged = Object.assign({}, bNewer ? a : b, bNewer ? b : a, { progress, completed: completedVideos.slice() });
+    const updated = Math.max(ts(a.updatedAt), ts(b.updatedAt));
+    if (updated) merged.updatedAt = iso(updated);
+    return merged;
+}
+
+// Saves MERGE into what is stored instead of replacing it, so a device with an old/partial copy
+// can never wipe other profiles or completed lessons. Profiles are only removed when a client
+// explicitly lists them in `deletedProfileIds`.
 const writeLearnInvestingState = async (state) => {
     const normalized = normalizeLearnInvestingState(state);
+    const deletedIds = Array.isArray(state && state.deletedProfileIds)
+        ? state.deletedProfileIds.filter(id => typeof id === 'string')
+        : [];
     const existing = await LearnInvestingState.findOne({});
 
     if (existing) {
-        existing.profiles = normalized.profiles;
-        existing.currentProfileId = normalized.currentProfileId;
+        const stored = isPlainObject(toPlainValue(existing.profiles)) ? { ...toPlainValue(existing.profiles) } : {};
+        for (const [id, incoming] of Object.entries(normalized.profiles)) {
+            stored[id] = stored[id] ? mergeLearnProfile(stored[id], incoming) : incoming;
+        }
+        deletedIds.forEach(id => { delete stored[id]; });
+        existing.profiles = stored;
+        existing.currentProfileId = normalized.currentProfileId || existing.currentProfileId || null;
         existing.markModified('profiles');
         await existing.save();
         return existing;
     }
 
+    deletedIds.forEach(id => { delete normalized.profiles[id]; });
     return LearnInvestingState.create(normalized);
 };
 
@@ -6042,6 +6134,37 @@ app.get('/api/stream/youtube/info', async (req, res) => {
             available: false,
             error: error.message || 'Failed to extract video stream'
         });
+    }
+});
+
+// Lists the videos of a YouTube playlist so playlist lessons can also be streamed through the server.
+const ytPlaylistCache = new Map(); // listId -> { data, expiresAt }
+app.get('/api/stream/youtube/playlist', async (req, res) => {
+    const listId = typeof req.query?.list === 'string' ? req.query.list.trim() : '';
+    if (!/^[A-Za-z0-9_-]{10,64}$/.test(listId)) {
+        return res.status(400).json({ error: 'A valid playlist ID (list) is required' });
+    }
+    const cached = ytPlaylistCache.get(listId);
+    if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.data);
+    }
+    try {
+        await ensureYtDlpAvailable();
+        const { stdout } = await runYtDlp([
+            '--flat-playlist',
+            '--no-warnings',
+            '-J',
+            `https://www.youtube.com/playlist?list=${listId}`
+        ], { timeoutMs: 45000 });
+        const info = JSON.parse(stdout);
+        const items = (Array.isArray(info.entries) ? info.entries : [])
+            .filter(entry => entry && typeof entry.id === 'string')
+            .map(entry => ({ id: entry.id, title: entry.title || '', duration: Number(entry.duration) || 0 }));
+        const data = { listId, title: info.title || '', items };
+        ytPlaylistCache.set(listId, { data, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
+        return res.json(data);
+    } catch (error) {
+        return res.status(502).json({ error: error.message || 'Failed to read playlist' });
     }
 });
 
