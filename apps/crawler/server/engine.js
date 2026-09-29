@@ -3,8 +3,55 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+const { assertPublicHttpUrl, isObviouslyPrivateUrl, guardedAxiosOptions } = require('../../../lib/outbound-guard');
 
 const CrawlerTask = mongoose.model('CrawlerTask');
+
+// Crawled pages can contain instructions aimed at the AI agent ("now open http://127.0.0.1:8888 ...").
+// The browser and the attachment downloader are therefore never allowed to reach this server or
+// any private network address, whatever the agent asks for.
+async function blockPrivateRequests(page) {
+    await page.setRequestInterception(true);
+    page.on('request', async (request) => {
+        if (request.isInterceptResolutionHandled()) return;
+        let blocked = isObviouslyPrivateUrl(request.url());
+        if (!blocked && request.isNavigationRequest() && /^https?:/i.test(request.url())) {
+            try {
+                await assertPublicHttpUrl(request.url());
+            } catch {
+                blocked = true;
+            }
+        }
+        if (request.isInterceptResolutionHandled()) return;
+        if (blocked) {
+            request.abort('blockedbyclient').catch(() => {});
+        } else {
+            request.continue().catch(() => {});
+        }
+    });
+}
+
+// Downloads a URL as a stream, re-checking every redirect hop against the SSRF guard.
+async function fetchPublicStream(url, maxRedirects = 5) {
+    let currentUrl = url;
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+        await assertPublicHttpUrl(currentUrl);
+        const response = await axios.get(currentUrl, {
+            ...guardedAxiosOptions,
+            responseType: 'stream',
+            timeout: 30000,
+            maxRedirects: 0,
+            validateStatus: (status) => status < 400
+        });
+        if (response.status >= 300 && response.headers.location) {
+            response.data.destroy();
+            currentUrl = new URL(response.headers.location, currentUrl).toString();
+            continue;
+        }
+        return response;
+    }
+    throw new Error('Too many redirects while downloading attachment.');
+}
 const CrawlerRun = mongoose.model('CrawlerRun');
 
 function isThinkingPart(part) {
@@ -564,6 +611,9 @@ async function executeCrawlerRun(runId) {
         log(`\x1b[36m[Target URLs]\x1b[0m ${targetUrls.length}`);
         
         if (targetUrls.length === 0) throw new Error("No start URLs provided for this task.");
+        for (const targetUrl of targetUrls) {
+            await assertPublicHttpUrl(targetUrl);
+        }
 
         const browserSession = await launchCrawlerBrowser(log);
         browser = browserSession.browser;
@@ -578,6 +628,7 @@ async function executeCrawlerRun(runId) {
                 password: 'super=true'
             });
         }
+        await blockPrivateRequests(page);
         log(`\x1b[90m[Browser]\x1b[0m Navigating to ${targetUrls[0]}...`);
         await page.goto(targetUrls[0], { waitUntil: 'networkidle2', timeout: 30000 });
         
@@ -676,6 +727,7 @@ async function executeCrawlerRun(runId) {
                             }
                         }
                         else if (funcName === 'goto_url') {
+                            await assertPublicHttpUrl(args.url);
                             await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
                             toolResponse = `Navigated to: ${page.url()}. Run get_page_content.`;
                             toolFailureCounts.clear();
@@ -690,14 +742,14 @@ async function executeCrawlerRun(runId) {
                             const uploadsDir = path.join(process.cwd(), 'uploads', 'crawler');
                             if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
                             
-                            const safeName = args.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                            const safeName = String(args.name || 'attachment').replace(/[^a-z0-9.]/gi, '_').replace(/^\.+/, '_').toLowerCase().slice(0, 120);
                             const fileName = `${Date.now()}_${safeName}`;
                             const filePath = path.join(uploadsDir, fileName);
                             const relativeUrl = `/uploads/crawler/${fileName}`;
 
                             log(`\x1b[90m[Tool]\x1b[0m Downloading attachment ${args.url}`);
                             try {
-                                const fileRes = await axios.get(args.url, { responseType: 'stream', timeout: 30000 });
+                                const fileRes = await fetchPublicStream(args.url);
                                 const writer = fs.createWriteStream(filePath);
                                 fileRes.data.pipe(writer);
                                 

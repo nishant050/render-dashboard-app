@@ -114,16 +114,35 @@ const Utils = {
         };
     },
 
-    // Escape HTML for safe rendering
+    // Escape HTML for safe rendering (text and quoted attribute values)
     escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     },
 
-    // Render markdown using marked.js
+    // Feed links are attacker-controlled: only http(s) URLs may become clickable (no javascript:).
+    safeUrl(url) {
+        try {
+            const parsed = new URL(String(url || ''), window.location.href);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : '#';
+        } catch {
+            return '#';
+        }
+    },
+
+    // A string argument for an inline onclick="fn(...)" handler: JS-quoted, then HTML-escaped.
+    jsArg(value) {
+        return Utils.escapeHtml(JSON.stringify(String(value ?? '')));
+    },
+
+    // Render markdown using marked.js. The markdown comes from AI rewrites of third-party articles,
+    // so the HTML is always passed through the allow-list sanitizer before it reaches the page.
     renderMarkdown(md) {
-        if (typeof marked !== 'undefined') {
+        if (typeof marked !== 'undefined' && typeof SafeHTML !== 'undefined') {
             marked.setOptions({
                 breaks: true,
                 gfm: true,
@@ -131,7 +150,7 @@ const Utils = {
                 mangle: false
             });
             // marked v12+ uses marked.parse with HTML allowed by default
-            return marked.parse(md);
+            return SafeHTML.sanitize(marked.parse(String(md || '')));
         }
         // Fallback: just wrap in <p>
         return `<p>${Utils.escapeHtml(md)}</p>`;

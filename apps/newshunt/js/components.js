@@ -26,7 +26,7 @@ const Components = {
     </span>
     <span class="article-card__date">${Utils.formatArticleDate(article)}</span>
     ${article.ratingReason ? `<span title="${Utils.escapeHtml(article.ratingReason)}" style="cursor:help">💡</span>` : ''}
-    <button class="btn btn--ghost btn--sm article-card__flag" title="Flag as irrelevant (downgrade to 1-star)" onclick="(function(e){ e.stopPropagation(); App.flagArticle('${article.guid}'); })(event)">🚩</button>
+    <button class="btn btn--ghost btn--sm article-card__flag" title="Flag as irrelevant (downgrade to 1-star)" onclick="(function(e){ e.stopPropagation(); App.flagArticle(${Utils.jsArg(article.guid)}); })(event)">🚩</button>
   </div>
 `;
 

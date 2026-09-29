@@ -129,6 +129,18 @@ You open one dashboard and launch multiple built-in utilities:
 
 ---
 
+## 🔒 Security model
+
+- **One login for everything.** `DASHBOARD_PASSWORD` protects every page, API and app (Finance included). It also unlocks Jupyter, i.e. a shell on the server, so use a long random value. Without it, a random one-time password is printed in the server log at startup; there is no default password.
+- **Set `SESSION_SECRET`.** It signs login cookies, share links and short-lived access tokens. Without it, all of those reset on every restart. Changing it logs everyone out and revokes every share link.
+- **Cookies only work for the dashboard's own requests.** Requests from other websites, or from sandboxed pages, never ride on your login (this blocks CSRF).
+- **Untrusted content is sandboxed.** Proxy Browser tabs, hosted `/p/*` pages and user files open in an opaque-origin sandbox. They cannot read your cookies or call the dashboard's APIs. Hosted pages keep `localStorage`/`sessionStorage`/`document.cookie` through server-backed shims, but IndexedDB is not available to them.
+- **No outbound requests to private networks.** Proxy Browser, NewsHunt feeds, the crawler and YT Downloader refuse `localhost`, private IP ranges and cloud-metadata addresses (`lib/outbound-guard.js`).
+- **Only front-end files are web-visible.** Server code, scripts and data files in the repository are never served.
+- **Password guessing is rate limited**, both per client and globally, on the login form and the `x-dashboard-password` header.
+- **Public endpoints** are limited to the login flow, `/api/health`, the APK download redirects and the static Learn Investing page. Its progress sync and video streaming need a login or a signed link.
+- **Never commit secrets.** This repository is public, so keep credentials in `.env` (git-ignored) or in Render's environment settings.
+
 ## ⚙️ Environment variables
 
 ### Required runtime dependencies for YT Downloader

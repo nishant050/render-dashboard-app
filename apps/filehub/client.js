@@ -141,6 +141,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pathJoin = (...parts) => parts.filter(p => p).join('/');
     const getFileUrl = (filename) => `/api/file-content?path=${encodeURIComponent(pathJoin(currentPath, filename))}`;
+    // File names and contents are untrusted (shared from other apps, extracted from ZIPs...).
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 
     // --- API Helper ---
     const apiCall = async (endpoint, method = 'GET', body = null) => {
@@ -285,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 itemEl.innerHTML = `
                     <div class="icon">${iconHtml}</div>
-                    <div class="name" title="${item.name}">${item.name}</div>
+                    <div class="name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
                     ${sizeHtml}
                 `;
 
@@ -445,7 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <i class="fas ${iconClass}"></i>
                 </div>
                 <div class="upload-item-info">
-                    <div class="upload-item-name" title="${file.name}">${file.name}</div>
+                    <div class="upload-item-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
                     <div class="upload-item-size">${formatFileSize(file.size)}</div>
                 </div>
                 <div class="upload-item-status uploading">
@@ -768,27 +775,32 @@ document.addEventListener('DOMContentLoaded', () => {
         previewBody.innerHTML = '';
         
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
-            previewBody.innerHTML = `<img src="${filePath}" alt="${filename}">`;
+            previewBody.innerHTML = `<img src="${escapeHtml(filePath)}" alt="${escapeHtml(filename)}">`;
         } else if (['mp4', 'webm', 'ogg'].includes(fileExt)) {
-            previewBody.innerHTML = `<video src="${filePath}" controls autoplay></video>`;
+            previewBody.innerHTML = `<video src="${escapeHtml(filePath)}" controls autoplay></video>`;
         } else if (['txt', 'js', 'css', 'html', 'json', 'md'].includes(fileExt)) {
             try {
                 const response = await fetch(filePath);
                 const text = await response.text();
-                previewBody.innerHTML = `<pre><code>${text.replace(/</g, "<").replace(/>/g, ">")}</code></pre>`;
-            } catch (error) { 
+                // Shown as plain text - an .html file must never be rendered as a page here.
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.textContent = text;
+                pre.appendChild(code);
+                previewBody.replaceChildren(pre);
+            } catch (error) {
                 previewBody.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">Could not load file content.</p>
-                <a href="${filePath}" download="${filename}" style="display: block; text-align: center; margin-top: 1rem; color: var(--primary-color);">
-                    <i class="fas fa-download"></i> Download '${filename}'
-                </a>`; 
+                <a href="${escapeHtml(filePath)}" download="${escapeHtml(filename)}" style="display: block; text-align: center; margin-top: 1rem; color: var(--primary-color);">
+                    <i class="fas fa-download"></i> Download '${escapeHtml(filename)}'
+                </a>`;
             }
         } else {
             previewBody.innerHTML = `
                 <div style="text-align: center; padding: 2rem;">
                     <i class="fas ${getFileTypeIcon(filename)}" style="font-size: 4rem; color: var(--glass-border); margin-bottom: 1rem;"></i>
                     <p style="color: var(--text-secondary);">Cannot preview this file type</p>
-                    <a href="${filePath}" download="${filename}" class="primary-btn" style="display: inline-flex; margin-top: 1rem; text-decoration: none;">
-                        <i class="fas fa-download"></i> Download '${filename}'
+                    <a href="${escapeHtml(filePath)}" download="${escapeHtml(filename)}" class="primary-btn" style="display: inline-flex; margin-top: 1rem; text-decoration: none;">
+                        <i class="fas fa-download"></i> Download '${escapeHtml(filename)}'
                     </a>
                 </div>
             `;

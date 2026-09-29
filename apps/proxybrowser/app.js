@@ -91,8 +91,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Listen for navigation messages sent from our injected proxy scripts in iframes
     window.addEventListener('message', (event) => {
-        if (event.origin !== window.location.origin) return;
-        
+        // Proxied pages run sandboxed, so their messages arrive with the opaque origin "null".
+        if (event.origin !== window.location.origin && event.origin !== 'null') return;
+
         // Find which tab this window belongs to
         const sendingTab = tabs.find(t => {
             const iframe = document.getElementById('iframe-' + t.id);
@@ -101,9 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!sendingTab) return;
 
-        if (event.data?.type === 'proxy:navigation' && typeof event.data.url === 'string') {
+        if (event.data?.type === 'proxy:navigation' && typeof event.data.url === 'string' && /^https?:\/\//i.test(event.data.url)) {
+            if (typeof event.data.title === 'string' && event.data.title.trim()) {
+                sendingTab.title = event.data.title.trim().slice(0, 200);
+            }
             const navUrl = event.data.url;
             syncTabNavigation(sendingTab, navUrl);
+            renderTabsList();
         }
     });
 
@@ -121,8 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create Iframe element
         const iframe = document.createElement('iframe');
         iframe.id = 'iframe-' + tabId;
-        iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups";
-        iframe.allow = "camera; microphone; geolocation; fullscreen";
+        // No allow-same-origin: proxied sites must never share the dashboard's origin (cookies,
+        // storage, APIs). The server also sends a CSP sandbox for every proxied response.
+        iframe.sandbox = "allow-scripts allow-forms allow-popups allow-modals allow-downloads";
+        iframe.allow = "fullscreen";
         
         // Create local New Tab view
         const newTabPage = document.createElement('div');
@@ -366,8 +373,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 favEl.textContent = '🌐';
             } else {
                 try {
+                    // Built with DOM APIs: the URL comes from the proxied (untrusted) page.
                     const host = new URL(tab.url).hostname;
-                    favEl.innerHTML = `<img src="https://www.google.com/s2/favicons?domain=${host}&sz=32" onerror="this.innerHTML='🌐'">`;
+                    const favImg = document.createElement('img');
+                    favImg.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
+                    favImg.addEventListener('error', () => { favEl.textContent = '🌐'; }, { once: true });
+                    favEl.appendChild(favImg);
                 } catch (e) {
                     favEl.textContent = '🌐';
                 }

@@ -12,6 +12,8 @@ services:
         sync: false
       - key: DASHBOARD_PASSWORD
         sync: false
+      - key: SESSION_SECRET
+        generateValue: true
       - key: SCRAPE_DO_API_KEY
         sync: false
       - key: YTDLP_PATH

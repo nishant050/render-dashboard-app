@@ -35,6 +35,7 @@ const fsPromises = require('fs').promises;
 const os = require('os');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
@@ -43,6 +44,13 @@ const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
 const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
+const {
+    OutboundUrlError,
+    assertPublicHttpUrl,
+    guardedHttpAgent,
+    guardedHttpsAgent,
+    guardedAxiosOptions
+} = require('./lib/outbound-guard');
 
 // --- MongoDB Configuration ---
 // All app data (QuickNotes, FileHub, Finance, NewsHunt, Learn Investing, ...) lives in the
@@ -193,6 +201,17 @@ const PORT = process.env.PORT || 3000;
 // Disable Express fingerprinting
 app.disable('x-powered-by');
 
+// Behind Render's proxy, trust exactly one hop so req.ip / req.protocol reflect the real client
+// (used by the login rate limiter and the Secure cookie flag). The right-most X-Forwarded-For
+// entry is the one added by that proxy, so clients cannot spoof it. Override with TRUST_PROXY.
+const parseTrustProxy = (value) => {
+    if (value === undefined || value === '') return IS_HOSTED ? 1 : false;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return /^\d+$/.test(value) ? Number(value) : value;
+};
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
+
 // --- HTTP Security Headers (Mozilla MDN HTTP Observatory Compliance) ---
 app.use((req, res, next) => {
     // 2. Referrer Policy: strict
@@ -242,15 +261,19 @@ app.use((req, res, next) => {
     next();
 });
 
-// Middleware to parse JSON & URL-encoded bodies (placed before auth routes)
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+// Request bodies are parsed only AFTER the gatekeeper (see below), so anonymous clients cannot
+// make the server buffer and parse 25 MB payloads. The login route has its own small parser.
 
 // --- Global CORS Middleware for API Endpoints ---
+// "*" never allows cookies, so cross-origin callers only get what their own credentials unlock.
+const API_ALLOWED_HEADERS = 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-dashboard-password, x-api-key, x-hosted-page-token, Range';
 app.use('/api', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-dashboard-password, x-api-key, Range');
+    // Pages opened through the Proxy Browser run sandboxed and may send their own headers.
+    const requestedHeaders = req.headers['access-control-request-headers'];
+    res.setHeader('Access-Control-Allow-Headers',
+        req.originalUrl.startsWith('/api/proxy') && requestedHeaders ? requestedHeaders : API_ALLOWED_HEADERS);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Type');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(204);
@@ -259,26 +282,32 @@ app.use('/api', (req, res, next) => {
 });
 
 // --- Universal Master Password Authentication Configuration ---
-// Priority: If DASHBOARD_PASSWORD is set in environment, ONLY that password is valid.
-// 'admin123' is only a temporary zero-config fallback if DASHBOARD_PASSWORD is not set.
-const MASTER_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin123';
+// DASHBOARD_PASSWORD is the only way in. There is deliberately no well-known default: if it is
+// missing, a random one-time password is generated and printed to the server log, so nobody who
+// clones this public repository can guess a working password.
 const IS_CUSTOM_PASSWORD_SET = Boolean(process.env.DASHBOARD_PASSWORD);
+const MASTER_PASSWORD = process.env.DASHBOARD_PASSWORD || crypto.randomBytes(18).toString('base64url');
 
 if (IS_CUSTOM_PASSWORD_SET) {
-    console.log('[Auth] DASHBOARD_PASSWORD environment variable is active. Default fallback "admin123" is disabled.');
+    console.log('[Auth] DASHBOARD_PASSWORD is configured.');
+    if (MASTER_PASSWORD.length < 12) {
+        console.warn('[Auth] WARNING: DASHBOARD_PASSWORD is shorter than 12 characters. It is the only thing protecting this server - use a long random password.');
+    }
 } else {
-    console.warn('[Auth] WARNING: DASHBOARD_PASSWORD is not set. Using temporary fallback "admin123". Please configure DASHBOARD_PASSWORD in Render environment variables.');
+    console.warn('==========================================================================');
+    console.warn('[Auth] DASHBOARD_PASSWORD is not set. Generated a one-time password for this run:');
+    console.warn(`[Auth]     ${MASTER_PASSWORD}`);
+    console.warn('[Auth] Set DASHBOARD_PASSWORD in the environment to choose a permanent password.');
+    console.warn('==========================================================================');
 }
 
-// Session secret key (persists in process memory or can be configured via SESSION_SECRET)
+// Signs session cookies, share links and the short-lived capability tokens below.
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.SESSION_SECRET) {
+    console.warn('[Auth] SESSION_SECRET is not set - using a random one, so logins and share links reset on every restart.');
+}
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const activeSessions = new Map(); // token -> { expiresAt }
-
-// Brute-force protection: ip -> { count, lockedUntil }
-const loginAttempts = new Map();
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 function verifyMasterPassword(inputPassword) {
     if (typeof inputPassword !== 'string' || !inputPassword) return false;
@@ -286,6 +315,76 @@ function verifyMasterPassword(inputPassword) {
     const targetHash = crypto.createHash('sha256').update(MASTER_PASSWORD).digest();
     return crypto.timingSafeEqual(inputHash, targetHash);
 }
+
+// --- Brute-force protection ---
+// Applies to EVERY place a password is checked: the login form, the x-dashboard-password header
+// and /api/auth/status. A per-client lockout, plus a global cap so rotating IP addresses does not
+// help an attacker. Existing logged-in sessions keep working while password checks are paused.
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const GLOBAL_FAILURE_LIMIT = 30; // failed attempts from all clients per window
+const authFailures = new Map(); // client -> { count, lockedUntil, lastFailure }
+const globalAuthFailures = { count: 0, windowStart: Date.now(), lockedUntil: 0 };
+
+const getClientKey = (req) => req.ip || req.socket?.remoteAddress || 'unknown';
+
+function getAuthLockRemainingMs(req) {
+    const now = Date.now();
+    if (globalAuthFailures.lockedUntil > now) return globalAuthFailures.lockedUntil - now;
+    const entry = authFailures.get(getClientKey(req));
+    return entry && entry.lockedUntil > now ? entry.lockedUntil - now : 0;
+}
+
+function recordAuthFailure(req) {
+    const now = Date.now();
+    const key = getClientKey(req);
+    const entry = authFailures.get(key) || { count: 0, lockedUntil: 0, lastFailure: 0 };
+    if (now - entry.lastFailure > LOCKOUT_DURATION_MS) entry.count = 0;
+    entry.count += 1;
+    entry.lastFailure = now;
+    if (entry.count >= MAX_LOGIN_ATTEMPTS) {
+        entry.lockedUntil = now + LOCKOUT_DURATION_MS;
+        entry.count = 0;
+    }
+    authFailures.set(key, entry);
+
+    if (now - globalAuthFailures.windowStart > LOCKOUT_DURATION_MS) {
+        globalAuthFailures.count = 0;
+        globalAuthFailures.windowStart = now;
+    }
+    globalAuthFailures.count += 1;
+    if (globalAuthFailures.count >= GLOBAL_FAILURE_LIMIT) {
+        globalAuthFailures.lockedUntil = now + LOCKOUT_DURATION_MS;
+        globalAuthFailures.count = 0;
+        globalAuthFailures.windowStart = now;
+        console.warn('[Auth] Too many failed password attempts across all clients - password checks paused for 15 minutes.');
+    }
+    return entry;
+}
+
+// Checks a password with rate limiting. Returns { ok } or { ok: false, lockedMs, remaining }.
+function checkPasswordAttempt(req, password) {
+    const lockedMs = getAuthLockRemainingMs(req);
+    if (lockedMs > 0) return { ok: false, lockedMs };
+    if (verifyMasterPassword(password)) {
+        authFailures.delete(getClientKey(req));
+        return { ok: true };
+    }
+    const entry = recordAuthFailure(req);
+    return {
+        ok: false,
+        lockedMs: getAuthLockRemainingMs(req),
+        remaining: Math.max(0, MAX_LOGIN_ATTEMPTS - entry.count)
+    };
+}
+
+const sendAuthLocked = (res, lockedMs) => {
+    res.setHeader('Retry-After', String(Math.ceil(lockedMs / 1000)));
+    return res.status(429).json({
+        error: `Too many failed password attempts. Try again in ${Math.ceil(lockedMs / 60000)} minute(s).`,
+        code: 'AUTH_LOCKED'
+    });
+};
 
 function createSessionToken() {
     const sessionId = crypto.randomBytes(24).toString('hex');
@@ -321,18 +420,112 @@ function getSessionCookie(req) {
     const cookies = String(req.headers.cookie || '').split(';');
     for (const cookie of cookies) {
         const [key, ...value] = cookie.trim().split('=');
-        if (key === 'dashboard_session') return decodeURIComponent(value.join('='));
+        if (key === 'dashboard_session') {
+            try {
+                return decodeURIComponent(value.join('='));
+            } catch {
+                return null;
+            }
+        }
     }
     return null;
 }
 
-// Clean up expired sessions periodically (every hour)
+// The session cookie is only honoured for requests the dashboard itself makes. Browsers label
+// every request with Sec-Fetch-Site; anything coming from another website - or from a sandboxed
+// (opaque-origin) frame such as a Proxy Browser tab or a hosted HTML page - is "cross-site" and
+// must never ride on the owner's login. This is the CSRF and "hostile page" defence.
+function isCookieUseAllowed(req) {
+    const site = req.headers['sec-fetch-site'];
+    if (site) {
+        if (site === 'same-origin' || site === 'none') return true;
+        // Following a link to the dashboard from elsewhere is fine for pages, never for APIs.
+        return (req.method === 'GET' || req.method === 'HEAD')
+            && req.headers['sec-fetch-mode'] === 'navigate'
+            && req.headers['sec-fetch-dest'] === 'document'
+            && !req.path.startsWith('/api/');
+    }
+    // Browsers without Fetch Metadata: fall back to the Origin header when there is one.
+    const origin = req.headers.origin;
+    if (origin) {
+        try {
+            return new URL(origin).host === req.get('host');
+        } catch {
+            return false;
+        }
+    }
+    return true; // Non-browser clients send neither header (and have no cookie to abuse).
+}
+
+function hasValidSessionCookie(req) {
+    return isCookieUseAllowed(req) && isValidSession(getSessionCookie(req));
+}
+
+// Clean up expired sessions and stale rate-limit entries periodically (every hour)
 setInterval(() => {
     const now = Date.now();
     for (const [tok, data] of activeSessions.entries()) {
         if (now > data.expiresAt) activeSessions.delete(tok);
     }
+    for (const [key, entry] of authFailures.entries()) {
+        if (entry.lockedUntil < now && now - entry.lastFailure > LOCKOUT_DURATION_MS) authFailures.delete(key);
+    }
 }, 60 * 60 * 1000);
+
+// --- Signed capability tokens ---
+// Short-lived HMAC tokens that unlock exactly one kind of resource without the session cookie:
+// Proxy Browser sub-requests, one hosted page's data, one YouTube stream. They are needed because
+// those requests come from sandboxed frames or <video> elements that cannot carry the cookie.
+const hmacHex = (payload) => crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+
+function safeHexEqual(provided, expected) {
+    if (typeof provided !== 'string' || typeof expected !== 'string') return false;
+    if (provided.length !== expected.length || !/^[0-9a-f]+$/i.test(provided)) return false;
+    return crypto.timingSafeEqual(Buffer.from(provided, 'hex'), Buffer.from(expected, 'hex'));
+}
+
+function createScopedToken(scope, ttlMs) {
+    const expiresAt = Date.now() + ttlMs;
+    return `${expiresAt}.${hmacHex(`${scope}:${expiresAt}`)}`;
+}
+
+function verifyScopedToken(scope, token) {
+    if (typeof token !== 'string') return false;
+    const dot = token.indexOf('.');
+    if (dot < 1) return false;
+    const expiresAt = token.slice(0, dot);
+    if (!/^\d+$/.test(expiresAt) || Number(expiresAt) < Date.now()) return false;
+    return safeHexEqual(token.slice(dot + 1), hmacHex(`${scope}:${expiresAt}`));
+}
+
+const PROXY_TOKEN_PARAM = '__pt';
+const PROXY_TOKEN_SCOPE = 'PROXY';
+const HOSTED_DATA_PATH_RE = /^\/api\/hosthtml\/pages\/([a-zA-Z0-9_-]{1,50})\/data$/;
+const YT_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+// Only allow redirects to paths on this site (blocks "//evil.com", "/\evil.com", control chars).
+function safeReturnUrl(value) {
+    if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return '/';
+    if (/[\\\u0000-\u001f\u007f]/.test(value)) return '/';
+    return value;
+}
+
+// Rejects paths that could escape a folder once decoded ("..", encoded slashes, NUL bytes).
+// Must run before any allow-list decision: static file serving normalises "../" AFTER the
+// gatekeeper has looked at the raw path, which previously let /downloads/..%2fX skip the login.
+function isSafeRequestPath(rawPath) {
+    let decoded;
+    try {
+        decoded = decodeURIComponent(rawPath);
+    } catch {
+        return false;
+    }
+    if (decoded.includes('\0')) return false;
+    if (/(^|[\/\\])\.\.?([\/\\]|$)/.test(decoded)) return false;
+    // Encoded slashes/backslashes are only meaningful to Jupyter's own API paths.
+    if (!rawPath.startsWith('/jupyter/') && (/%2f|%5c/i.test(rawPath) || rawPath.includes('\\'))) return false;
+    return true;
+}
 
 // --- Public Authentication Endpoints ---
 
@@ -352,94 +545,72 @@ app.get('/api/health', (req, res) => {
 
 // Login Page UI
 app.get('/login', (req, res) => {
-    const token = getSessionCookie(req);
-    if (isValidSession(token)) {
-        const returnUrl = typeof req.query.returnUrl === 'string' && req.query.returnUrl.startsWith('/') && !req.query.returnUrl.startsWith('//')
-            ? req.query.returnUrl
-            : '/';
-        return res.redirect(returnUrl);
+    if (hasValidSessionCookie(req)) {
+        return res.redirect(safeReturnUrl(req.query.returnUrl));
     }
     res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 app.get('/login.html', (req, res) => {
-    const returnParam = req.query.returnUrl ? `?returnUrl=${encodeURIComponent(req.query.returnUrl)}` : '';
+    const returnParam = typeof req.query.returnUrl === 'string' ? `?returnUrl=${encodeURIComponent(req.query.returnUrl)}` : '';
     res.redirect(`/login${returnParam}`);
 });
 
 // HMAC File Share Signature Helpers
-function generateFileShareSignature(filePath) {
+// New links carry an expiry (SHARE_LINK_TTL_DAYS, default 30). Links created before expiries
+// existed have no "exp" and stay valid until SESSION_SECRET is rotated.
+const SHARE_LINK_TTL_MS = Math.max(1, Number(process.env.SHARE_LINK_TTL_DAYS) || 30) * 24 * 60 * 60 * 1000;
+
+function generateFileShareSignature(filePath, expiresAt) {
     const normalized = normalizeFileHubPath(filePath);
-    return crypto.createHmac('sha256', SESSION_SECRET).update('FILE_SHARE:' + normalized).digest('hex');
+    const payload = expiresAt ? `FILE_SHARE:${normalized}:${expiresAt}` : `FILE_SHARE:${normalized}`;
+    return hmacHex(payload);
 }
 
-function verifyFileShareSignature(filePath, sig) {
-    if (!filePath || !sig || typeof sig !== 'string') return false;
-    const expected = generateFileShareSignature(filePath);
-    const bufA = Buffer.from(sig, 'hex');
-    const bufB = Buffer.from(expected, 'hex');
-    if (bufA.length !== bufB.length) return false;
-    return crypto.timingSafeEqual(bufA, bufB);
+function verifyFileShareSignature(filePath, sig, expiresAt) {
+    if (!filePath || typeof filePath !== 'string' || typeof sig !== 'string') return false;
+    if (expiresAt !== undefined) {
+        if (typeof expiresAt !== 'string' || !/^\d+$/.test(expiresAt) || Number(expiresAt) < Date.now()) return false;
+    }
+    return safeHexEqual(sig, generateFileShareSignature(filePath, expiresAt));
 }
 
 // Check authentication status (supports cookie or x-dashboard-password header)
 app.get('/api/auth/status', (req, res) => {
-    const token = getSessionCookie(req);
+    let authenticated = hasValidSessionCookie(req);
     const headerPassword = req.headers['x-dashboard-password'] || req.headers['x-api-key'];
-    const authenticated = isValidSession(token) || Boolean(headerPassword && verifyMasterPassword(headerPassword));
-    res.json({ authenticated, isCustomPasswordSet: IS_CUSTOM_PASSWORD_SET, server: 'FileHub API ready' });
+    if (!authenticated && headerPassword) {
+        const attempt = checkPasswordAttempt(req, String(headerPassword));
+        if (!attempt.ok && attempt.lockedMs > 0) return sendAuthLocked(res, attempt.lockedMs);
+        authenticated = attempt.ok;
+    }
+    res.json({ authenticated, server: 'FileHub API ready' });
 });
 
 // Login POST Handler
-app.post('/api/auth/login', (req, res) => {
-    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    const now = Date.now();
-    const attempt = loginAttempts.get(clientIp) || { count: 0, lockedUntil: 0 };
-
-    if (attempt.lockedUntil && now < attempt.lockedUntil) {
-        const remainingMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
-        return res.status(429).json({
-            error: `Too many failed attempts. Access locked for ${remainingMinutes} minute(s).`
-        });
-    }
-
+app.post('/api/auth/login', express.json({ limit: '16kb' }), (req, res) => {
     const { password, returnUrl } = req.body || {};
-    if (!verifyMasterPassword(password)) {
-        attempt.count = (attempt.count || 0) + 1;
-        if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
-            attempt.lockedUntil = now + LOCKOUT_DURATION_MS;
-            loginAttempts.set(clientIp, attempt);
-            return res.status(429).json({
-                error: 'Too many failed login attempts. Locked out for 15 minutes.'
-            });
-        }
-        loginAttempts.set(clientIp, attempt);
+    const attempt = checkPasswordAttempt(req, password);
+    if (!attempt.ok) {
+        if (attempt.lockedMs > 0) return sendAuthLocked(res, attempt.lockedMs);
         return res.status(401).json({
-            error: `Incorrect master password. (${MAX_LOGIN_ATTEMPTS - attempt.count} attempt(s) remaining)`
+            error: `Incorrect master password. (${attempt.remaining} attempt(s) remaining)`
         });
     }
-
-    // Success: clear rate limit tracker
-    loginAttempts.delete(clientIp);
 
     const token = createSessionToken();
-    activeSessions.set(token, { expiresAt: now + SESSION_TTL_MS });
+    activeSessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS });
 
-    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
     const cookieFlags = [
         `dashboard_session=${encodeURIComponent(token)}`,
         'Path=/',
         'HttpOnly',
         'SameSite=Lax',
         `Max-Age=${30 * 24 * 3600}`,
-        ...(isSecure ? ['Secure'] : [])
+        ...(req.secure ? ['Secure'] : [])
     ];
     res.setHeader('Set-Cookie', cookieFlags.join('; '));
 
-    const safeReturnUrl = typeof returnUrl === 'string' && returnUrl.startsWith('/') && !returnUrl.startsWith('//')
-        ? returnUrl
-        : '/';
-
-    return res.json({ ok: true, returnUrl: safeReturnUrl });
+    return res.json({ ok: true, returnUrl: safeReturnUrl(returnUrl) });
 });
 
 // Logout Handler
@@ -482,32 +653,36 @@ app.get('/api/dashboard/download-apk', (req, res) => {
 // --- Universal Default-Deny (Zero-Trust) Gatekeeper Middleware ---
 // Protects ALL current and future pages, sub-apps, uploads, static files, and APIs.
 // Guarantees that any new app or URL added in the future is locked down by default.
+const PUBLIC_PATHS = new Set([
+    '/login',
+    '/login.html',
+    '/logout',
+    '/favicon.ico',
+    '/api/auth/login',
+    '/api/auth/status',
+    '/api/auth/logout',
+    '/api/health',
+    '/api/filehub/download-apk',
+    '/api/dashboard/download-apk'
+]);
+
 app.use((req, res, next) => {
     const reqPath = req.path;
 
+    // 0. Path tricks are rejected before anything else looks at the path.
+    if (!isSafeRequestPath(reqPath)) {
+        return res.status(400).send('Bad request');
+    }
+
     // 1. Explicit Public Whitelist
-    if (
-        reqPath === '/login' ||
-        reqPath === '/login.html' ||
-        reqPath === '/logout' ||
-        reqPath === '/favicon.ico' ||
-        reqPath === '/api/auth/login' ||
-        reqPath === '/api/auth/status' ||
-        reqPath === '/api/auth/logout' ||
-        reqPath === '/api/health' ||
-        reqPath === '/api/filehub/download-apk' ||
-        reqPath === '/api/dashboard/download-apk' ||
-        reqPath === '/api/learn-investing/state' ||
-        reqPath === '/api/stream/youtube' ||
-        reqPath === '/api/stream/youtube/info'
-    ) {
+    if (PUBLIC_PATHS.has(reqPath)) {
         return next();
     }
 
-    // Allow static font assets for the login page, downloads, and Learn Investing app assets
+    // Login page font, and the Learn Investing course page (static course content only - its
+    // progress API and the video stream still require a login or a signed token).
     if (
         reqPath.startsWith('/assets/fonts/') ||
-        reqPath.startsWith('/downloads/') ||
         reqPath.startsWith('/apps/learn-investing/') ||
         reqPath === '/apps/learn-investing'
     ) {
@@ -516,24 +691,43 @@ app.use((req, res, next) => {
 
     // Cryptographically Signed Direct File Share Check (Hacker-Proof presigned access)
     if (reqPath === '/share/file') {
-        const filePath = req.query.path;
-        const sig = req.query.sig;
-        if (verifyFileShareSignature(filePath, sig)) {
+        if (verifyFileShareSignature(req.query.path, req.query.sig, req.query.exp)) {
             return next();
         }
         return res.status(403).send('Invalid, expired, or tampered share link.');
     }
 
-    // 2. Direct Header Authentication (for Android App, mobile upload worker, API clients)
-    const headerPassword = req.headers['x-dashboard-password'] || req.headers['x-api-key'];
-    if (headerPassword && verifyMasterPassword(headerPassword)) {
+    // Signed capability tokens: each unlocks only its own resource.
+    if (reqPath === '/api/stream/youtube'
+        && typeof req.query.v === 'string' && YT_VIDEO_ID_RE.test(req.query.v)
+        && verifyScopedToken(`YTSTREAM:${req.query.v}`, req.query.t)) {
+        return next();
+    }
+    if (reqPath === '/api/proxy' && verifyScopedToken(PROXY_TOKEN_SCOPE, req.query[PROXY_TOKEN_PARAM])) {
+        return next();
+    }
+    const hostedDataMatch = HOSTED_DATA_PATH_RE.exec(reqPath);
+    if (hostedDataMatch && (req.method === 'GET' || req.method === 'PUT')
+        && verifyScopedToken(`HOSTED:${hostedDataMatch[1]}`, req.headers['x-hosted-page-token'])) {
         return next();
     }
 
-    // 3. Validate Session Cookie
-    const token = getSessionCookie(req);
-    if (isValidSession(token)) {
+    // 2. Session cookie (only for requests the dashboard itself makes)
+    if (hasValidSessionCookie(req)) {
         return next();
+    }
+
+    // 3. Direct Header Authentication (for Android App, mobile upload worker, API clients) - rate limited
+    const headerPassword = req.headers['x-dashboard-password'] || req.headers['x-api-key'];
+    if (headerPassword) {
+        const attempt = checkPasswordAttempt(req, String(headerPassword));
+        if (attempt.ok) {
+            return next();
+        }
+        if (attempt.lockedMs > 0) {
+            return sendAuthLocked(res, attempt.lockedMs);
+        }
+        return res.status(401).json({ error: 'Incorrect password.', code: 'AUTH_REQUIRED' });
     }
 
     // 4. Deny Unauthenticated Access
@@ -550,61 +744,14 @@ app.use((req, res, next) => {
     return res.redirect(`/login?returnUrl=${encodeURIComponent(originalUrl)}`);
 });
 
+// Request body parsing - only for requests that got past the gatekeeper.
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
 // --- Server Monitor & Live Traffic Service ---
 const monitorService = require('./apps/monitor/server/monitorService');
 app.use(monitorService.middleware());
 app.use('/api/monitor', monitorService.router);
-
-// --- Finance App Password Protection (Compatibility) ---
-const FINANCE_PASSWORD_FILE = path.join(__dirname, 'finance-password.json');
-const loadFinancePassword = () => {
-    if (process.env.FINANCE_PASSWORD) {
-        return process.env.FINANCE_PASSWORD;
-    }
-    if (process.env.DASHBOARD_PASSWORD) {
-        return process.env.DASHBOARD_PASSWORD;
-    }
-    try {
-        if (fs.existsSync(FINANCE_PASSWORD_FILE)) {
-            const data = JSON.parse(fs.readFileSync(FINANCE_PASSWORD_FILE, 'utf8'));
-            if (typeof data.password === 'string' && data.password) {
-                return data.password;
-            }
-        }
-    } catch {
-        // Fallback below
-    }
-    return 'admin123';
-};
-let FINANCE_PASSWORD = loadFinancePassword();
-const financeAuth = new Map(); // sessionId -> true (authenticated)
-
-const getCookieValue = (req, name) => {
-    const cookies = String(req.headers.cookie || '').split(';');
-    for (const cookie of cookies) {
-        const [key, ...value] = cookie.trim().split('=');
-        if (key === name) return decodeURIComponent(value.join('='));
-    }
-    return null;
-};
-
-const getFinanceSessionToken = (req) => (
-    req.headers['x-finance-session'] ||
-    req.query.session ||
-    getCookieValue(req, 'financeSession')
-);
-
-// Finance authentication middleware - accepts master dashboard session or legacy finance session
-const requireFinanceAuth = (req, res, next) => {
-    const sessionToken = getFinanceSessionToken(req);
-    const dashboardToken = getSessionCookie(req);
-
-    if (isValidSession(dashboardToken) || financeAuth.has(sessionToken)) {
-        next();
-    } else {
-        res.status(401).json({ error: 'Authentication required', code: 'FINANCE_AUTH_REQUIRED' });
-    }
-};
 
 // Helper to reliably terminate child process trees cross-platform (Windows & Linux)
 function killProcessTree(childProc, signal = 'SIGTERM') {
@@ -653,6 +800,10 @@ async function startDietPlanIfEnabled() {
         });
         dietPlanProcess.stdout.on('data', d => console.log(`DietPlan: ${d}`));
         dietPlanProcess.stderr.on('data', d => console.error(`DietPlan Error: ${d}`));
+        dietPlanProcess.on('error', (err) => {
+            console.error('[DietPlan] Subprocess error:', err.message);
+            dietPlanProcess = null;
+        });
         dietPlanProcess.on('exit', (code, signal) => {
             console.log(`[DietPlan] Process exited (code: ${code}, signal: ${signal})`);
             dietPlanProcess = null;
@@ -688,7 +839,8 @@ app.use('/dietplan', (req, res, next) => {
 
 // --- Jupyter Lab Process & Proxy Setup ---
 const JUPYTER_PORT = process.env.JUPYTER_PORT || 8888;
-const JUPYTER_TOKEN = process.env.JUPYTER_TOKEN || 'jupyter-workspace';
+// Random per start unless configured - the old fixed default was public in this repository.
+const JUPYTER_TOKEN = process.env.JUPYTER_TOKEN || crypto.randomBytes(24).toString('hex');
 const JUPYTER_ROOT_DIR = process.env.JUPYTER_ROOT_DIR || path.resolve(__dirname);
 
 let jupyterProcess = null;
@@ -786,6 +938,12 @@ async function startJupyterIfEnabled() {
             }
         });
 
+        jupyterProcess.on('error', (err) => {
+            console.error('[Jupyter] Subprocess error:', err.message);
+            jupyterProcess = null;
+            isJupyterReady = false;
+            isJupyterStarting = false;
+        });
         jupyterProcess.on('exit', (code, signal) => {
             console.log(`[Jupyter] Process exited (code: ${code}, signal: ${signal})`);
             jupyterProcess = null;
@@ -823,12 +981,15 @@ async function restartJupyter() {
     return { ok: true };
 }
 
-// Jupyter Proxy Middleware with WebSockets and frame-protection stripping
+// Jupyter Proxy Middleware with frame-protection stripping.
+// ws is deliberately false: with ws:true the library attaches its own WebSocket upgrade listener
+// that performs no login check. Upgrades are forwarded only by the authenticated handler at the
+// bottom of this file (server.on('upgrade')).
 const jupyterProxy = createProxyMiddleware({
     target: `http://127.0.0.1:${JUPYTER_PORT}`,
     pathFilter: '/jupyter',
     changeOrigin: true,
-    ws: true,
+    ws: false,
     on: {
         proxyReq: fixRequestBody,
         proxyRes: (proxyRes) => {
@@ -895,55 +1056,6 @@ app.post('/api/jupyter/restart', async (req, res) => {
     }
 });
 
-// --- Finance Login API ---
-app.post('/api/finance-login', (req, res) => {
-    const { password } = req.body;
-
-    if (password === FINANCE_PASSWORD) {
-        const sessionToken = generateSessionToken();
-        financeAuth.set(sessionToken, true);
-        res.cookie('financeSession', sessionToken, {
-            httpOnly: true,
-            sameSite: 'lax',
-            maxAge: 1000 * 60 * 60 * 24 * 30
-        });
-        res.json({ success: true, session: sessionToken });
-    } else {
-        res.status(401).json({ success: false, error: 'Invalid password' });
-    }
-});
-
-app.post('/api/finance-change-password', requireFinanceAuth, async (req, res) => {
-    const { currentPassword, newPassword } = req.body || {};
-
-    if (currentPassword !== FINANCE_PASSWORD) {
-        return res.status(401).json({ success: false, error: 'Current password is incorrect' });
-    }
-
-    if (typeof newPassword !== 'string' || newPassword.trim().length < 6) {
-        return res.status(400).json({ success: false, error: 'New password must be at least 6 characters' });
-    }
-
-    FINANCE_PASSWORD = newPassword.trim();
-    await fsPromises.writeFile(
-        FINANCE_PASSWORD_FILE,
-        JSON.stringify({ password: FINANCE_PASSWORD, updatedAt: new Date().toISOString() }, null, 2)
-    );
-
-    res.json({ success: true, message: 'Password changed successfully' });
-});
-
-// --- Finance Auth Check API ---
-app.get('/api/finance-auth-check', (req, res) => {
-    const sessionToken = getFinanceSessionToken(req);
-
-    if (financeAuth.has(sessionToken)) {
-        res.json({ authenticated: true });
-    } else {
-        res.json({ authenticated: false });
-    }
-});
-
 // --- Crawler API Routes ---
 const crawlerRoutes = require('./apps/crawler/server/routes');
 const crawlerEngine = require('./apps/crawler/server/engine');
@@ -968,7 +1080,10 @@ app.use('/uploads/crawler', (req, res, next) => {
         return res.status(503).send('Crawler is disabled.');
     }
     next();
-}, express.static(path.join(__dirname, 'uploads', 'crawler')));
+}, express.static(path.join(__dirname, 'uploads', 'crawler'), {
+    // Attachments are downloaded from arbitrary websites: never let one run as the dashboard.
+    setHeaders: (res, filePath) => applyUntrustedContentPolicy(res, filePath)
+}));
 
 // --- AI Proxy for NVIDIA (CORS Bypass) ---
 app.post('/api/ai/nvidia-proxy', async (req, res) => {
@@ -994,8 +1109,17 @@ app.post('/api/ai/nvidia-proxy', async (req, res) => {
 });
 
 // --- Proxy Browser API ---
+// Proxied websites are untrusted. Every response is served with a CSP "sandbox" so the page gets
+// an opaque origin: its scripts cannot read the dashboard's cookies/storage or call dashboard APIs
+// as the owner, even though it is served from this domain. The page's own sub-requests are
+// authorised by a short-lived token embedded in the rewritten URLs (it only unlocks /api/proxy),
+// and every target URL is checked so the proxy can never reach this server or private networks.
+const PROXY_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const PROXY_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+
 app.use('/api/proxy', async (req, res) => {
     const getFirstValue = (value) => Array.isArray(value) ? value[value.length - 1] : value;
+    const isProxyControlParam = (key) => key === 'url' || key === PROXY_TOKEN_PARAM;
     const appendProxyParams = (searchParams, key, value) => {
         if (Array.isArray(value)) {
             value.forEach((entry) => searchParams.append(key, entry));
@@ -1020,7 +1144,7 @@ app.use('/api/proxy', async (req, res) => {
 
             const resolvedUrl = new URL(embeddedUrl);
             parsed.searchParams.forEach((entry, key) => {
-                if (key !== 'url') {
+                if (!isProxyControlParam(key)) {
                     resolvedUrl.searchParams.append(key, entry);
                 }
             });
@@ -1032,19 +1156,34 @@ app.use('/api/proxy', async (req, res) => {
     };
 
     let targetUrl = getFirstValue(req.query.url);
-    if (!targetUrl) return res.status(400).send('URL is required');
+    if (!targetUrl || typeof targetUrl !== 'string') return res.status(400).send('URL is required');
+
+    const proxyToken = createScopedToken(PROXY_TOKEN_SCOPE, PROXY_TOKEN_TTL_MS);
+    const tokenSuffix = `&${PROXY_TOKEN_PARAM}=${encodeURIComponent(proxyToken)}`;
+    const toProxyPath = (absoluteUrl) => `/api/proxy?url=${encodeURIComponent(absoluteUrl)}${tokenSuffix}`;
 
     try {
         const parsedUrl = new URL(targetUrl);
-        
+
         // Native form submissions append their own fields onto the proxy request,
         // so copy every non-proxy field back onto the destination URL.
         for (const [key, value] of Object.entries(req.query)) {
-            if (key !== 'url') {
+            if (!isProxyControlParam(key)) {
                 appendProxyParams(parsedUrl.searchParams, key, value);
             }
         }
         targetUrl = parsedUrl.toString();
+
+        try {
+            await assertPublicHttpUrl(targetUrl);
+        } catch (guardError) {
+            if (guardError instanceof OutboundUrlError) {
+                res.set('Content-Security-Policy', PROXY_SANDBOX_CSP);
+                return res.status(403).type('text/plain').send(`Blocked: ${guardError.message}`);
+            }
+            throw guardError;
+        }
+
         const forwardedReferer = decodeProxyRequestUrl(req.headers.referer) || targetUrl;
         const forwardedOrigin = (() => {
             try {
@@ -1056,6 +1195,7 @@ app.use('/api/proxy', async (req, res) => {
 
         // Axios request options
         const axiosOptions = {
+            ...guardedAxiosOptions,
             method: req.method,
             url: targetUrl,
             data: req.method !== 'GET' ? req.body : undefined,
@@ -1078,14 +1218,16 @@ app.use('/api/proxy', async (req, res) => {
 
         // Check for redirects
         if (response.status >= 300 && response.status < 400 && response.headers.location) {
-            // Redirect the client to the new location so the browser and sandbox know the final URL
+            response.data.destroy();
+            // Redirect the client to the new location so the browser and sandbox know the final URL.
+            // The next hop goes through this handler again, so it is re-checked by the SSRF guard.
             const finalUrl = new URL(response.headers.location, targetUrl).href;
-            return res.redirect(`/api/proxy?url=${encodeURIComponent(finalUrl)}`);
+            return res.redirect(toProxyPath(finalUrl));
         }
 
         const contentType = response.headers['content-type'] || '';
-        
-        // Strip headers that prevent framing or cause encoding/parsing conflicts
+
+        // Strip headers that prevent framing, grant cross-origin access, or cause encoding/parsing conflicts
         const headersToKeep = { ...response.headers };
         delete headersToKeep['x-frame-options'];
         delete headersToKeep['content-security-policy'];
@@ -1095,14 +1237,21 @@ app.use('/api/proxy', async (req, res) => {
         delete headersToKeep['transfer-encoding'];
         delete headersToKeep['connection'];
         delete headersToKeep['content-encoding']; // Axios decompresses the stream by default
+        delete headersToKeep['access-control-allow-origin'];
+        delete headersToKeep['access-control-allow-credentials'];
 
         // For modified text types (HTML/CSS), delete original content-length so Express can recalculate it
         if (contentType.includes('text/html') || contentType.includes('text/css')) {
             delete headersToKeep['content-length'];
         }
-        
+
         // Set response headers and status
         res.set(headersToKeep);
+        // Always sandbox proxied content (opaque origin), whichever way it is opened.
+        res.set('Content-Security-Policy', PROXY_SANDBOX_CSP);
+        res.removeHeader('X-Frame-Options');
+        // The sandboxed page's own fetch/XHR calls are cross-origin; allow them without credentials.
+        res.set('Access-Control-Allow-Origin', '*');
         res.status(response.status);
 
         if (contentType.includes('text/html')) {
@@ -1113,7 +1262,8 @@ app.use('/api/proxy', async (req, res) => {
                 const buffer = Buffer.concat(chunks);
                 const html = buffer.toString('utf-8');
                 const $ = cheerio.load(html);
-                const serializedTargetUrl = JSON.stringify(targetUrl);
+                const serializedTargetUrl = JSON.stringify(targetUrl).replace(/</g, '\\u003c');
+                const serializedProxyToken = JSON.stringify(proxyToken);
 
                 // Re-write URLs
                 const rewriteUrl = (originalUrl) => {
@@ -1129,7 +1279,7 @@ app.use('/api/proxy', async (req, res) => {
                     ) return originalUrl;
                     try {
                         let absoluteUrl = new URL(originalUrl, targetUrl).href;
-                        return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                        return toProxyPath(absoluteUrl);
                     } catch (e) {
                         return originalUrl;
                     }
@@ -1171,26 +1321,29 @@ app.use('/api/proxy', async (req, res) => {
                         $(el).attr('srcset', rewrittenSrcset);
                     }
                 });
-                $('form').each((i, el) => { 
+                $('form').each((i, el) => {
                     const action = $(el).attr('action');
-                    if (action) { 
+                    if (action) {
                         const rewrittenAction = rewriteUrl(action);
                         $(el).attr('action', rewrittenAction);
 
                         const method = ($(el).attr('method') || 'get').toLowerCase();
                         if (method === 'get') {
-                            $(el).find('input[name="url"][data-proxy-hidden="true"]').remove();
+                            // GET forms replace the query string, so the target URL and the proxy
+                            // token have to travel as hidden fields.
+                            $(el).find('input[data-proxy-hidden="true"]').remove();
 
                             try {
                                 const embeddedUrl = new URL(rewrittenAction, 'http://localhost').searchParams.get('url');
                                 if (embeddedUrl) {
-                                    $(el).prepend(`<input type="hidden" name="url" value="${embeddedUrl}" data-proxy-hidden="true">`);
+                                    $(el).prepend($('<input>').attr({ type: 'hidden', name: PROXY_TOKEN_PARAM, value: proxyToken, 'data-proxy-hidden': 'true' }));
+                                    $(el).prepend($('<input>').attr({ type: 'hidden', name: 'url', value: embeddedUrl, 'data-proxy-hidden': 'true' }));
                                 }
                             } catch (error) {}
                         }
-                    } 
+                    }
                 });
-                
+
                 // Rewrite URL in style attributes
                 $('[style]').each((i, el) => {
                     let style = $(el).attr('style');
@@ -1207,9 +1360,50 @@ app.use('/api/proxy', async (req, res) => {
                 const interceptScript = `
                     <script>
                         (() => {
+                            const TOKEN_PARAM = ${JSON.stringify(PROXY_TOKEN_PARAM)};
+                            const PROXY_TOKEN = ${serializedProxyToken};
                             const PROXY_PATH = '/api/proxy?url=';
+                            const TOKEN_SUFFIX = '&' + TOKEN_PARAM + '=' + encodeURIComponent(PROXY_TOKEN);
                             const INITIAL_TARGET_URL = ${serializedTargetUrl};
                             const SKIP_PROTOCOLS = ['about:', 'blob:', 'data:', 'javascript:', 'mailto:', 'tel:', '#'];
+                            // Captured before location is virtualised below.
+                            const PARENT_ORIGIN = window.location.origin;
+
+                            // This page runs sandboxed (opaque origin), where the real storage APIs
+                            // throw. Give it in-memory versions so ordinary sites keep working.
+                            const memoryStorage = () => {
+                                const data = new Map();
+                                return {
+                                    getItem: (key) => data.has(String(key)) ? data.get(String(key)) : null,
+                                    setItem: (key, value) => { data.set(String(key), String(value)); },
+                                    removeItem: (key) => { data.delete(String(key)); },
+                                    clear: () => data.clear(),
+                                    key: (index) => Array.from(data.keys())[index] ?? null,
+                                    get length() { return data.size; }
+                                };
+                            };
+                            ['localStorage', 'sessionStorage'].forEach((name) => {
+                                try { void window[name]; } catch (error) {
+                                    try { Object.defineProperty(window, name, { value: memoryStorage(), configurable: true }); } catch (e) {}
+                                }
+                            });
+                            try { void document.cookie; } catch (error) {
+                                const jar = new Map();
+                                try {
+                                    Object.defineProperty(Document.prototype, 'cookie', {
+                                        configurable: true,
+                                        get() { return Array.from(jar.entries()).map(([k, v]) => k + '=' + v).join('; '); },
+                                        set(value) {
+                                            const pair = String(value).split(';')[0];
+                                            const eq = pair.indexOf('=');
+                                            if (eq < 1) return;
+                                            const key = pair.slice(0, eq).trim();
+                                            if (/max-age=0|expires=thu, 01 jan 1970/i.test(String(value))) jar.delete(key);
+                                            else jar.set(key, pair.slice(eq + 1).trim());
+                                        }
+                                    });
+                                } catch (e) {}
+                            }
 
                             // Disable service worker registrations to prevent bypassing this proxy
                             if (navigator.serviceWorker) {
@@ -1220,15 +1414,15 @@ app.use('/api/proxy', async (req, res) => {
 
                             const notifyParent = (url) => {
                                 try {
-                                    window.parent.postMessage({ type: 'proxy:navigation', url }, window.location.origin);
+                                    window.parent.postMessage({ type: 'proxy:navigation', url, title: document.title || '' }, PARENT_ORIGIN);
                                 } catch (error) {}
                             };
 
                             const unwrapProxyUrl = (value) => {
                                 if (!value) return null;
                                 try {
-                                    const parsed = new URL(String(value), window.location.origin);
-                                    if (parsed.origin === window.location.origin && parsed.pathname === '/api/proxy') {
+                                    const parsed = new URL(String(value), PARENT_ORIGIN);
+                                    if (parsed.origin === PARENT_ORIGIN && parsed.pathname === '/api/proxy') {
                                         const embeddedUrl = parsed.searchParams.get('url');
                                         if (!embeddedUrl) {
                                             return null;
@@ -1236,7 +1430,7 @@ app.use('/api/proxy', async (req, res) => {
 
                                         const resolvedUrl = new URL(embeddedUrl);
                                         parsed.searchParams.forEach((entry, key) => {
-                                            if (key !== 'url') {
+                                            if (key !== 'url' && key !== TOKEN_PARAM) {
                                                 resolvedUrl.searchParams.append(key, entry);
                                             }
                                         });
@@ -1271,7 +1465,7 @@ app.use('/api/proxy', async (req, res) => {
                                 const proxiedTarget = unwrapProxyUrl(originalValue);
                                 const absoluteUrl = proxiedTarget || toAbsoluteUrl(originalValue, baseUrl);
                                 try {
-                                    return PROXY_PATH + encodeURIComponent(new URL(absoluteUrl).href);
+                                    return PROXY_PATH + encodeURIComponent(new URL(absoluteUrl).href) + TOKEN_SUFFIX;
                                 } catch (error) {
                                     return originalValue;
                                 }
@@ -1282,7 +1476,7 @@ app.use('/api/proxy', async (req, res) => {
                                 notifyParent(nextUrl);
                             };
 
-                            // Override fetch & XHR
+                            // Override fetch & XHR (never send credentials - the page is sandboxed)
                             const originalFetch = window.fetch.bind(window);
                             window.fetch = (input, init) => {
                                 if (typeof input === 'string' || input instanceof URL) {
@@ -1290,7 +1484,7 @@ app.use('/api/proxy', async (req, res) => {
                                 } else if (input instanceof Request) {
                                     input = new Request(toProxyUrl(input.url), input);
                                 }
-                                return originalFetch(input, init);
+                                return originalFetch(input, Object.assign({}, init, { credentials: 'omit' }));
                             };
 
                             const originalXHROpen = XMLHttpRequest.prototype.open;
@@ -1298,16 +1492,21 @@ app.use('/api/proxy', async (req, res) => {
                                 const rewrittenUrl = (typeof url === 'string' || url instanceof URL) ? toProxyUrl(String(url)) : url;
                                 return originalXHROpen.call(this, method, rewrittenUrl, ...rest);
                             };
+                            const originalXHRSend = XMLHttpRequest.prototype.send;
+                            XMLHttpRequest.prototype.send = function(...args) {
+                                try { this.withCredentials = false; } catch (error) {}
+                                return originalXHRSend.apply(this, args);
+                            };
 
                             // Virtualize location properties to reflect target website
                             try {
                                 const originalLocationProto = Location.prototype;
                                 const targetProperties = ['href', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash', 'origin'];
-                                
+
                                 targetProperties.forEach(prop => {
                                     const desc = Object.getOwnPropertyDescriptor(originalLocationProto, prop);
                                     if (!desc) return;
-                                    
+
                                     Object.defineProperty(originalLocationProto, prop, {
                                         configurable: true,
                                         enumerable: true,
@@ -1440,12 +1639,37 @@ app.use('/api/proxy', async (req, res) => {
                                 return originalOpen(toProxyUrl(url), ...rest);
                             };
 
+                            // GET forms replace the query string on submit, so the target URL and the
+                            // proxy token must be hidden fields of the form itself.
+                            const ensureProxyFormFields = (form) => {
+                                if ((form.getAttribute('method') || 'get').toLowerCase() !== 'get') return;
+                                let embeddedUrl = null;
+                                try {
+                                    embeddedUrl = new URL(form.getAttribute('action') || '', 'http://localhost').searchParams.get('url');
+                                } catch (error) {}
+                                if (!embeddedUrl) return;
+                                const setHidden = (name, value) => {
+                                    let input = Array.from(form.querySelectorAll('input[data-proxy-hidden="true"]')).find((el) => el.name === name);
+                                    if (!input) {
+                                        input = document.createElement('input');
+                                        input.type = 'hidden';
+                                        input.name = name;
+                                        input.setAttribute('data-proxy-hidden', 'true');
+                                        form.prepend(input);
+                                    }
+                                    input.value = value;
+                                };
+                                setHidden('url', embeddedUrl);
+                                setHidden(TOKEN_PARAM, PROXY_TOKEN);
+                            };
+
                             // Wrap HTMLFormElement.prototype.submit to catch programmatic submit calls
                             if (HTMLFormElement && HTMLFormElement.prototype.submit) {
                                 const originalSubmit = HTMLFormElement.prototype.submit;
                                 HTMLFormElement.prototype.submit = function() {
                                     const action = this.getAttribute('action') || getActiveTargetUrl();
                                     this.setAttribute('action', toProxyUrl(action));
+                                    ensureProxyFormFields(this);
                                     return originalSubmit.call(this);
                                 };
                             }
@@ -1472,6 +1696,7 @@ app.use('/api/proxy', async (req, res) => {
                                 if (rewrittenAction) {
                                     form.setAttribute('action', rewrittenAction);
                                 }
+                                ensureProxyFormFields(form);
                                 const absoluteAction = toAbsoluteUrl(action);
                                 if (absoluteAction) {
                                     syncNavigationState(absoluteAction);
@@ -1505,7 +1730,7 @@ app.use('/api/proxy', async (req, res) => {
                      if (url.startsWith('data:')) return match;
                      try {
                          let absoluteUrl = new URL(url, targetUrl).href;
-                         return `url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                         return `url(${quote}${toProxyPath(absoluteUrl)}${quote})`;
                      } catch (e) {
                          return match;
                      }
@@ -1514,7 +1739,7 @@ app.use('/api/proxy', async (req, res) => {
                       if (url.startsWith('data:')) return match;
                       try {
                           let absoluteUrl = new URL(url, targetUrl).href;
-                          return `@import url(${quote}/api/proxy?url=${encodeURIComponent(absoluteUrl)}${quote})`;
+                          return `@import url(${quote}${toProxyPath(absoluteUrl)}${quote})`;
                       } catch (e) {
                           return match;
                       }
@@ -1536,7 +1761,8 @@ app.use('/api/proxy', async (req, res) => {
     } catch (error) {
         console.error('Proxy Error:', error.message);
         if (!res.headersSent) {
-            res.status(error.response ? error.response.status : 500).send(`Proxy Error: ${error.message}`);
+            res.set('Content-Security-Policy', PROXY_SANDBOX_CSP);
+            res.status(error.response ? error.response.status : 502).type('text/plain').send(`Proxy Error: ${error.message}`);
         }
     }
 });
@@ -1668,13 +1894,11 @@ app.delete('/api/hosthtml/pages/:path/data', async (req, res) => {
 });
 
 // --- Host HTML Render Endpoint ---
-// IMPORTANT: We deliberately do NOT use the restrictive CSP sandbox here.
-// The previous "sandbox allow-scripts allow-forms" (no allow-same-origin) was
-// causing SecurityError on sessionStorage / localStorage / IndexedDB and
-// origin mismatch errors inside real single-page apps.
-//
-// Hosted pages are now served as normal same-origin documents so they can use
-// modern web APIs.
+// Hosted pages are served in a CSP sandbox (opaque origin): pasted HTML - and any third-party
+// script it loads - can never read the dashboard's cookies or call its APIs as the owner.
+// localStorage / sessionStorage / document.cookie throw in an opaque origin, so the helper below
+// replaces them, and the page's data API is authorised by a token scoped to this one page.
+// IndexedDB and other origin-bound storage are not available to hosted pages.
 //
 // Data persistence for hosted pages is provided by a server-backed store
 // (the `data` field on the HostedHtml document). In addition to the explicit
@@ -1682,6 +1906,7 @@ app.delete('/api/hosthtml/pages/:path/data', async (req, res) => {
 // classic localStorage and sessionStorage APIs. This means the majority of
 // "single file HTML apps" users paste in will automatically have their data
 // shared across devices/browsers without any code changes inside the hosted HTML.
+const HOSTED_PAGE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 app.get('/p/:path', async (req, res) => {
     try {
         const page = await HostedHtml.findOne({ path: req.params.path });
@@ -1691,7 +1916,10 @@ app.get('/p/:path', async (req, res) => {
         HostedHtml.updateOne({ _id: page._id }, { $inc: { views: 1 } }).exec();
 
         const pagePath = page.path;
-        const safePath = JSON.stringify(pagePath);
+        // JSON embedded in a <script> must not be able to close the script element.
+        const toScriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+        const safePath = toScriptJson(pagePath);
+        const pageToken = createScopedToken(`HOSTED:${pagePath}`, HOSTED_PAGE_TOKEN_TTL_MS);
 
         // Snapshot of server data at render time. This seeds the transparent storage
         // shims synchronously so that the first reads (even before any network) see
@@ -1700,7 +1928,7 @@ app.get('/p/:path', async (req, res) => {
 
         // Permissive but still somewhat reasonable CSP for user-provided SPAs.
         // Allows inline scripts/styles (very common), eval (some frameworks), data/blob URLs, and network requests.
-        const permissiveCSP = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; connect-src 'self' *; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline' https: http: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:;";
+        const permissiveCSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; connect-src 'self' *; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline' https: http: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:;";
         res.setHeader('Content-Security-Policy', permissiveCSP);
         res.set('Cache-Control', 'no-store, private');
 
@@ -1715,21 +1943,23 @@ app.get('/p/:path', async (req, res) => {
 (function () {
   const PAGE_PATH = ${safePath};
   const API = '/api/hosthtml/pages/' + encodeURIComponent(PAGE_PATH) + '/data';
+  // Unlocks only this page's data API (the page itself is sandboxed and has no session).
+  const PAGE_TOKEN = ${toScriptJson(pageToken)};
 
   // Seeded synchronously from the snapshot embedded at page serve time.
   // This is the source of truth for the shims and the explicit API.
-  let memoryData = ${JSON.stringify(initialData)};
+  let memoryData = ${toScriptJson(initialData)};
 
   async function apiGet() {
-    const r = await fetch(API, { credentials: 'same-origin' });
+    const r = await fetch(API, { headers: { 'x-hosted-page-token': PAGE_TOKEN }, credentials: 'omit', cache: 'no-store' });
     if (!r.ok) throw new Error('HostedStorage: failed to load (' + r.status + ')');
     return r.json();
   }
   async function apiPut(dataObj) {
     const r = await fetch(API, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'x-hosted-page-token': PAGE_TOKEN },
+      credentials: 'omit',
       body: JSON.stringify({ data: dataObj })
     });
     if (!r.ok) throw new Error('HostedStorage: failed to save (' + r.status + ')');
@@ -1843,6 +2073,27 @@ app.get('/p/:path', async (req, res) => {
     }
   };
 
+  // document.cookie throws in an opaque origin; keep an in-memory jar for pages that use it.
+  try {
+    void document.cookie;
+  } catch (e) {
+    const jar = new Map();
+    try {
+      Object.defineProperty(Document.prototype, 'cookie', {
+        configurable: true,
+        get() { return Array.from(jar.entries()).map(([k, v]) => k + '=' + v).join('; '); },
+        set(value) {
+          const pair = String(value).split(';')[0];
+          const eq = pair.indexOf('=');
+          if (eq < 1) return;
+          const key = pair.slice(0, eq).trim();
+          if (/max-age=0|expires=thu, 01 jan 1970/i.test(String(value))) jar.delete(key);
+          else jar.set(key, pair.slice(eq + 1).trim());
+        }
+      });
+    } catch (err) {}
+  }
+
   window.HostedStorage = HostedStorage;
   window.__HOSTED_PAGE_PATH__ = PAGE_PATH;
 
@@ -1894,96 +2145,13 @@ app.get('/p/:path', async (req, res) => {
     }
 });
 
-// --- Finance API Routes (Protected) ---
+// --- Finance App ---
+// Protected by the dashboard gatekeeper exactly like every other app (the old separate finance
+// password, its password file and its login page were removed).
 const financeRoutes = require('./apps/finance/server/routes');
-app.use('/api/finance', requireFinanceAuth, financeRoutes);
-
-// --- Finance App Static Files (Protected) ---
-// Custom middleware to protect static files under /finance
-const protectFinanceStatic = (req, res, next) => {
-    const sessionToken = getFinanceSessionToken(req);
-    const dashboardToken = getSessionCookie(req);
-
-    if (isValidSession(dashboardToken) || financeAuth.has(sessionToken)) {
-        next();
-    } else {
-        res.redirect(`/login?returnUrl=${encodeURIComponent(req.originalUrl)}`);
-    }
-};
-
-// Serve finance app static files from /finance/ URL (protected)
-app.use('/finance', protectFinanceStatic, express.static(path.join(__dirname, 'apps', 'finance')));
-
-// Also serve a dedicated login page for finance
-app.get('/finance-login.html', (req, res) => {
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Finance App - Login</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-               background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); 
-               min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .login-container { background: #fff; padding: 2rem; border-radius: 12px; 
-                          box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 380px; }
-        h1 { color: #1a1a2e; margin-bottom: 1.5rem; text-align: center; font-size: 1.5rem; }
-        .error { color: #e74c3c; margin-bottom: 1rem; padding: 0.75rem; background: #fee; 
-                border-radius: 6px; display: none; }
-        input { width: 100%; padding: 0.875rem; margin-bottom: 1rem; border: 2px solid #e0e0e0; 
-               border-radius: 8px; font-size: 1rem; transition: border-color 0.2s; }
-        input:focus { outline: none; border-color: #4f46e5; }
-        button { width: 100%; padding: 0.875rem; background: #4f46e5; color: #fff; border: none; 
-                border-radius: 8px; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
-        button:hover { background: #4338ca; }
-        .back-link { display: block; text-align: center; margin-top: 1rem; color: #666; 
-                    text-decoration: none; }
-        .back-link:hover { color: #4f46e5; }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <h1>🔒 Finance App</h1>
-        <div class="error" id="error"></div>
-        <form id="loginForm">
-            <input type="password" id="password" placeholder="Enter password" required autofocus>
-            <button type="submit">Login</button>
-        </form>
-        <a href="/" class="back-link">← Back to Dashboard</a>
-    </div>
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const password = document.getElementById('password').value;
-            const errorDiv = document.getElementById('error');
-            
-            try {
-                const res = await fetch('/api/finance-login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
-                });
-                const data = await res.json();
-                
-                if (data.success) {
-                    // Store session and redirect to finance app
-                    localStorage.setItem('financeSession', data.session);
-                    window.location.href = '/finance/index.html?session=' + data.session;
-                } else {
-                    errorDiv.textContent = data.error || 'Invalid password';
-                    errorDiv.style.display = 'block';
-                }
-            } catch (err) {
-                errorDiv.textContent = 'Login failed. Please try again.';
-                errorDiv.style.display = 'block';
-            }
-        });
-    </script>
-</body>
-</html>
-    `);
-});
+app.use('/api/finance', financeRoutes);
+app.use('/finance', express.static(path.join(__dirname, 'apps', 'finance')));
+app.get('/finance-login.html', (req, res) => res.redirect('/finance/'));
 
 // --- Escaped Proxy Navigation Interceptor ---
 // Catches relative URLs (e.g. /results) that escaped the iframe sandbox and forwards them back to the proxy.
@@ -2149,12 +2317,24 @@ app.use('/apps/:appName', (req, res, next) => {
 });
 
 // --- Static File Serving ---
-// Serve the main front-end, apps, and uploads
-app.use(express.static(path.join(__dirname)));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Only the dashboard shell and the front-end folders are web-visible. The repository root is NOT
+// served as a whole any more: server code, scripts, data files, notebooks and anything written at
+// runtime stay private.
+const sendDashboardFile = (file) => (req, res) => res.sendFile(path.join(__dirname, file));
+app.get(['/', '/index.html'], sendDashboardFile('index.html'));
+app.get('/style.css', sendDashboardFile('style.css'));
+app.use('/apps', (req, res, next) => {
+    // Back-end sources that live next to the front-ends are never served.
+    if (/^\/[^/]+\/server(\/|\.js$)|^\/dietplan(\/|$)|\.(py|bat|sh|ps1)$/i.test(req.path)) {
+        return res.status(404).send('Not found');
+    }
+    next();
+}, express.static(path.join(__dirname, 'apps')));
 // Serve the new assets folder
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
-app.use('/public', express.static('public'));
+app.use('/public', express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => applyUntrustedContentPolicy(res, filePath)
+}));
 
 
 // --- File Explorer Setup ---
@@ -2709,8 +2889,19 @@ const getFileHubEntryBuffer = async (entry) => {
     });
 };
 
+// User-supplied and downloaded files can be HTML or SVG. Opened directly, they would otherwise run
+// script with the dashboard's privileges, so they are served in a script-less sandbox (opaque
+// origin). This does not affect <img>/<video> embedding or fetch(). PDFs are exempt because
+// browsers refuse to render them inside a sandbox, and PDF scripts never run in the page origin.
+function applyUntrustedContentPolicy(res, typeOrPath) {
+    const value = String(typeOrPath || '').toLowerCase();
+    if (value.startsWith('application/pdf') || value.endsWith('.pdf')) return;
+    res.set('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'unsafe-inline'; font-src data:");
+}
+
 // 10. FILE CONTENT AND ZIP DOWNLOAD
 const sendFileHubEntryContent = async (entry, res) => {
+    applyUntrustedContentPolicy(res, entry.mimeType || getFileHubMimeType(entry.name));
     res.set('Content-Type', entry.mimeType || getFileHubMimeType(entry.name));
     res.set('Content-Length', entry.size || 0);
     res.set('Cache-Control', 'no-store');
@@ -2776,10 +2967,11 @@ app.get('/api/share-link', (req, res) => {
     if (!filePath) {
         return res.status(400).json({ error: 'File path is required' });
     }
-    const sig = generateFileShareSignature(filePath);
+    const expiresAt = String(Date.now() + SHARE_LINK_TTL_MS);
+    const sig = generateFileShareSignature(filePath, expiresAt);
     const origin = `${req.protocol}://${req.get('host')}`;
-    const shareUrl = `${origin}/share/file?path=${encodeURIComponent(filePath)}&sig=${sig}`;
-    res.json({ ok: true, shareUrl, path: filePath, sig });
+    const shareUrl = `${origin}/share/file?path=${encodeURIComponent(filePath)}&exp=${expiresAt}&sig=${sig}`;
+    res.json({ ok: true, shareUrl, path: filePath, sig, expiresAt: Number(expiresAt) });
 });
 
 // Stream shared file directly without master password if HMAC signature is valid
@@ -2787,7 +2979,7 @@ app.get('/share/file', async (req, res) => {
     try {
         const filePath = normalizeFileHubPath(req.query.path);
         const sig = req.query.sig;
-        if (!verifyFileShareSignature(filePath, sig)) {
+        if (!verifyFileShareSignature(filePath, sig, req.query.exp)) {
             return res.status(403).send('Invalid or tampered share link.');
         }
 
@@ -3345,10 +3537,16 @@ app.get('/api/newspapers', async (req, res) => {
 
 
 // --- CORS Proxy (used by NewsHunt to fetch RSS feeds) ---
-const proxyFetch = (targetUrl) => {
+// Every hop (including redirects) is checked by the SSRF guard, and responses are size-capped.
+const PROXY_FETCH_MAX_BYTES = 10 * 1024 * 1024;
+const PROXY_FETCH_MAX_REDIRECTS = 5;
+const proxyFetch = async (targetUrl, redirectsLeft = PROXY_FETCH_MAX_REDIRECTS) => {
+    const parsedTarget = await assertPublicHttpUrl(targetUrl);
     return new Promise((resolve, reject) => {
-        const lib = targetUrl.startsWith('https') ? https : require('http');
-        const req = lib.get(targetUrl, {
+        const isHttps = parsedTarget.protocol === 'https:';
+        const lib = isHttps ? https : http;
+        const req = lib.get(parsedTarget, {
+            agent: isHttps ? guardedHttpsAgent : guardedHttpAgent,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -3356,35 +3554,52 @@ const proxyFetch = (targetUrl) => {
             timeout: 15000
         }, (response) => {
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                proxyFetch(response.headers.location).then(resolve).catch(reject);
+                response.resume();
+                if (redirectsLeft <= 0) {
+                    reject(new Error('Too many redirects'));
+                    return;
+                }
+                let nextUrl;
+                try {
+                    nextUrl = new URL(response.headers.location, parsedTarget).toString();
+                } catch {
+                    reject(new Error('Invalid redirect location'));
+                    return;
+                }
+                proxyFetch(nextUrl, redirectsLeft - 1).then(resolve).catch(reject);
                 return;
             }
             let data = '';
+            let received = 0;
             response.setEncoding('utf8');
-            response.on('data', chunk => data += chunk);
+            response.on('data', chunk => {
+                received += Buffer.byteLength(chunk);
+                if (received > PROXY_FETCH_MAX_BYTES) {
+                    req.destroy(new Error('Response too large'));
+                    return;
+                }
+                data += chunk;
+            });
             response.on('end', () => resolve(data));
             response.on('error', reject);
         });
         req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.on('timeout', () => { req.destroy(new Error('Timeout')); });
     });
 };
 
 app.get('/proxy', async (req, res) => {
     const target = req.query.url;
-    if (!target) {
+    if (!target || typeof target !== 'string') {
         return res.status(400).json({ error: 'Missing ?url= parameter' });
     }
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
 
     try {
         const body = await proxyFetch(target);
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.send(body);
     } catch (err) {
-        res.status(502).json({ error: err.message });
+        res.status(err instanceof OutboundUrlError ? 403 : 502).json({ error: err.message });
     }
 });
 
@@ -3691,14 +3906,11 @@ function parseNewsXml(xmlText, feedUrl) {
 async function serverFetchAllFeeds(feeds) {
     const allItems = [];
     const errors = [];
-    const baseURL = 'http://localhost:' + (process.env.PORT || 3000);
     await Promise.allSettled(feeds.map(async (feed) => {
         try {
-            const resp = await axios.get(baseURL + '/proxy?url=' + encodeURIComponent(feed.url), {
-                timeout: 25000,
-                headers: { 'User-Agent': 'NewsHunt-Server/1.0', 'Accept': 'application/xml,text/xml,*/*' }
-            });
-            allItems.push(...parseNewsXml(resp.data, feed.url));
+            // Fetched directly (not via this server's own /proxy route, which requires a login).
+            const xmlText = await proxyFetch(feed.url);
+            allItems.push(...parseNewsXml(xmlText, feed.url));
         } catch (e) {
             errors.push({ url: feed.url, error: e.message });
             console.warn('[BG] Feed error (' + feed.url + '):', e.message);
@@ -5324,6 +5536,14 @@ const cleanYoutubeUrl = (url) => {
     return url;
 };
 
+// URLs handed to yt-dlp must be public http(s) URLs. They are also always passed after "--", so a
+// value such as "--exec=..." can never be interpreted as a yt-dlp option.
+const validateDownloaderUrl = async (rawUrl) => {
+    const cleanUrl = cleanYoutubeUrl(rawUrl);
+    await assertPublicHttpUrl(cleanUrl);
+    return cleanUrl;
+};
+
 const getYtDlpOptionsArgs = () => {
     const args = ['--no-warnings', '--newline', '--impersonate', 'chrome', '--js-runtimes', 'node'];
     if (ytdownloaderSettings.proxy) {
@@ -5746,6 +5966,7 @@ const runDownloadJob = async (downloadId, cleanUrl, formatId) => {
         formatExpr,
         '-o',
         outputTemplate,
+        '--',
         cleanUrl
     ]);
 
@@ -5875,11 +6096,17 @@ app.get('/api/video-info', async (req, res) => {
         return sendApiError(res, 400, 'URL is required');
     }
 
-    const cleanUrl = cleanYoutubeUrl(rawUrl);
+    let cleanUrl;
+    try {
+        cleanUrl = await validateDownloaderUrl(rawUrl);
+    } catch (error) {
+        return sendApiError(res, 400, error.message || 'Invalid URL');
+    }
     const args = [
         ...getYtDlpOptionsArgs(),
         '--dump-json',
         '--skip-download',
+        '--',
         cleanUrl
     ];
 
@@ -5932,7 +6159,12 @@ app.post('/api/download', async (req, res) => {
         return sendApiError(res, 500, 'Dependency validation failed.');
     }
 
-    const cleanUrl = cleanYoutubeUrl(rawUrl);
+    let cleanUrl;
+    try {
+        cleanUrl = await validateDownloaderUrl(rawUrl);
+    } catch (error) {
+        return sendApiError(res, 400, error.message || 'Invalid URL');
+    }
     const downloadId = createDownload(cleanUrl);
     runDownloadJob(downloadId, cleanUrl, quality)
         .catch((error) => {
@@ -6084,9 +6316,22 @@ app.post('/api/settings/cookies-text', (req, res) => {
 // --- YouTube Video Stream Proxy API ---
 // Extracts progressive MP4 stream via yt-dlp on Render and proxies video bytes with HTTP Range support.
 // Allows users whose devices have DNS blocks on YouTube to stream educational content seamlessly.
+// The stream itself (/api/stream/youtube) is opened by <video> elements, which cannot send a
+// password header, so it is unlocked by a signed per-video link from /api/stream/youtube/token
+// (which does require a login). Nobody else can use this server as a free video relay.
 const ytStreamCache = new Map(); // videoId -> { streamUrl, expiresAt }
+const YT_STREAM_CACHE_MAX = 200;
+const YT_STREAM_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+
+const createSignedStreamPath = (videoId) => {
+    const token = createScopedToken(`YTSTREAM:${videoId}`, YT_STREAM_TOKEN_TTL_MS);
+    return `/api/stream/youtube?v=${encodeURIComponent(videoId)}&t=${encodeURIComponent(token)}`;
+};
 
 async function resolveYouTubeStreamUrl(videoId) {
+    if (!YT_VIDEO_ID_RE.test(videoId)) {
+        throw new Error('Invalid video ID');
+    }
     const cached = ytStreamCache.get(videoId);
     if (cached && cached.expiresAt > Date.now()) {
         return cached.streamUrl;
@@ -6099,6 +6344,7 @@ async function resolveYouTubeStreamUrl(videoId) {
         '--no-warnings',
         '-g',
         '-f', 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+        '--',
         cleanUrl
     ];
 
@@ -6108,6 +6354,9 @@ async function resolveYouTubeStreamUrl(videoId) {
         throw new Error('No stream URL extracted for video ' + videoId);
     }
     const streamUrl = urls[0];
+    if (ytStreamCache.size >= YT_STREAM_CACHE_MAX) {
+        ytStreamCache.delete(ytStreamCache.keys().next().value);
+    }
     ytStreamCache.set(videoId, {
         streamUrl,
         expiresAt: Date.now() + 3 * 60 * 60 * 1000 // Cache for 3 hours
@@ -6115,18 +6364,27 @@ async function resolveYouTubeStreamUrl(videoId) {
     return streamUrl;
 }
 
+// Returns a signed stream link for one video (cheap - does not run yt-dlp).
+app.get('/api/stream/youtube/token', (req, res) => {
+    const videoId = typeof req.query?.v === 'string' ? req.query.v.trim() : '';
+    if (!YT_VIDEO_ID_RE.test(videoId)) {
+        return res.status(400).json({ error: 'A valid video ID (v) is required' });
+    }
+    return res.json({ videoId, streamUrl: createSignedStreamPath(videoId), expiresInMs: YT_STREAM_TOKEN_TTL_MS });
+});
+
 app.get('/api/stream/youtube/info', async (req, res) => {
     const videoId = typeof req.query?.v === 'string' ? req.query.v.trim() : '';
-    if (!videoId) {
-        return res.status(400).json({ error: 'Video ID (v) is required' });
+    if (!YT_VIDEO_ID_RE.test(videoId)) {
+        return res.status(400).json({ error: 'A valid video ID (v) is required' });
     }
 
     try {
-        const streamUrl = await resolveYouTubeStreamUrl(videoId);
+        await resolveYouTubeStreamUrl(videoId);
         return res.json({
             videoId,
             available: true,
-            streamUrl: `/api/stream/youtube?v=${encodeURIComponent(videoId)}`
+            streamUrl: createSignedStreamPath(videoId)
         });
     } catch (error) {
         return res.status(502).json({
@@ -6154,6 +6412,7 @@ app.get('/api/stream/youtube/playlist', async (req, res) => {
             '--flat-playlist',
             '--no-warnings',
             '-J',
+            '--',
             `https://www.youtube.com/playlist?list=${listId}`
         ], { timeoutMs: 45000 });
         const info = JSON.parse(stdout);
@@ -6170,8 +6429,8 @@ app.get('/api/stream/youtube/playlist', async (req, res) => {
 
 app.get('/api/stream/youtube', async (req, res) => {
     const videoId = typeof req.query?.v === 'string' ? req.query.v.trim() : '';
-    if (!videoId) {
-        return res.status(400).send('Video ID (v) is required');
+    if (!YT_VIDEO_ID_RE.test(videoId)) {
+        return res.status(400).send('A valid video ID (v) is required');
     }
 
     try {
@@ -6185,6 +6444,7 @@ app.get('/api/stream/youtube', async (req, res) => {
         }
 
         let upstream = await axios({
+            ...guardedAxiosOptions,
             method: 'GET',
             url: streamUrl,
             headers,
@@ -6194,9 +6454,11 @@ app.get('/api/stream/youtube', async (req, res) => {
 
         // If upstream URL expired (403 or 410), bust cache and retry once
         if (upstream.status === 403 || upstream.status === 410) {
+            upstream.data.destroy();
             ytStreamCache.delete(videoId);
             streamUrl = await resolveYouTubeStreamUrl(videoId);
             upstream = await axios({
+                ...guardedAxiosOptions,
                 method: 'GET',
                 url: streamUrl,
                 headers,
@@ -6264,15 +6526,29 @@ const server = app.listen(PORT, async () => {
     await syncAllAppServices();
 });
 
-// WebSocket upgrade forwarding for JupyterLab interactive kernels & terminals
+// WebSocket upgrade forwarding for JupyterLab interactive kernels & terminals.
+// This is the ONLY place WebSocket upgrades are accepted: a valid session cookie is required and
+// the handshake must come from this site (browsers always send Origin on WebSockets), which stops
+// other websites from opening a kernel connection with the owner's cookie.
 server.on('upgrade', (req, socket, head) => {
-    const token = getSessionCookie(req);
-    if (!isValidSession(token)) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+    const rejectUpgrade = (status) => {
+        socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
         socket.destroy();
-        return;
+    };
+    const url = req.url || '';
+    if (!url.startsWith('/jupyter/') || isAppDisabled('jupyter')) {
+        return rejectUpgrade('404 Not Found');
     }
-    if (req.url && req.url.startsWith('/jupyter')) {
-        jupyterProxy.upgrade(req, socket, head);
+    let sameOrigin = true;
+    if (req.headers.origin) {
+        try {
+            sameOrigin = new URL(req.headers.origin).host === req.headers.host;
+        } catch {
+            sameOrigin = false;
+        }
     }
+    if (!sameOrigin || !isValidSession(getSessionCookie(req))) {
+        return rejectUpgrade('401 Unauthorized');
+    }
+    jupyterProxy.upgrade(req, socket, head);
 });

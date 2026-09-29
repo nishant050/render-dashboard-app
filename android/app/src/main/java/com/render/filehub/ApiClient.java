@@ -39,6 +39,11 @@ public class ApiClient {
         void onProgress(int percent);
     }
 
+    /** Receives the HTTP status (0 on network failure) and the raw response body, on the main thread. */
+    public interface RawCallback {
+        void onResult(int status, String body);
+    }
+
     private ApiClient() {
         client = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
@@ -64,6 +69,46 @@ public class ApiClient {
             clean = clean.substring(0, clean.length() - 1);
         }
         return clean;
+    }
+
+    /**
+     * Performs a JSON GET/POST against the dashboard with the password header added natively.
+     * Used by the Learn Investing WebView bridge so the password never reaches JavaScript.
+     */
+    public void rawJsonRequest(String serverUrl, String password, String method, String path, String jsonBody, RawCallback callback) {
+        Request request;
+        try {
+            Request.Builder builder = new Request.Builder()
+                    .url(cleanBaseUrl(serverUrl) + path)
+                    .addHeader("x-dashboard-password", password != null ? password : "")
+                    .addHeader("Accept", "application/json");
+            if ("POST".equals(method)) {
+                builder.post(RequestBody.create(
+                        jsonBody != null && !jsonBody.isEmpty() ? jsonBody : "{}",
+                        MediaType.parse("application/json; charset=utf-8")));
+            } else {
+                builder.get();
+            }
+            request = builder.build();
+        } catch (IllegalArgumentException e) {
+            mainHandler.post(() -> callback.onResult(0, ""));
+            return;
+        }
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                mainHandler.post(() -> callback.onResult(0, ""));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                int status = response.code();
+                String body = response.body() != null ? response.body().string() : "";
+                response.close();
+                mainHandler.post(() -> callback.onResult(status, body));
+            }
+        });
     }
 
     public void testConnection(String serverUrl, String password, ApiCallback<String> callback) {

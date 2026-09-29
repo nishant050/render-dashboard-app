@@ -251,7 +251,7 @@ const App = {
                     <div class="model-card__info">
                         <div class="model-card__name">${this.escapeHtml(m.label || m.model)}</div>
                         <div class="model-card__provider">
-                            <span class="provider-badge">${m.provider}</span> ${this.escapeHtml(m.model)}
+                            <span class="provider-badge">${this.escapeHtml(m.provider)}</span> ${this.escapeHtml(m.model)}
                         </div>
                     </div>
                     <button class="btn btn-danger" style="padding:0.3rem;" onclick="App.deleteModel(${idx})" title="Remove">🗑️</button>
@@ -259,7 +259,7 @@ const App = {
             `;
             
             const isSel = this.selectedModelId === m.id ? 'selected' : '';
-            optionsHtml += `<option value="${m.id}" ${isSel}>${this.escapeHtml(m.label || m.model)} (${m.provider})</option>`;
+            optionsHtml += `<option value="${this.escapeHtml(m.id)}" ${isSel}>${this.escapeHtml(m.label || m.model)} (${this.escapeHtml(m.provider)})</option>`;
         });
         
         list.innerHTML = html || '<div style="color:var(--text-secondary); font-size:0.85rem; padding:1rem; text-align:center;">No custom models exist.</div>';
@@ -645,8 +645,9 @@ const App = {
 
     renderMarkdown(text) {
         const markdown = (text || '').toString();
-        if (window.marked) {
-            return marked.parse(markdown);
+        if (window.marked && window.SafeHTML) {
+            // Model output is untrusted HTML once rendered - always sanitize it.
+            return SafeHTML.sanitize(marked.parse(markdown));
         }
         return this.escapeHtml(markdown).replace(/\n/g, '<br>');
     },
@@ -659,7 +660,9 @@ const App = {
         return (unsafe || '').toString()
              .replace(/&/g, "&amp;")
              .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;");
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#39;");
     },
     
     showToast(message, type = 'info') {

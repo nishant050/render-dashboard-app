@@ -63,7 +63,6 @@ function normalizePlan() {
 function bindActions() {
     document.getElementById('save-plan-btn').addEventListener('click', savePlan);
     document.getElementById('reset-plan-btn').addEventListener('click', resetPlan);
-    document.getElementById('change-password-btn').addEventListener('click', openPasswordModal);
 
     document.querySelectorAll('[data-add-row]').forEach((button) => {
         button.addEventListener('click', () => {
@@ -259,50 +258,6 @@ async function resetPlan() {
         await api('/settings', { method: 'PUT', body: { monthlyPlan: null } });
         await loadPlan();
         showToast('Sample plan restored', 'success');
-    });
-}
-
-function openPasswordModal() {
-    openModal('Change Password', `
-        <form id="password-form">
-            <div class="form-group">
-                <label class="form-label">Current password</label>
-                <input class="form-input" type="password" name="currentPassword" autocomplete="current-password" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label">New password</label>
-                <input class="form-input" type="password" name="newPassword" autocomplete="new-password" minlength="6" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Confirm new password</label>
-                <input class="form-input" type="password" name="confirmPassword" autocomplete="new-password" minlength="6" required>
-            </div>
-        </form>
-    `, async () => {
-        const form = document.getElementById('password-form');
-        const data = Object.fromEntries(new FormData(form).entries());
-        if (data.newPassword !== data.confirmPassword) {
-            showToast('New passwords do not match', 'error');
-            throw new Error('Password mismatch');
-        }
-
-        const response = await fetch('/api/finance-change-password', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Finance-Session': getFinanceSession() || ''
-            },
-            body: JSON.stringify({
-                currentPassword: data.currentPassword,
-                newPassword: data.newPassword
-            })
-        });
-        const result = await response.json();
-        if (!response.ok) {
-            showToast(result.error || 'Password change failed', 'error');
-            throw new Error(result.error || 'Password change failed');
-        }
-        showToast('Password changed', 'success');
     });
 }
 

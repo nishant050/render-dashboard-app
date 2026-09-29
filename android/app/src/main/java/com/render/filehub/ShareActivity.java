@@ -31,6 +31,7 @@ public class ShareActivity extends Activity {
     private Button btnBackground;
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
+    private final AtomicBoolean isStarted = new AtomicBoolean(false);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,10 +50,9 @@ public class ShareActivity extends Activity {
             finish();
         });
 
-        btnBackground.setOnClickListener(v -> {
-            Toast.makeText(this, "Upload continuing in background...", Toast.LENGTH_SHORT).show();
-            finish();
-        });
+        // Nothing is uploaded until the user confirms: any installed app can open this screen
+        // directly, so a silent upload would let it push files into FileHub.
+        btnBackground.setText("Upload");
 
         Intent intent = getIntent();
         if (intent == null) {
@@ -102,6 +102,13 @@ public class ShareActivity extends Activity {
             urisToUpload.add(intent.getData());
         }
 
+        // Only real shared content: content:// URIs from other apps. file:// URIs and this app's own
+        // FileProvider could point at FileHub's private files (e.g. its saved settings).
+        String ownProviderAuthority = getPackageName() + ".fileprovider";
+        urisToUpload.removeIf(uri -> uri == null
+                || !"content".equals(uri.getScheme())
+                || ownProviderAuthority.equals(uri.getAuthority()));
+
         if (urisToUpload.isEmpty()) {
             Toast.makeText(this, "No valid files received to upload", Toast.LENGTH_SHORT).show();
             finish();
@@ -111,10 +118,23 @@ public class ShareActivity extends Activity {
         int fileCount = urisToUpload.size();
         String firstDisplayName = getDisplayName(urisToUpload.get(0));
         tvFilename.setText(fileCount == 1 ? firstDisplayName : firstDisplayName + " and " + (fileCount - 1) + " more");
-        tvDetails.setText("Preparing " + fileCount + " item(s) • Target: / Root");
-        tvStatus.setText("Staging files for upload...");
+        tvDetails.setText(fileCount + " item(s) • Target: / Root");
+        tvStatus.setText("Tap Upload to send to your FileHub.");
 
         final ArrayList<Uri> finalUris = new ArrayList<>(urisToUpload);
+        btnBackground.setOnClickListener(v -> {
+            if (isStarted.compareAndSet(false, true)) {
+                btnBackground.setText("Send in Background");
+                tvStatus.setText("Staging files for upload...");
+                startUpload(finalUris);
+            } else {
+                Toast.makeText(this, "Upload continuing in background...", Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        });
+    }
+
+    private void startUpload(ArrayList<Uri> finalUris) {
         new Thread(() -> {
             File stagingDir = new File(getCacheDir(), "shared_uploads");
             if (!stagingDir.exists()) stagingDir.mkdirs();
@@ -155,7 +175,8 @@ public class ShareActivity extends Activity {
             if (isCancelled.get()) return;
 
             runOnUiThread(() -> {
-                if (isFinishing()) return;
+                // Enqueue even if the user already tapped "Send in Background" (activity finishing).
+                boolean finishing = isFinishing();
 
                 if (!stagedPaths.isEmpty()) {
                     Intent serviceIntent = new Intent(ShareActivity.this, UploadService.class);
@@ -164,24 +185,33 @@ public class ShareActivity extends Activity {
                     serviceIntent.putStringArrayListExtra(UploadService.EXTRA_FILENAMES, filenames);
                     serviceIntent.putExtra(UploadService.EXTRA_TARGET_FOLDER, "");
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(serviceIntent);
-                    } else {
-                        startService(serviceIntent);
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(serviceIntent);
+                        } else {
+                            startService(serviceIntent);
+                        }
+                    } catch (RuntimeException e) {
+                        // Android 12+ can refuse to start a foreground service once the app is in the background.
+                        Toast.makeText(getApplicationContext(), "Upload could not start in the background. Please share again and wait for it to begin.", Toast.LENGTH_LONG).show();
+                        if (!finishing) finish();
+                        return;
                     }
 
                     int count = stagedPaths.size();
-                    Toast.makeText(ShareActivity.this, "✓ Uploading " + count + " file" + (count > 1 ? "s" : "") + " to FileHub", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getApplicationContext(), "✓ Uploading " + count + " file" + (count > 1 ? "s" : "") + " to FileHub", Toast.LENGTH_SHORT).show();
 
-                    try {
-                        Intent queueIntent = new Intent(ShareActivity.this, UploadQueueActivity.class);
-                        queueIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(queueIntent);
-                    } catch (Exception ignored) {}
+                    if (!finishing) {
+                        try {
+                            Intent queueIntent = new Intent(ShareActivity.this, UploadQueueActivity.class);
+                            queueIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(queueIntent);
+                        } catch (Exception ignored) {}
+                    }
                 } else {
-                    Toast.makeText(ShareActivity.this, "Failed to read shared file(s)", Toast.LENGTH_LONG).show();
+                    Toast.makeText(getApplicationContext(), "Failed to read shared file(s)", Toast.LENGTH_LONG).show();
                 }
-                finish();
+                if (!finishing) finish();
             });
         }).start();
     }

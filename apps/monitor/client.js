@@ -1,3 +1,13 @@
+// Request paths, IPs and user agents come from visitors: escape before rendering.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // --- DOM Element References ---
 const elUptime = document.getElementById('val-uptime');
 const elPlatform = document.getElementById('val-platform');
@@ -232,12 +242,12 @@ function renderUsersTable(users = []) {
         return `
             <tr>
                 <td><span class="user-status-pill ${statusClass}">${statusText}</span></td>
-                <td><span class="ip-tag">${displayIp}</span></td>
-                <td><span>${deviceIcon} ${u.os}</span></td>
-                <td><span>${u.browser}</span></td>
+                <td><span class="ip-tag">${escapeHtml(displayIp)}</span></td>
+                <td><span>${deviceIcon} ${escapeHtml(u.os)}</span></td>
+                <td><span>${escapeHtml(u.browser)}</span></td>
                 <td>
-                    <div class="app-tag">${u.currentApp}</div>
-                    <div class="path-sub">${u.path}</div>
+                    <div class="app-tag">${escapeHtml(u.currentApp)}</div>
+                    <div class="path-sub">${escapeHtml(u.path)}</div>
                 </td>
                 <td><strong>${u.requestsCount}</strong></td>
                 <td><span>${sessionStr}</span></td>

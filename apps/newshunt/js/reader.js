@@ -69,7 +69,7 @@ const Reader = {
             <span class="reader__source-link">📰 ${Utils.escapeHtml(article.feedTitle || '')}</span>
             <span>${Utils.formatArticleDate(article)}</span>
             ${article.creator ? `<span>by ${Utils.escapeHtml(article.creator)}</span>` : ''}
-            <a href="${Utils.escapeHtml(article.link)}" target="_blank" rel="noopener" class="reader__original-link">
+            <a href="${Utils.escapeHtml(Utils.safeUrl(article.link))}" target="_blank" rel="noopener" class="reader__original-link">
               Read Original ↗
             </a>
           </div>
@@ -78,7 +78,7 @@ const Reader = {
         <div class="reader__actions">
           <button class="btn btn--ghost btn--icon" data-tooltip="Chat with Article" onclick="Chat.toggle()">💬</button>
           <button class="btn btn--ghost btn--icon" data-tooltip="Rewrite Article" onclick="Reader.rewrite()">🔄</button>
-          <button class="btn btn--ghost btn--icon" data-tooltip="Open Original" onclick="window.open('${Utils.escapeHtml(article.link)}', '_blank')">🔗</button>
+          <button class="btn btn--ghost btn--icon" data-tooltip="Open Original" onclick="window.open(${Utils.jsArg(Utils.safeUrl(article.link))}, '_blank', 'noopener')">🔗</button>
           
           <div class="tts-controls" style="display:inline-flex; align-items:center; gap:8px; margin-left:16px; padding-left:16px; border-left:1px solid var(--color-border);">
             <button class="btn btn--primary btn--sm" id="tts-play-btn" onclick="Reader.toggleTTS()">▶️ Listen</button>
@@ -113,10 +113,10 @@ const Reader = {
         <span>←</span> Back to Feed
       </button>
       <div class="reader__nav-group">
-        <button class="btn btn--secondary reader__nav-btn" onclick="App.openReader('${prevGuid}')" ${!prevGuid ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} title="Previous Article">
+        <button class="btn btn--secondary reader__nav-btn" onclick="App.openReader(${Utils.jsArg(prevGuid)})" ${!prevGuid ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} title="Previous Article">
           <span>↑</span> Prev
         </button>
-        <button class="btn btn--secondary reader__nav-btn" onclick="App.openReader('${nextGuid}')" ${!nextGuid ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} title="Next Article">
+        <button class="btn btn--secondary reader__nav-btn" onclick="App.openReader(${Utils.jsArg(nextGuid)})" ${!nextGuid ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} title="Next Article">
           <span>↓</span> Next
         </button>
       </div>
@@ -358,13 +358,13 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
     menu.className = 'reader-context-menu animate-scale-in';
     menu.id = 'reader-context-menu';
     menu.innerHTML = `
-      <button class="reader-context-menu__item" onclick="Reader.explainSelection('${Utils.escapeHtml(text.replace(/'/g, "\\'"))}')">
+      <button class="reader-context-menu__item" onclick="Reader.explainSelection(${Utils.jsArg(text)})">
         <span>🧠</span> Explain this
       </button>
-      <button class="reader-context-menu__item" onclick="Reader.defineSelection('${Utils.escapeHtml(text.replace(/'/g, "\\'"))}')">
+      <button class="reader-context-menu__item" onclick="Reader.defineSelection(${Utils.jsArg(text)})">
         <span>📖</span> Define
       </button>
-      <button class="reader-context-menu__item" onclick="Reader.askAboutSelection('${Utils.escapeHtml(text.replace(/'/g, "\\'"))}')">
+      <button class="reader-context-menu__item" onclick="Reader.askAboutSelection(${Utils.jsArg(text)})">
         <span>💬</span> Ask about this
       </button>
     `;
@@ -477,7 +477,7 @@ OPTIONAL: If there is numerical / statistical data that benefits from visualizat
 
     popup.innerHTML = `
       <div class="explain-popup__header">
-        <span class="explain-popup__title">🧠 "${Utils.truncate(title, 40)}"</span>
+        <span class="explain-popup__title">🧠 "${Utils.escapeHtml(Utils.truncate(title, 40))}"</span>
         <button class="btn btn--ghost btn--icon btn--sm" onclick="Reader.closeExplainPopup()" style="font-size:16px">✕</button>
       </div>
       <div class="explain-popup__content">${Utils.renderMarkdown(content)}</div>

@@ -769,26 +769,55 @@
         if (/^https?:$/.test(location.protocol)) return '';
         return 'https://dashboard-mszb.onrender.com';
     }
-    function apiHeaders(json) {
-        const h = {};
-        if (json) h['Content-Type'] = 'application/json';
-        try {
-            const p = window.AndroidBridge && typeof window.AndroidBridge.getPassword === 'function' ? window.AndroidBridge.getPassword() : '';
-            if (p) h['x-dashboard-password'] = p;
-        } catch (e) { /* ignore */ }
-        return h;
+    // Inside the Android app the password never reaches JavaScript: requests go through the
+    // native bridge, which adds it itself and only serves this page (the per-load token below is
+    // injected by the app into this document only, so embedded frames such as YouTube cannot use it).
+    const BRIDGE_TOKEN = typeof window.__BRIDGE_TOKEN === 'string' ? window.__BRIDGE_TOKEN : '';
+    const HAS_NATIVE_API = HAS_BRIDGE && !!BRIDGE_TOKEN && typeof window.AndroidBridge.apiRequest === 'function';
+    const nativePending = new Map();
+    let nativeSeq = 0;
+    window.__nativeApiResolve = function (id, status, text) {
+        const done = nativePending.get(id);
+        if (!done) return;
+        nativePending.delete(id);
+        done(status, text);
+    };
+    function httpError(status) {
+        const err = new Error('HTTP ' + status);
+        err.status = status;
+        return err;
+    }
+    function nativeRequest(method, path, body) {
+        return new Promise((resolve, reject) => {
+            const id = 'r' + (++nativeSeq);
+            const timer = setTimeout(() => { nativePending.delete(id); reject(new Error('timeout')); }, 60000);
+            nativePending.set(id, (status, text) => {
+                clearTimeout(timer);
+                if (status < 200 || status >= 300) { reject(httpError(status)); return; }
+                try { resolve(JSON.parse(text)); } catch (e) { reject(e); }
+            });
+            try {
+                window.AndroidBridge.apiRequest(BRIDGE_TOKEN, id, method, path, body == null ? '' : JSON.stringify(body));
+            } catch (e) {
+                clearTimeout(timer);
+                nativePending.delete(id);
+                reject(e);
+            }
+        });
     }
     async function apiGet(path) {
-        const res = await fetch(apiBase() + path, { headers: apiHeaders(false), credentials: 'same-origin', cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (HAS_NATIVE_API) return nativeRequest('GET', path, null);
+        const res = await fetch(apiBase() + path, { credentials: 'same-origin', cache: 'no-store' });
+        if (!res.ok) throw httpError(res.status);
         return res.json();
     }
     async function apiPost(path, body, keepalive) {
+        if (HAS_NATIVE_API) return nativeRequest('POST', path, body);
         const res = await fetch(apiBase() + path, {
-            method: 'POST', headers: apiHeaders(true), credentials: 'same-origin',
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
             body: JSON.stringify(body), keepalive: !!keepalive
         });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) throw httpError(res.status);
         return res.json();
     }
 
@@ -956,7 +985,7 @@
             setSync('ok');
         } catch (e) {
             console.warn('[Learn Investing] Server unreachable, using this device\'s copy:', e.message);
-            setSync('offline');
+            setSync(e.status === 401 ? 'signin' : 'offline');
         }
         if (!currentId || !profiles[currentId]) currentId = pickDefaultProfile(remoteCurrent);
         cacheLocal();
@@ -976,7 +1005,7 @@
             cacheLocal();
             if (!currentId) { openProfiles(true); return; }
             renderAll();
-        } catch (e) { setSync('offline'); }
+        } catch (e) { setSync(e.status === 401 ? 'signin' : 'offline'); }
     }
 
     let syncTimer = null, syncing = false, syncQueued = false, retryTimer = null;
@@ -1011,8 +1040,12 @@
             setSync('ok');
         } catch (e) {
             console.warn('[Learn Investing] Sync failed, will retry:', e.message);
-            setSync('offline');
-            retryTimer = setTimeout(() => syncNow(false), 20000);
+            if (e.status === 401) {
+                setSync('signin'); // not logged in: keep progress on this device, no pointless retries
+            } else {
+                setSync('offline');
+                retryTimer = setTimeout(() => syncNow(false), 20000);
+            }
         } finally {
             syncing = false;
             if (syncQueued) { syncQueued = false; scheduleSync(300); }
@@ -1028,7 +1061,19 @@
         syncStatus = s;
         const dot = $('syncDot'), txt = $('syncText');
         if (!dot) return;
-        dot.className = 'sync-dot ' + (s === 'ok' ? 'ok' : s === 'offline' ? 'warn' : '');
+        dot.className = 'sync-dot ' + (s === 'ok' ? 'ok' : (s === 'offline' || s === 'signin') ? 'warn' : '');
+        if (s === 'signin') {
+            txt.textContent = 'Not signed in - progress is saved on this device only. ';
+            if (!IN_APP) {
+                const link = document.createElement('a');
+                link.href = '/login?returnUrl=' + encodeURIComponent(location.pathname);
+                link.textContent = 'Sign in to sync it across devices.';
+                txt.appendChild(link);
+            } else {
+                txt.appendChild(document.createTextNode('Check the dashboard password in the app settings.'));
+            }
+            return;
+        }
         txt.textContent = s === 'offline'
             ? 'Can\'t reach your server right now. Progress is kept on this device and will sync automatically once it\'s back.'
             : 'Progress, resume points and profiles are saved to your server (MongoDB) and sync across all your devices.';
@@ -1265,8 +1310,23 @@
         loadProxyVideo(vid, resumeAt(lesson.id));
     }
 
-    function loadProxyVideo(vid, startAt) {
-        if (px.video) { try { px.video.pause(); } catch (e) { /* ignore */ } px.video.remove(); }
+    async function loadProxyVideo(vid, startAt) {
+        if (px.video) { try { px.video.pause(); } catch (e) { /* ignore */ } px.video.remove(); px.video = null; }
+        // <video> cannot send login headers, so ask the server for a signed, per-video stream link.
+        const lesson = current;
+        let streamPath;
+        try {
+            const data = await apiGet('/api/stream/youtube/token?v=' + encodeURIComponent(vid));
+            streamPath = data && data.streamUrl;
+            if (!streamPath) throw new Error('no stream link');
+        } catch (e) {
+            if (current !== lesson || mode !== 'proxy') return;
+            showProxyError(e.status === 401
+                ? 'Streaming through your server needs you to be signed in to the dashboard.'
+                : 'Your server couldn\'t prepare this video (' + esc(e.message) + ').');
+            return;
+        }
+        if (current !== lesson || mode !== 'proxy') return;
         const v = document.createElement('video');
         v.controls = true;
         v.playsInline = true;
@@ -1274,7 +1334,7 @@
         v.setAttribute('controlsList', 'nodownload');
         v.preload = 'auto';
         v.autoplay = true;
-        v.src = apiBase() + '/api/stream/youtube?v=' + encodeURIComponent(vid);
+        v.src = apiBase() + streamPath;
         px.video = v;
         frame().insertBefore(v, $('partChip'));
         if (px.items) renderPartChip(px.index, px.items.length);

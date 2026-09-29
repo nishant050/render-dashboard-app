@@ -38,6 +38,14 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -67,6 +75,9 @@ public class MainActivity extends AppCompatActivity {
     private String currentPath = "";
 
     // Learn Investing Components
+    private static final String INVESTING_PAGE_URL = "file:///android_asset/learn-investing/index.html";
+    // Per-load secret written only into the Learn Investing document itself (see loadInvestingCourse).
+    private volatile String investingBridgeToken = "";
     private WebView webViewInvesting;
     private ProgressBar progressBarInvesting;
     private boolean isInvestingLoaded = false;
@@ -215,24 +226,16 @@ public class MainActivity extends AppCompatActivity {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
+        // The page talks to the server only through InvestingBridge, so the local page needs no
+        // access to other local files or to other origins.
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
 
-        webViewInvesting.addJavascriptInterface(new Object() {
-            @JavascriptInterface
-            public String getServerUrl() {
-                return prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
-            }
-
-            @JavascriptInterface
-            public String getPassword() {
-                return prefs.getString("dashboard_password", "");
-            }
-        }, "AndroidBridge");
+        webViewInvesting.addJavascriptInterface(new InvestingBridge(), "AndroidBridge");
 
         webViewInvesting.setWebViewClient(new WebViewClient() {
             @Override
@@ -242,11 +245,27 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (!request.isForMainFrame()) return false;
+                Uri uri = request.getUrl();
+                String scheme = uri.getScheme();
+                if ("file".equals(scheme)) return false;
+                // Other websites (e.g. "Open on YouTube") open in the browser - never inside the
+                // WebView that has the AndroidBridge object.
+                if ("http".equals(scheme) || "https".equals(scheme)) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (Exception ignored) {}
+                }
+                return true;
+            }
+
+            @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 super.onReceivedError(view, errorCode, description, failingUrl);
                 progressBarInvesting.setVisibility(View.GONE);
                 if (failingUrl != null && !failingUrl.startsWith("file:///android_asset/")) {
-                    view.loadUrl("file:///android_asset/learn-investing/index.html");
+                    loadInvestingCourse();
                 }
             }
 
@@ -257,7 +276,7 @@ public class MainActivity extends AppCompatActivity {
                     progressBarInvesting.setVisibility(View.GONE);
                     String failingUrl = request.getUrl().toString();
                     if (!failingUrl.startsWith("file:///android_asset/")) {
-                        view.loadUrl("file:///android_asset/learn-investing/index.html");
+                        loadInvestingCourse();
                     }
                 }
             }
@@ -322,8 +341,100 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadInvestingCourse() {
         progressBarInvesting.setVisibility(View.VISIBLE);
-        webViewInvesting.loadUrl("file:///android_asset/learn-investing/index.html");
+
+        // Fresh bridge token for every load, written into this document only. Embedded frames
+        // (YouTube players) also see the AndroidBridge object, but cannot read this token.
+        byte[] random = new byte[24];
+        new SecureRandom().nextBytes(random);
+        StringBuilder token = new StringBuilder();
+        for (byte b : random) {
+            token.append(String.format("%02x", b));
+        }
+        investingBridgeToken = token.toString();
+
+        String html;
+        try (InputStream in = getAssets().open("learn-investing/index.html")) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[16384];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            html = new String(out.toByteArray(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            investingBridgeToken = "";
+            webViewInvesting.loadUrl(INVESTING_PAGE_URL);
+            isInvestingLoaded = true;
+            return;
+        }
+
+        String inject = "<script>window.__BRIDGE_TOKEN=" + JSONObject.quote(investingBridgeToken) + ";</script>";
+        int headIndex = html.indexOf("<head>");
+        html = headIndex >= 0
+                ? html.substring(0, headIndex + 6) + inject + html.substring(headIndex + 6)
+                : inject + html;
+        webViewInvesting.loadDataWithBaseURL(INVESTING_PAGE_URL, html, "text/html", "UTF-8", INVESTING_PAGE_URL);
         isInvestingLoaded = true;
+    }
+
+    /**
+     * JavaScript bridge for the Learn Investing page. The dashboard password never crosses into
+     * JavaScript: the few API calls the page needs are made here, natively, with the password added
+     * by the app. Android exposes this object to every frame of the WebView (including embedded
+     * YouTube players), so each call must carry the per-load token only the page itself knows, and
+     * only the Learn Investing endpoints can be reached. Results go back to the main frame only.
+     */
+    private class InvestingBridge {
+        @JavascriptInterface
+        public String getServerUrl() {
+            return prefs.getString("server_url", "https://dashboard-mszb.onrender.com");
+        }
+
+        @JavascriptInterface
+        public void apiRequest(String token, String requestId, String method, String path, String body) {
+            String expected = investingBridgeToken;
+            if (token == null || expected.isEmpty()
+                    || !MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8))) {
+                return;
+            }
+            if (requestId == null || !requestId.matches("[A-Za-z0-9_-]{1,40}")) {
+                return;
+            }
+            String httpMethod = "POST".equals(method) ? "POST" : "GET";
+            if (!isAllowedInvestingApiPath(httpMethod, path)) {
+                deliverInvestingApiResult(requestId, 403, "{}");
+                return;
+            }
+            ApiClient.getInstance().rawJsonRequest(
+                    prefs.getString("server_url", "https://dashboard-mszb.onrender.com"),
+                    prefs.getString("dashboard_password", ""),
+                    httpMethod,
+                    path,
+                    body,
+                    (status, responseBody) -> deliverInvestingApiResult(requestId, status, responseBody));
+        }
+    }
+
+    private static boolean isAllowedInvestingApiPath(String method, String path) {
+        if (path == null || path.length() > 512 || path.contains("..") || !path.matches("/api/[\\x21-\\x7E]*")) {
+            return false;
+        }
+        if ("POST".equals(method)) {
+            return path.equals("/api/learn-investing/state");
+        }
+        return path.equals("/api/learn-investing/state")
+                || path.startsWith("/api/stream/youtube/playlist?")
+                || path.startsWith("/api/stream/youtube/token?");
+    }
+
+    private void deliverInvestingApiResult(String requestId, int status, String body) {
+        runOnUiThread(() -> {
+            if (webViewInvesting == null) return;
+            String script = "window.__nativeApiResolve&&window.__nativeApiResolve("
+                    + JSONObject.quote(requestId) + "," + status + ","
+                    + JSONObject.quote(body != null ? body : "") + ")";
+            webViewInvesting.evaluateJavascript(script, null);
+        });
     }
 
     private void loadSettingsFields() {

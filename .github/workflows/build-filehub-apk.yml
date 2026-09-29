@@ -99,15 +99,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: filehub-apk-latest
-          name: "FileHub & Learn Investing v1.1.2"
+          name: "FileHub & Learn Investing v1.1.3"
           body: |
-            Official Release v1.1.2:
-            - **Inbuilt Learn Investing UI**: Pure native CSS, fast local APK rendering with no external CDN dependency.
-            - **Dual-Mode Video Streaming**: Direct YouTube embed (youtube-nocookie.com) + Render Server Proxy (yt-dlp stream bypassing all DNS blocks).
-            - **MongoDB Profile Sync**: Automatic sync with MongoDB ("Nishant" & "Mahi") with progress retention.
-            - **FileHub Status Indicators**: Explicit setup/auth screen and network retry view (no blank screens).
-            - **Visible Share Target**: Material 3 dialog with progress indicator and background upload options.
-            - **Semantic Updater**: Stops infinite update prompts by comparing semantic versions numerically.
+            Security release v1.1.3:
+            - **Password never exposed to web content**: Learn Investing talks to your server through a native bridge; the dashboard password is no longer readable from JavaScript or embedded YouTube frames.
+            - **Signed video streams**: "Play via my server" uses short-lived signed links (the stream endpoint is no longer public).
+            - **Share confirmation**: shared files are uploaded only after you tap Upload, and only real shared content is accepted.
+            - **Hardened storage**: app data is excluded from backups/device transfer, the APK is non-debuggable, and plain-HTTP servers are refused.
+            - External links from Learn Investing open in your browser instead of inside the app.
           files: |
             build-output/FileHub.apk
             build-output/RenderDashboard.apk

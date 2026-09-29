@@ -486,7 +486,7 @@ const Settings = {
                   <span class="feed-card__url">${Utils.escapeHtml(f.url)}</span>
                 </div>
                 <div class="feed-card__actions">
-                  <button class="btn btn--ghost btn--sm" onclick="Settings.removeFeed('${Utils.escapeHtml(f.url)}')" title="Remove">🗑️</button>
+                  <button class="btn btn--ghost btn--sm" onclick="Settings.removeFeed(${Utils.jsArg(f.url)})" title="Remove">🗑️</button>
                 </div>
               </div>
             `).join('')}

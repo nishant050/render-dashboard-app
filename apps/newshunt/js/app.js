@@ -528,7 +528,7 @@ const App = {
             filteredTopics.forEach(topic => {
                 const chip = document.createElement('button');
                 chip.className = 'topic-chip' + (this.topicFilter === topic.name ? ' topic-chip--active' : '');
-                chip.innerHTML = `<span class="topic-chip__name">${topic.name}</span><span class="topic-chip__count">${topic.count}</span>`;
+                chip.innerHTML = `<span class="topic-chip__name">${Utils.escapeHtml(topic.name)}</span><span class="topic-chip__count">${topic.count}</span>`;
                 chip.onclick = () => this.filterByTopic(topic.name);
                 cloud.appendChild(chip);
             });
@@ -605,7 +605,7 @@ const App = {
         modal.className = 'modal-content';
         modal.innerHTML = `
           <div class="modal-header">
-            <h2>📰 ${groupLabel || 'Related Articles'}</h2>
+            <h2>📰 ${Utils.escapeHtml(groupLabel || 'Related Articles')}</h2>
             <button class="btn btn--ghost" onclick="this.closest('.modal-overlay').remove()">✕</button>
           </div>
           <p style="color: var(--color-text-secondary); margin-bottom: var(--space-4);">${related.length} similar article${related.length > 1 ? 's' : ''} grouped together</p>
@@ -709,7 +709,7 @@ const App = {
         modal.style.maxWidth = '800px';
         modal.innerHTML = `
           <div class="modal-header">
-            <h2>✨ AI Summary: ${topicName}</h2>
+            <h2>✨ AI Summary: ${Utils.escapeHtml(topicName)}</h2>
             <button class="btn btn--ghost" onclick="this.closest('.modal-overlay').remove()">✕</button>
           </div>
           <div class="reader-content__body" id="topic-summary-content" style="min-height: 200px">
@@ -745,12 +745,12 @@ ${articlesText}`;
                     { role: 'user', content: prompt }
                 ],
                 (chunk, fullContent) => {
-                    contentEl.innerHTML = marked.parse(fullContent);
+                    contentEl.innerHTML = Utils.renderMarkdown(fullContent);
                 },
                 { temperature: 0.3, max_tokens: 2000, task: 'summarize' }
             );
         } catch (error) {
-            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;
+            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${Utils.escapeHtml(error.message)}</p>`;
         }
     },
 
@@ -815,7 +815,7 @@ ${articlesText}`;
         modal.style.maxWidth = '800px';
         modal.innerHTML = `
           <div class="modal-header">
-            <h2>✨ AI Summary: ${topicName}</h2>
+            <h2>✨ AI Summary: ${Utils.escapeHtml(topicName)}</h2>
             <button class="btn btn--ghost" onclick="this.closest('.modal-overlay').remove()">✕</button>
           </div>
           <div class="reader-content__body" id="topic-summary-content" style="min-height: 200px">
@@ -851,13 +851,13 @@ ${articlesText}`;
                     { role: 'user', content: prompt }
                 ],
                 (chunk, fullContent) => {
-                    contentEl.innerHTML = marked.parse(fullContent);
+                    contentEl.innerHTML = Utils.renderMarkdown(fullContent);
                 },
                 { temperature: 0.3, max_tokens: 2000, task: 'summarize' }
             );
             this._terminal('success', `Topic summary finished for "${topicName}"`);
         } catch (error) {
-            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${error.message}</p>`;
+            contentEl.innerHTML = `<p style="color: var(--color-star-1)">Error generating summary: ${Utils.escapeHtml(error.message)}</p>`;
             this._terminal('error', `Topic summary failed for "${topicName}"`, error);
         }
     }

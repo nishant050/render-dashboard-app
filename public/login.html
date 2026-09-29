@@ -449,7 +449,8 @@
                 if (res.ok && data.ok) {
                     btnText.textContent = 'Unlocked! Redirecting...';
                     setTimeout(() => {
-                        window.location.href = data.returnUrl || returnUrl || '/';
+                        // Only the server-validated return path is followed (never the raw query value).
+                        window.location.href = data.returnUrl || '/';
                     }, 200);
                 } else {
                     submitBtn.disabled = false;

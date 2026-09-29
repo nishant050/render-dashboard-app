@@ -1,5 +1,13 @@
 const API_BASE = '/api/crawler';
 
+// Crawled pages and AI output are untrusted: escape everything that is not static markup.
+const esc = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const App = {
     tasks: [],
     runs: [],
@@ -100,21 +108,21 @@ const App = {
             // Markdown rendering
             const summaryBox = document.getElementById('detail-summary');
             if (run.finalSummary && window.marked) {
-                summaryBox.innerHTML = marked.parse(run.finalSummary);
+                summaryBox.innerHTML = SafeHTML.sanitize(marked.parse(String(run.finalSummary)));
             } else if (run.error) {
-                summaryBox.innerHTML = `<div style="color:var(--error); white-space:pre-wrap;">${run.error}</div>`;
+                summaryBox.innerHTML = `<div style="color:var(--error); white-space:pre-wrap;">${esc(run.error)}</div>`;
             } else {
                 summaryBox.innerHTML = '<i>No summary generated yet.</i>';
             }
 
             // URLs
             const ul = document.getElementById('detail-urls');
-            ul.innerHTML = (run.visitedUrls || []).map(u => `<li><a href="${u}" target="_blank" style="color:inherit">${u}</a></li>`).join('');
+            ul.innerHTML = (run.visitedUrls || []).map(u => `<li><a href="${esc(/^https?:/i.test(u) ? u : '#')}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(u)}</a></li>`).join('');
 
             // Attachments
             const att = document.getElementById('detail-attachments');
             if (run.attachments && run.attachments.length > 0) {
-                att.innerHTML = run.attachments.map(a => `<a href="${a.url}" target="_blank">📄 ${a.name}</a>`).join('');
+                att.innerHTML = run.attachments.map(a => `<a href="${esc(String(a.url || '').startsWith('/uploads/crawler/') ? a.url : '#')}" target="_blank" rel="noopener noreferrer">📄 ${esc(a.name)}</a>`).join('');
             } else {
                 att.innerHTML = '<i>No attachments found.</i>';
             }
@@ -163,11 +171,11 @@ const App = {
                 <div class="card-meta">
                      <span class="badge ${t.isActive ? 'status-active' : 'status-paused'}">${t.isActive ? 'ACTIVE' : 'PAUSED'}</span>
                      <span style="display:flex; align-items:center; gap:0.5rem">
-                         <span style="font-size:0.8rem">${t.primaryModel}</span>
+                         <span style="font-size:0.8rem">${esc(t.primaryModel)}</span>
                          <button class="btn btn-sm btn-primary" style="padding: 0.1rem 0.5rem; font-size: 0.75rem;" onclick="App.runTaskNow('${t._id}', event)">▶ RUN</button>
                      </span>
                 </div>
-                <div class="card-title">${t.name}</div>
+                <div class="card-title">${esc(t.name)}</div>
                 <div style="font-size:0.875rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     ${(t.startUrls || []).length} Target URLs
                 </div>
@@ -200,7 +208,7 @@ const App = {
                     <span>📎 ${r.attachments?.length || 0} files</span>
                 </div>
                 <div style="margin-top:1rem; font-size: 0.8rem; height: 40px; overflow:hidden; text-overflow:ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: var(--text-muted);">
-                    ${r.finalSummary ? r.finalSummary.replace(/<[^>]*>?/gm, '') : (r.status === 'running' ? 'Processing...' : (r.error || 'No summary available.'))}
+                    ${esc(r.finalSummary ? r.finalSummary.replace(/<[^>]*>?/gm, '') : (r.status === 'running' ? 'Processing...' : (r.error || 'No summary available.')))}
                 </div>
             </div>
         `).join('');
@@ -209,7 +217,7 @@ const App = {
     updateTasksFilter() {
         const select = document.getElementById('task-filter');
         const currentValue = select.value;
-        select.innerHTML = '<option value="">All Tasks</option>' + this.tasks.map(t => `<option value="${t._id}">${t.name}</option>`).join('');
+        select.innerHTML = '<option value="">All Tasks</option>' + this.tasks.map(t => `<option value="${esc(t._id)}">${esc(t.name)}</option>`).join('');
         select.value = currentValue;
     },
 
@@ -390,7 +398,7 @@ const App = {
         };
 
         const optionsHtml = this.aiModels.map(m => 
-            `<option value="${m.provider}|${m.model}">${escapeHtml(m.label || m.model)} (${m.provider})</option>`
+            `<option value="${esc(`${m.provider}|${m.model}`)}">${esc(m.label || m.model)} (${esc(m.provider)})</option>`
         ).join('');
 
         const currentPrimaryVal = primary.value;

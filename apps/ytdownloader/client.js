@@ -284,6 +284,16 @@ async function loadLibrary() {
     }
 }
 
+// Video titles and server/yt-dlp messages are untrusted text.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function createVideoCard(video) {
     const card = document.createElement('div');
     card.className = 'video-card';
@@ -298,7 +308,7 @@ function createVideoCard(video) {
 
     card.innerHTML = `
         <div class="card-thumbnail">
-            <img src="${thumbnailSrc}" alt="${title}" loading="lazy" onerror="this.src='/api/video/${encodeURIComponent(filename)}'">
+            <img src="${escapeHtml(thumbnailSrc)}" alt="${escapeHtml(title)}" loading="lazy">
             <div class="play-overlay">
                 <div class="play-icon">
                     <svg viewBox="0 0 24 24" fill="currentColor">
@@ -308,13 +318,18 @@ function createVideoCard(video) {
             </div>
         </div>
         <div class="card-info">
-            <h4 class="card-title">${title}</h4>
+            <h4 class="card-title">${escapeHtml(title)}</h4>
             <div class="card-meta">
                 <span>${sizeMB} MB</span>
-                <button class="delete-btn" data-filename="${encodeURIComponent(filename)}">Delete</button>
+                <button class="delete-btn" data-filename="${escapeHtml(encodeURIComponent(filename))}">Delete</button>
             </div>
         </div>
     `;
+
+    const thumbnailImg = card.querySelector('.card-thumbnail img');
+    thumbnailImg.addEventListener('error', () => {
+        thumbnailImg.src = '/apps/ytdownloader/placeholder.svg';
+    }, { once: true });
 
     // Play video on click
     card.addEventListener('click', (e) => {
@@ -393,7 +408,7 @@ function showToast(message, type = 'info') {
             icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
     }
 
-    toast.innerHTML = `${icon}<span>${message}</span>`;
+    toast.innerHTML = `${icon}<span>${escapeHtml(message)}</span>`;
     toastContainer.appendChild(toast);
 
     setTimeout(() => {

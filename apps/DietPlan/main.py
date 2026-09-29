@@ -6,6 +6,8 @@ import os
 import io
 import csv
 import json
+import secrets
+import time
 from html import escape
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -106,8 +108,31 @@ async def log_activity(profile_id, action, details, request: Request):
     })
 
 
+# Admin sessions are random server-side tokens. (The cookie used to be the fixed value
+# "authenticated", which anyone could set by hand to become admin.)
+ADMIN_SESSION_TTL_SECONDS = 8 * 3600
+_admin_sessions = {}  # token -> expiry timestamp
+
+
+def create_admin_session():
+    now = time.time()
+    for token, expires_at in list(_admin_sessions.items()):
+        if expires_at < now:
+            _admin_sessions.pop(token, None)
+    token = secrets.token_urlsafe(32)
+    _admin_sessions[token] = now + ADMIN_SESSION_TTL_SECONDS
+    return token
+
+
 def get_admin_session(request: Request):
-    return request.cookies.get("admin_session")
+    token = request.cookies.get("admin_session")
+    if not token:
+        return None
+    expires_at = _admin_sessions.get(token)
+    if not expires_at or expires_at < time.time():
+        _admin_sessions.pop(token, None)
+        return None
+    return token
 
 
 MEAL_TYPE_ORDER = [
@@ -992,12 +1017,13 @@ async def admin_login(request: Request, username: str = Form(...), password: str
         })
 
     response = RedirectResponse(url="/dietplan/admin", status_code=302)
-    response.set_cookie("admin_session", "authenticated", max_age=8*3600, httponly=True, samesite="lax")
+    response.set_cookie("admin_session", create_admin_session(), max_age=ADMIN_SESSION_TTL_SECONDS, httponly=True, samesite="lax")
     return response
 
 
 @app.get("/admin/logout")
-async def admin_logout():
+async def admin_logout(request: Request):
+    _admin_sessions.pop(request.cookies.get("admin_session") or "", None)
     response = RedirectResponse(url="/dietplan/admin/login", status_code=302)
     response.delete_cookie("admin_session")
     return response

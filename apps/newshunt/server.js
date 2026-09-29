@@ -15,7 +15,17 @@ const MIME = {
 };
 
 function serveStatic(req, res) {
-    let filePath = path.join(ROOT, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+    let requestPath;
+    try {
+        requestPath = decodeURIComponent(req.url.split('?')[0]);
+    } catch {
+        res.writeHead(400); res.end('Bad request'); return;
+    }
+    const filePath = path.resolve(ROOT, '.' + (requestPath === '/' ? '/index.html' : requestPath));
+    // Never serve anything outside this folder (e.g. /../../.env).
+    if (!filePath.startsWith(ROOT + path.sep)) {
+        res.writeHead(403); res.end('Forbidden'); return;
+    }
     const ext = path.extname(filePath);
     const mime = MIME[ext] || 'application/octet-stream';
 
@@ -82,7 +92,8 @@ const server = http.createServer(async (req, res) => {
     serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
+// Local development helper only: listen on this machine, not the whole network.
+server.listen(PORT, '127.0.0.1', () => {
     console.log('');
     console.log('  ============================');
     console.log('   NewsHunt - Smart News Reader');

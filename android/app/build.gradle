@@ -10,8 +10,8 @@ android {
         applicationId "com.render.filehub"
         minSdk 24
         targetSdk 34
-        versionCode 4
-        versionName "1.1.2"
+        versionCode 5
+        versionName "1.1.3"
 
         manifestPlaceholders = [
             appLabel: "FileHub & Investing",
@@ -27,7 +27,9 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            debuggable true
+            // The published APK is the debug build: keep it non-debuggable so its stored
+            // dashboard password cannot be read with `adb run-as`.
+            debuggable false
         }
     }
     compileOptions {
